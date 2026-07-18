@@ -1,5 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { apiGet } from '../main';
+import { useTranslation } from 'react-i18next';
+import {
+  Cpu,
+  MemoryStick,
+  Activity,
+  Clock,
+  HardDrive,
+  Network,
+  Container,
+  Server,
+} from 'lucide-react';
+import { apiGet } from '../lib/api';
+import { cn } from '../lib/utils';
+import { Badge } from '../components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Skeleton } from '../components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
 
 interface SysInfo {
   hostname: string;
@@ -19,7 +42,7 @@ interface SysInfo {
   network: { name: string; rx_bytes: number; tx_bytes: number }[];
 }
 
-interface Container {
+interface ContainerInfo {
   id: string;
   name: string;
   image: string;
@@ -28,19 +51,28 @@ interface Container {
   ports: string;
 }
 
+interface DockerStatus {
+  available: boolean;
+  version: string;
+}
+
 export default function Dashboard() {
+  const { t } = useTranslation();
   const [sys, setSys] = useState<SysInfo | null>(null);
-  const [containers, setContainers] = useState<Container[]>([]);
+  const [containers, setContainers] = useState<ContainerInfo[]>([]);
+  const [dockerSt, setDockerSt] = useState<DockerStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       apiGet<SysInfo>('/system/overview'),
-      apiGet<{ containers: Container[] }>('/services/'),
+      apiGet<{ containers: ContainerInfo[] }>('/services'),
+      apiGet<DockerStatus>('/services/status'),
     ])
-      .then(([s, svc]) => {
+      .then(([s, svc, ds]) => {
         setSys(s);
         setContainers(svc.containers);
+        setDockerSt(ds);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -56,189 +88,248 @@ export default function Dashboard() {
   const uptime = (s: number) => {
     const d = Math.floor(s / 86400);
     const h = Math.floor((s % 86400) / 3600);
-    return `${d}d ${h}h`;
+    const m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    return `${h}h ${m}m`;
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-gray-400 dark:text-gray-500">加载中…</div>
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-xl" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Zenceglow Ops</h1>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{t('monitor.title')}</h1>
         {sys && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {sys.hostname} / {sys.os} &middot; {sys.kernel}
+          <p className="text-sm text-muted-foreground mt-1">
+            {sys.hostname} · {sys.os} · {sys.kernel}
           </p>
         )}
       </div>
 
-      {/* overview cards */}
       {sys && (
         <>
-          <section className="mb-8">
-            <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
-              系统概览
-            </h2>
+          <section className="space-y-4">
+            <SectionTitle icon={Activity} title={t('monitor.overview')} />
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card label="CPU" value={`${sys.cpu_usage.toFixed(1)}%`} sub={`${sys.cpu_cores} 核`} />
-              <Card
-                label="内存"
+              <StatCard
+                icon={Cpu}
+                label={t('monitor.cpu')}
+                value={`${sys.cpu_usage.toFixed(1)}%`}
+                sub={`${sys.cpu_cores} ${t('monitor.cores')} · ${t('monitor.load')} ${sys.load_avg.map((n) => n.toFixed(1)).join(' / ')}`}
+              />
+              <StatCard
+                icon={MemoryStick}
+                label={t('monitor.memory')}
                 value={`${sys.memory_percent.toFixed(1)}%`}
                 sub={`${bytes(sys.memory_used)} / ${bytes(sys.memory_total)}`}
               />
-              <Card label="进程" value={String(sys.processes)} sub={`负载 ${sys.load_avg.map(n => n.toFixed(1)).join(' / ')}`} />
-              <Card label="运行时间" value={uptime(sys.uptime_secs)} sub="uptime" />
+              <StatCard
+                icon={Activity}
+                label={t('monitor.processes')}
+                value={String(sys.processes)}
+                sub={t('monitor.running')}
+              />
+              <StatCard
+                icon={Clock}
+                label={t('monitor.uptime')}
+                value={uptime(sys.uptime_secs)}
+                sub="uptime"
+              />
             </div>
           </section>
 
-          {/* disks */}
-          <section className="mb-8">
-            <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
-              磁盘
-            </h2>
+          <section className="space-y-4">
+            <SectionTitle icon={HardDrive} title={t('monitor.disk')} />
             <div className="space-y-3">
               {sys.disks.map((d) => (
-                <div key={d.mount}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{d.mount}</span>
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {bytes(d.used)} / {bytes(d.total)}
-                    </span>
-                  </div>
-                  <Bar pct={d.percent} />
-                </div>
+                <Card key={d.mount}>
+                  <CardContent className="pt-4">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="font-medium">{d.mount}</span>
+                      <span className="text-muted-foreground">
+                        {bytes(d.used)} / {bytes(d.total)}
+                      </span>
+                    </div>
+                    <div className="w-full bg-secondary rounded-full h-2">
+                      <div
+                        className={cn(
+                          'h-2 rounded-full transition-all',
+                          d.percent > 90
+                            ? 'bg-destructive'
+                            : d.percent > 75
+                              ? 'bg-orange-500'
+                              : 'bg-primary',
+                        )}
+                        style={{ width: `${Math.min(d.percent, 100)}%` }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           </section>
 
-          {/* swap */}
           {sys.swap_total > 0 && (
-            <section className="mb-8">
-              <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">Swap</h2>
-              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-                  <div
-                    className="h-2.5 rounded-full bg-yellow-500"
-                    style={{ width: `${Math.min((sys.swap_used / sys.swap_total) * 100, 100)}%` }}
-                  />
-                </div>
-                <span className="whitespace-nowrap">{bytes(sys.swap_used)} / {bytes(sys.swap_total)}</span>
-              </div>
+            <section className="space-y-4">
+              <SectionTitle icon={MemoryStick} title={t('monitor.swap')} />
+              <Card>
+                <CardContent className="pt-4 flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="w-full bg-secondary rounded-full h-2">
+                      <div
+                        className="h-2 rounded-full bg-orange-500 transition-all"
+                        style={{
+                          width: `${Math.min((sys.swap_used / sys.swap_total) * 100, 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                    {bytes(sys.swap_used)} / {bytes(sys.swap_total)}
+                  </span>
+                </CardContent>
+              </Card>
             </section>
           )}
 
-          {/* network */}
-          <section className="mb-8">
-            <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
-              网络
-            </h2>
+          <section className="space-y-4">
+            <SectionTitle icon={Network} title={t('monitor.network')} />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {sys.network.map((n) => (
-                <div
-                  key={n.name}
-                  className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800"
-                >
-                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{n.name}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    ↓ {bytes(n.rx_bytes)} &nbsp; ↑ {bytes(n.tx_bytes)}
-                  </div>
-                </div>
+                <Card key={n.name}>
+                  <CardContent className="pt-4">
+                    <div className="text-sm font-medium mb-1">{n.name}</div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>↓ {bytes(n.rx_bytes)}</span>
+                      <span>↑ {bytes(n.tx_bytes)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           </section>
         </>
       )}
 
-      {/* Docker containers */}
-      <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
-          Docker 容器 <span className="text-sm font-normal text-gray-400">({containers.length})</span>
-        </h2>
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-100 dark:bg-gray-900 text-left text-gray-600 dark:text-gray-400">
-                <th className="px-4 py-3 font-medium">名称</th>
-                <th className="px-4 py-3 font-medium">镜像</th>
-                <th className="px-4 py-3 font-medium">状态</th>
-                <th className="px-4 py-3 font-medium">端口</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-              {containers.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{c.name}</td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-xs truncate">{c.image}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium
-                        ${c.state === 'running'
-                          ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                        }`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${c.state === 'running' ? 'bg-green-500' : 'bg-gray-400'}`} />
-                      {c.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">{c.ports || '-'}</td>
-                </tr>
-              ))}
-              {containers.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-gray-400 dark:text-gray-500">
-                    Docker 不可用或无容器
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <SectionTitle icon={Container} title="Docker" />
+          {dockerSt ? (
+            <Badge variant={dockerSt.available ? 'default' : 'secondary'}>
+              {dockerSt.available ? `v${dockerSt.version}` : t('docker.not_installed')}
+            </Badge>
+          ) : (
+            <Skeleton className="h-5 w-16" />
+          )}
         </div>
+
+        {dockerSt && !dockerSt.available && (
+          <Card>
+            <CardContent className="py-8 text-center">
+              <Server className="size-8 mx-auto mb-3 text-muted-foreground opacity-40" />
+              <p className="text-sm text-muted-foreground mb-1">{t('docker.not_installed')}</p>
+              <p className="text-xs text-muted-foreground/70">{t('docker.install_hint')}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {dockerSt?.available && containers.length === 0 && (
+          <Card>
+            <CardContent className="py-8 text-center">
+              <Container className="size-8 mx-auto mb-3 text-muted-foreground opacity-40" />
+              <p className="text-sm text-muted-foreground">{t('docker.no_containers')}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {dockerSt?.available && containers.length > 0 && (
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('docker.name')}</TableHead>
+                  <TableHead>{t('docker.image')}</TableHead>
+                  <TableHead>{t('docker.status')}</TableHead>
+                  <TableHead>{t('docker.ports')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {containers.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="text-muted-foreground max-w-xs truncate">
+                      {c.image}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={c.state === 'running' ? 'default' : 'secondary'}>
+                        {c.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {c.ports || '-'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
       </section>
     </div>
   );
 }
 
-/* ---------- reusable sub-components ---------- */
+function SectionTitle({
+  icon: Icon,
+  title,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+}) {
+  return (
+    <h2 className="flex items-center gap-2 text-base font-semibold">
+      <Icon className="size-4 text-muted-foreground" />
+      {title}
+    </h2>
+  );
+}
 
-function Card({
+function StatCard({
+  icon: Icon,
   label,
   value,
   sub,
 }: {
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   sub?: string;
 }) {
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 shadow-sm">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
-        {label}
-      </div>
-      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</div>
-      {sub && (
-        <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{sub}</div>
-      )}
-    </div>
-  );
-}
-
-function Bar({ pct }: { pct: number }) {
-  const color =
-    pct > 90 ? 'bg-red-500' : pct > 75 ? 'bg-orange-500' : 'bg-blue-500';
-  return (
-    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-      <div
-        className={`h-2 rounded-full transition-all ${color}`}
-        style={{ width: `${Math.min(pct, 100)}%` }}
-      />
-    </div>
+    <Card>
+      <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2">
+        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
+          <Icon className="size-4 text-primary" />
+        </div>
+        <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {label}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+        {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+      </CardContent>
+    </Card>
   );
 }

@@ -1,11 +1,25 @@
 import React, { useState } from 'react';
-import { login } from '../main';
+import { useTranslation } from 'react-i18next';
+import { Zap, Eye, EyeOff } from 'lucide-react';
+import { login } from '../lib/api';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '../components/ui/card';
 
 export default function Login() {
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,66 +30,79 @@ export default function Login() {
       localStorage.setItem('token', token);
       window.location.href = '/dashboard';
     } catch {
-      setErr('用户名或密码错误');
+      setErr(t('login.error'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-lg dark:shadow-gray-950/60 border border-gray-200 dark:border-gray-800 p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold tracking-tight">Zenceglow Ops</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">服务器运维面板</p>
+    <div className="min-h-screen flex items-center justify-center px-4 bg-background">
+      <div className="w-full max-w-sm space-y-6">
+        <div className="flex justify-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-primary shadow-sm">
+            <Zap className="size-6 text-primary-foreground" />
           </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <input
-                placeholder="用户名"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-700
-                           bg-white dark:bg-gray-800
-                           text-gray-900 dark:text-gray-100
-                           placeholder-gray-400 dark:placeholder-gray-500
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400
-                           transition-colors"
-              />
-            </div>
-            <div>
-              <input
-                type="password"
-                placeholder="密码"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-700
-                           bg-white dark:bg-gray-800
-                           text-gray-900 dark:text-gray-100
-                           placeholder-gray-400 dark:placeholder-gray-500
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400
-                           transition-colors"
-              />
-            </div>
-
-            {err && (
-              <p className="text-sm text-red-600 dark:text-red-400 text-center">{err}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 rounded-lg font-medium text-white
-                         bg-blue-600 hover:bg-blue-700 active:bg-blue-800
-                         disabled:opacity-50 disabled:cursor-not-allowed
-                         transition-colors"
-            >
-              {loading ? '登录中…' : '登录'}
-            </button>
-          </form>
         </div>
+
+        <Card>
+          <CardHeader className="text-center">
+            <CardTitle className="text-xl">{t('app.name')}</CardTitle>
+            <CardDescription>{t('login.subtitle')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="username">{t('login.username')}</Label>
+                <Input
+                  id="username"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder={t('login.username')}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">{t('login.password')}</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPw ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t('login.password')}
+                    className="pr-9"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2"
+                    onClick={() => setShowPw(!showPw)}
+                    tabIndex={-1}
+                  >
+                    {showPw ? <EyeOff /> : <Eye />}
+                  </Button>
+                </div>
+              </div>
+
+              {err && <p className="text-sm text-destructive text-center">{err}</p>}
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || !username || !password}
+              >
+                {loading ? t('login.submitting') : t('login.submit')}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <p className="text-xs text-center text-muted-foreground">
+          Zenceglow Ops Panel v0.1.0
+        </p>
       </div>
     </div>
   );
