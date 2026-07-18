@@ -10,11 +10,11 @@ import {
   Container,
   Server,
 } from 'lucide-react';
-import { apiGet } from '../lib/api';
-import { cn } from '../lib/utils';
-import { Badge } from '../components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Skeleton } from '../components/ui/skeleton';
+import { apiGet } from '../../lib/api';
+import { cn } from '../../lib/utils';
+import { Badge } from '../../components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Skeleton } from '../../components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -22,7 +22,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '../components/ui/table';
+} from '../../components/ui/table';
 
 interface SysInfo {
   hostname: string;

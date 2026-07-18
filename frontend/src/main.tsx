@@ -53,11 +53,17 @@ import {
   CollapsibleTrigger,
 } from './components/ui/collapsible';
 import { TooltipProvider } from './components/ui/tooltip';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Sites from './pages/Sites';
-import DockerPage from './pages/DockerPage';
-import SystemPage from './pages/SystemPage';
+import LoginPage from './pages/login';
+import MonitorPage from './pages/monitor';
+import SitesPage from './pages/sites';
+import DockerContainersPage from './pages/docker/containers';
+import DockerImagesPage from './pages/docker/images';
+import DockerNetworksPage from './pages/docker/networks';
+import DockerSettingsPage from './pages/docker/settings';
+import SystemSwapPage from './pages/system/swap';
+import SystemNetworkPage from './pages/system/network';
+import SystemFirewallPage from './pages/system/firewall';
+import SystemUpdatesPage from './pages/system/updates';
 import './index.css';
 
 export { cn } from './lib/utils';
@@ -86,7 +92,7 @@ interface NavEntry {
 }
 
 const NAV_ENTRIES: NavEntry[] = [
-  { labelKey: 'nav.monitor', icon: Activity, path: '/dashboard' },
+  { labelKey: 'nav.monitor', icon: Activity, path: '/monitor' },
   { labelKey: 'nav.sites', icon: Globe, path: '/sites' },
   {
     labelKey: 'nav.docker',
@@ -111,7 +117,7 @@ const NAV_ENTRIES: NavEntry[] = [
 ];
 
 function pathMatches(pathname: string, p: string): boolean {
-  if (p === '/dashboard') return pathname === p;
+  if (p === '/monitor') return pathname === p;
   return pathname.startsWith(p);
 }
 
@@ -127,7 +133,7 @@ function LogoSidebarHeader() {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton size="lg" asChild tooltip={collapsed ? t('app.name') : undefined}>
-            <NavLink to="/dashboard">
+            <NavLink to="/monitor">
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Zap className="size-4" />
               </div>
@@ -326,11 +332,20 @@ function App() {
         <ThemeInit />
         <Layout>
           <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/sites/*" element={<Sites />} />
-            <Route path="/docker/*" element={<DockerPage />} />
-            <Route path="/system/*" element={<SystemPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/monitor" element={<MonitorPage />} />
+            <Route path="/sites" element={<SitesPage />} />
+            <Route path="/docker/containers" element={<DockerContainersPage />} />
+            <Route path="/docker/images" element={<DockerImagesPage />} />
+            <Route path="/docker/networks" element={<DockerNetworksPage />} />
+            <Route path="/docker/settings" element={<DockerSettingsPage />} />
+            <Route path="/system/swap" element={<SystemSwapPage />} />
+            <Route path="/system/network" element={<SystemNetworkPage />} />
+            <Route path="/system/firewall" element={<SystemFirewallPage />} />
+            <Route path="/system/updates" element={<SystemUpdatesPage />} />
+            <Route path="/docker" element={<Navigate to="/docker/containers" replace />} />
+            <Route path="/system" element={<Navigate to="/system/swap" replace />} />
+            <Route path="/dashboard" element={<Navigate to="/monitor" replace />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </Layout>

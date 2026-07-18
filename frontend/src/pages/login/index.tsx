@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Zap, Eye, EyeOff } from 'lucide-react';
-import { login } from '../lib/api';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
+import { login } from '../../lib/api';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '../components/ui/card';
+} from '../../components/ui/card';
 
 export default function Login() {
   const { t } = useTranslation();
@@ -28,7 +28,7 @@ export default function Login() {
     try {
       const token = await login(username, password);
       localStorage.setItem('token', token);
-      window.location.href = '/dashboard';
+      window.location.href = '/monitor';
     } catch {
       setErr(t('login.error'));
     } finally {
