@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+/* CSS 变量形式更好适配 @tailwindcss/vite */
+@custom-variant dark (&:is(.dark *));
