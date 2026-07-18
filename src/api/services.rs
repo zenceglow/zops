@@ -11,7 +11,7 @@ use bollard::container::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
-use crate::state::AppState;
+use crate::state::{check_docker_available, AppState};
 
 type ApiError = (StatusCode, &'static str);
 const ERR_DOCKER: ApiError = (StatusCode::BAD_GATEWAY, "Docker 不可用");
@@ -30,6 +30,29 @@ pub struct ContainerDto {
 #[derive(Serialize)]
 pub struct ContainerList {
     pub containers: Vec<ContainerDto>,
+}
+
+#[derive(Serialize)]
+pub struct DockerStatus {
+    pub available: bool,
+    pub version: String,
+}
+
+async fn docker_status(
+) -> Json<DockerStatus> {
+    let available = check_docker_available();
+    let version = if available {
+        std::process::Command::new("docker")
+            .args(["version", "--format", "{{.Server.Version}}"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string()))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    Json(DockerStatus { available, version })
 }
 
 async fn list(
@@ -160,6 +183,7 @@ async fn logs(
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/status", axum::routing::get(docker_status))
         .route("/", axum::routing::get(list))
         .route("/{id}/start", axum::routing::post(start))
         .route("/{id}/stop", axum::routing::post(stop))

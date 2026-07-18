@@ -6,6 +6,8 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::state::AppState;
 
 mod auth;
+mod caddy_server;
+mod caddyfile;
 mod logs;
 mod services;
 mod system;
@@ -20,6 +22,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/system", system::routes())
         .nest("/services", services::routes())
         .nest("/logs", logs::routes())
+        .nest("/gateway/server", caddy_server::routes())
+        .nest("/gateway/file", caddyfile::routes())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,
