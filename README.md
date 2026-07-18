@@ -15,7 +15,7 @@ Server operations panel — system monitoring, Docker service management, and lo
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) 1.70+
-- [Node.js](https://nodejs.org/) 18+ and npm (for building frontend)
+- [Node.js](https://nodejs.org/) 18+ and pnpm (for building frontend)
 - Docker (optional, for container management)
 
 ### Build & Run
@@ -23,12 +23,12 @@ Server operations panel — system monitoring, Docker service management, and lo
 ```bash
 # 1. Build the frontend
 cd frontend
-npm install
-npm run build
+pnpm install
+pnpm build
 cd ..
 
 # 2. Run the ops panel
-OPS_PORT=5000 cargo run
+OPS_PORT=5200 cargo run
 ```
 
 Open http://127.0.0.1:5000 in your browser.
@@ -47,7 +47,7 @@ A convenience script (`build.sh`) is included that builds the frontend, then com
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-(cd frontend && npm install && npm run build)
+(cd frontend && pnpm install && pnpm build)
 cargo build --release
 echo "Binary: target/release/zenceglow-ops"
 ```
