@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Card, CardContent } from '../../components/ui/card';
+import { Card, CardContent } from '../../../../components/ui/card';
 
 export function PagePlaceholder({
   icon: Icon,

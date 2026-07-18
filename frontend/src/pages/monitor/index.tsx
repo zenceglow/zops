@@ -1,4 +1,3 @@
-import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Cpu,
@@ -10,10 +9,9 @@ import {
   Container,
   Server,
 } from 'lucide-react';
-import { apiGet } from '../../lib/api';
 import { cn } from '../../lib/utils';
 import { Badge } from '../../components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
 import {
   Table,
@@ -23,75 +21,13 @@ import {
   TableHeader,
   TableRow,
 } from '../../components/ui/table';
+import { formatBytes, formatUptime, useMonitor } from './_hooks/use-monitor';
+import { SectionTitle } from './_components/section-title';
+import { StatCard } from './_components/stat-card';
 
-interface SysInfo {
-  hostname: string;
-  os: string;
-  cpu_usage: number;
-  cpu_cores: number;
-  memory_total: number;
-  memory_used: number;
-  memory_percent: number;
-  swap_total: number;
-  swap_used: number;
-  uptime_secs: number;
-  load_avg: number[];
-  processes: number;
-  kernel: string;
-  disks: { mount: string; total: number; used: number; percent: number }[];
-  network: { name: string; rx_bytes: number; tx_bytes: number }[];
-}
-
-interface ContainerInfo {
-  id: string;
-  name: string;
-  image: string;
-  status: string;
-  state: string;
-  ports: string;
-}
-
-interface DockerStatus {
-  available: boolean;
-  version: string;
-}
-
-export default function Dashboard() {
+export default function MonitorPage() {
   const { t } = useTranslation();
-  const [sys, setSys] = useState<SysInfo | null>(null);
-  const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [dockerSt, setDockerSt] = useState<DockerStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([
-      apiGet<SysInfo>('/system/overview'),
-      apiGet<{ containers: ContainerInfo[] }>('/services'),
-      apiGet<DockerStatus>('/services/status'),
-    ])
-      .then(([s, svc, ds]) => {
-        setSys(s);
-        setContainers(svc.containers);
-        setDockerSt(ds);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  const bytes = (b: number) => {
-    if (b >= 1 << 30) return (b / (1 << 30)).toFixed(1) + ' GB';
-    if (b >= 1 << 20) return (b / (1 << 20)).toFixed(1) + ' MB';
-    if (b >= 1 << 10) return (b / (1 << 10)).toFixed(1) + ' KB';
-    return b + ' B';
-  };
-
-  const uptime = (s: number) => {
-    const d = Math.floor(s / 86400);
-    const h = Math.floor((s % 86400) / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h`;
-    return `${h}h ${m}m`;
-  };
+  const { sys, containers, dockerSt, loading } = useMonitor();
 
   if (loading) {
     return (
@@ -132,7 +68,7 @@ export default function Dashboard() {
                 icon={MemoryStick}
                 label={t('monitor.memory')}
                 value={`${sys.memory_percent.toFixed(1)}%`}
-                sub={`${bytes(sys.memory_used)} / ${bytes(sys.memory_total)}`}
+                sub={`${formatBytes(sys.memory_used)} / ${formatBytes(sys.memory_total)}`}
               />
               <StatCard
                 icon={Activity}
@@ -143,7 +79,7 @@ export default function Dashboard() {
               <StatCard
                 icon={Clock}
                 label={t('monitor.uptime')}
-                value={uptime(sys.uptime_secs)}
+                value={formatUptime(sys.uptime_secs)}
                 sub="uptime"
               />
             </div>
@@ -158,7 +94,7 @@ export default function Dashboard() {
                     <div className="flex justify-between text-sm mb-2">
                       <span className="font-medium">{d.mount}</span>
                       <span className="text-muted-foreground">
-                        {bytes(d.used)} / {bytes(d.total)}
+                        {formatBytes(d.used)} / {formatBytes(d.total)}
                       </span>
                     </div>
                     <div className="w-full bg-secondary rounded-full h-2">
@@ -196,7 +132,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <span className="text-sm text-muted-foreground whitespace-nowrap">
-                    {bytes(sys.swap_used)} / {bytes(sys.swap_total)}
+                    {formatBytes(sys.swap_used)} / {formatBytes(sys.swap_total)}
                   </span>
                 </CardContent>
               </Card>
@@ -211,8 +147,8 @@ export default function Dashboard() {
                   <CardContent className="pt-4">
                     <div className="text-sm font-medium mb-1">{n.name}</div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>↓ {bytes(n.rx_bytes)}</span>
-                      <span>↑ {bytes(n.tx_bytes)}</span>
+                      <span>↓ {formatBytes(n.rx_bytes)}</span>
+                      <span>↑ {formatBytes(n.tx_bytes)}</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -287,49 +223,5 @@ export default function Dashboard() {
         )}
       </section>
     </div>
-  );
-}
-
-function SectionTitle({
-  icon: Icon,
-  title,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-}) {
-  return (
-    <h2 className="flex items-center gap-2 text-base font-semibold">
-      <Icon className="size-4 text-muted-foreground" />
-      {title}
-    </h2>
-  );
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  sub?: string;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-2">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
-          <Icon className="size-4 text-primary" />
-        </div>
-        <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          {label}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
-      </CardContent>
-    </Card>
   );
 }
