@@ -1,13 +1,24 @@
-import { apiGet } from '../../../lib/api';
-import type { ContainerInfo, DockerStatus, MonitorData, SysInfo } from './types';
+import { get } from '../../../lib/api';
+import type { ContainerInfo, DockerStatus, SysInfo } from './types';
 
-export async function fetchMonitorData(): Promise<MonitorData> {
-  const [sys, svc, docker] = await Promise.all([
-    apiGet<SysInfo>('/system/overview'),
-    apiGet<{ containers: ContainerInfo[] }>('/services'),
-    apiGet<DockerStatus>('/services/status'),
+export async function fetchMonitorData() {
+  const [sys, containers, docker] = await Promise.all([
+    get<SysInfo>('/system/overview'),
+    get<{ containers: ContainerInfo[] }>('/service/list'),
+    get<DockerStatus>('/service/status'),
   ]);
-  return { sys, containers: svc.containers, docker };
+
+  if (!sys.success || !sys.data) throw new Error(sys.message || 'Failed to load system');
+  if (!containers.success || !containers.data) {
+    throw new Error(containers.message || 'Failed to load containers');
+  }
+  if (!docker.success || !docker.data) throw new Error(docker.message || 'Failed to load docker');
+
+  return {
+    sys: sys.data,
+    containers: containers.data.containers,
+    docker: docker.data,
+  };
 }
 
-export type { ContainerInfo, DockerStatus, MonitorData, SysInfo };
+export type { ContainerInfo, DockerStatus, SysInfo } from './types';

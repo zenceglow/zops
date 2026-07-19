@@ -25,6 +25,20 @@ import { formatBytes, formatUptime, useMonitor } from './_hooks/use-monitor';
 import { SectionTitle } from './_components/section-title';
 import { StatCard } from './_components/stat-card';
 
+/** Skip loopback / virtual / Apple private interfaces that bloat the list. */
+function isPrimaryNetIface(name: string) {
+  const n = name.toLowerCase();
+  if (n === 'lo' || n.startsWith('lo')) return false;
+  if (
+    /^(utun|awdl|llw|bridge|veth|docker|br-|virbr|vmnet|vnic|ap\d|gif|stf|p2p)/.test(
+      n,
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export default function MonitorPage() {
   const { t } = useTranslation();
   const { sys, containers, dockerSt, loading } = useMonitor();
@@ -85,53 +99,58 @@ export default function MonitorPage() {
             </div>
           </section>
 
-          <section className="space-y-4">
+          <section className="space-y-3">
             <SectionTitle icon={HardDrive} title={t('monitor.disk')} />
-            <div className="space-y-3">
-              {sys.disks.map((d) => (
-                <Card key={d.mount}>
-                  <CardContent className="pt-4">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="font-medium">{d.mount}</span>
-                      <span className="text-muted-foreground">
-                        {formatBytes(d.used)} / {formatBytes(d.total)}
-                      </span>
+            <Card>
+              <CardContent className="divide-y divide-border p-0">
+                {sys.disks
+                  .filter((d) => d.total >= 1 << 30)
+                  .map((d) => (
+                  <div key={d.mount} className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+                        <span className="truncate font-medium">{d.mount}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {formatBytes(d.used)} / {formatBytes(d.total)}
+                          <span className="ml-1.5 tabular-nums text-foreground/70">
+                            {d.percent.toFixed(0)}%
+                          </span>
+                        </span>
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-secondary">
+                        <div
+                          className={cn(
+                            'h-1 rounded-full transition-all',
+                            d.percent > 90
+                              ? 'bg-destructive'
+                              : d.percent > 75
+                                ? 'bg-orange-500'
+                                : 'bg-primary',
+                          )}
+                          style={{ width: `${Math.min(d.percent, 100)}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-secondary rounded-full h-2">
-                      <div
-                        className={cn(
-                          'h-2 rounded-full transition-all',
-                          d.percent > 90
-                            ? 'bg-destructive'
-                            : d.percent > 75
-                              ? 'bg-orange-500'
-                              : 'bg-primary',
-                        )}
-                        style={{ width: `${Math.min(d.percent, 100)}%` }}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           </section>
 
           {sys.swap_total > 0 && (
-            <section className="space-y-4">
+            <section className="space-y-3">
               <SectionTitle icon={MemoryStick} title={t('monitor.swap')} />
               <Card>
-                <CardContent className="pt-4 flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="w-full bg-secondary rounded-full h-2">
-                      <div
-                        className="h-2 rounded-full bg-orange-500 transition-all"
-                        style={{
-                          width: `${Math.min((sys.swap_used / sys.swap_total) * 100, 100)}%`,
-                        }}
-                      />
-                    </div>
+                <CardContent className="flex items-center gap-3 px-4 py-2.5">
+                  <div className="h-1 flex-1 rounded-full bg-secondary">
+                    <div
+                      className="h-1 rounded-full bg-orange-500 transition-all"
+                      style={{
+                        width: `${Math.min((sys.swap_used / sys.swap_total) * 100, 100)}%`,
+                      }}
+                    />
                   </div>
-                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                  <span className="shrink-0 text-xs text-muted-foreground whitespace-nowrap">
                     {formatBytes(sys.swap_used)} / {formatBytes(sys.swap_total)}
                   </span>
                 </CardContent>
@@ -139,21 +158,34 @@ export default function MonitorPage() {
             </section>
           )}
 
-          <section className="space-y-4">
+          <section className="space-y-3">
             <SectionTitle icon={Network} title={t('monitor.network')} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {sys.network.map((n) => (
-                <Card key={n.name}>
-                  <CardContent className="pt-4">
-                    <div className="text-sm font-medium mb-1">{n.name}</div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>↓ {formatBytes(n.rx_bytes)}</span>
-                      <span>↑ {formatBytes(n.tx_bytes)}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <Card>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="h-9">{t('monitor.iface')}</TableHead>
+                    <TableHead className="h-9 text-right">↓ RX</TableHead>
+                    <TableHead className="h-9 text-right">↑ TX</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sys.network
+                    .filter((n) => isPrimaryNetIface(n.name))
+                    .map((n) => (
+                      <TableRow key={n.name}>
+                        <TableCell className="py-2 font-medium">{n.name}</TableCell>
+                        <TableCell className="py-2 text-right text-muted-foreground tabular-nums">
+                          {formatBytes(n.rx_bytes)}
+                        </TableCell>
+                        <TableCell className="py-2 text-right text-muted-foreground tabular-nums">
+                          {formatBytes(n.tx_bytes)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </Card>
           </section>
         </>
       )}

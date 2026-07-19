@@ -4,12 +4,29 @@
     "loading": "Loading…"
   },
   "nav": {
+    "overview": "Overview",
+    "tools": "Tools",
+    "automation": "Automation",
+    "workers": "Workers",
+    "resources": "Resources",
     "monitor": "Monitor",
     "sites": "Sites",
+    "ssh": "SSH",
+    "files": "Files",
+    "logs": "Logs",
+    "tasks": "Tasks",
     "docker": "Docker",
     "system": "System",
+    "members": "Members",
     "logout": "Log out",
-    "switch_lang": "中文"
+    "switch_lang": "中文",
+    "collapse": "Collapse",
+    "expand": "Expand"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "Follow system"
   },
   "login": {
     "subtitle": "Server operations panel",
@@ -18,6 +35,25 @@
     "submit": "Sign in",
     "submitting": "Signing in…",
     "error": "Invalid username or password"
+  },
+  "setup": {
+    "title_secret": "Initial Setup",
+    "desc_secret": "Enter the initialization secret printed in the server console",
+    "title_admin": "Create Admin",
+    "desc_admin": "Set the admin account. The password is stored with irreversible hashing",
+    "secret": "Setup secret",
+    "secret_placeholder": "Secret from the console",
+    "secret_required": "Setup secret is required",
+    "username": "Admin username",
+    "password": "Password",
+    "confirm": "Confirm password",
+    "password_short": "Password must be at least 6 characters",
+    "password_mismatch": "Passwords do not match",
+    "next": "Continue",
+    "back": "Back",
+    "submit": "Finish setup",
+    "submitting": "Submitting…",
+    "error": "Setup failed. Check the secret and try again"
   },
   "monitor": {
     "title": "Monitor",
@@ -31,7 +67,8 @@
     "swap": "Swap",
     "running": "Running",
     "cores": "cores",
-    "load": "Load"
+    "load": "Load",
+    "iface": "Interface"
   },
   "sites": {
     "title": "Sites",
@@ -98,5 +135,146 @@
     "swap_used": "Used",
     "firewall_desc": "Firewall rule management (based on iptables/nftables)",
     "updates_desc": "System package update management"
+  },
+  "ssh": {
+    "title": "SSH",
+    "subtitle": "Interactive terminal to a remote host from the panel",
+    "host": "Host",
+    "port": "Port",
+    "username": "Username",
+    "password": "Password",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "disconnect": "Disconnect",
+    "status_connecting": "Connecting…",
+    "status_connected": "Connected",
+    "status_closed": "Session closed",
+    "status_need_login": "Not signed in",
+    "status_need_fields": "Host and username are required",
+    "status_ws_error": "WebSocket error"
+  },
+  "files": {
+    "title": "Files",
+    "subtitle": "Browse and manage server file system"
+  },
+  "logs": {
+    "title": "Log Viewer",
+    "subtitle": "Add log file paths to monitor and search logs in real-time",
+    "add_source": "Add log source",
+    "source_path": "File path",
+    "source_path_placeholder": "/var/log/nginx/access.log",
+    "source_label": "Label",
+    "source_label_placeholder": "nginx access log",
+    "add": "Add",
+    "remove": "Remove",
+    "no_sources": "No log sources. Add a log file to monitor",
+    "search": "Search…",
+    "filter": "Filter",
+    "clear": "Clear",
+    "copy": "Copy",
+    "copied": "Copied",
+    "auto_scroll": "Auto scroll",
+    "paused": "Paused",
+    "resume": "Resume",
+    "lines": "lines",
+    "max_lines": "Max lines"
+  },
+  "automation": {
+    "title": "Automation",
+    "subtitle": "Create scheduled tasks with cron expressions to run commands automatically",
+    "add_task": "Add task",
+    "name": "Name",
+    "name_placeholder": "Backup database",
+    "command": "Command",
+    "command_placeholder": "pg_dump mydb > /backup/db.sql",
+    "cron": "Cron expression",
+    "cron_placeholder": "0 2 * * *",
+    "enabled": "Enabled",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "run_now": "Run now",
+    "edit": "Edit",
+    "no_tasks": "No automation tasks",
+    "last_run": "Last run",
+    "next_run": "Next run",
+    "never": "Never",
+    "status": "Status",
+    "output": "Output",
+    "success": "Success",
+    "failed": "Failed",
+    "running": "Running",
+    "log": "Execution log",
+    "retry": "Retry",
+    "retries": "Retries",
+    "schedule": "Schedule: {{expr}}"
+  },
+  "members": {
+    "title": "Members",
+    "subtitle": "Manage panel members and assign sidebar / operation permissions",
+    "add": "Add member",
+    "list": "Member list",
+    "username": "Username",
+    "password": "Password",
+    "create": "Create",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit_perms": "Edit permissions",
+    "reset_pw": "Reset password",
+    "role_super": "Super admin",
+    "role_member": "Member",
+    "all_perms": "Full access",
+    "no_perms": "No permissions",
+    "perm_nav": "Sidebar",
+    "perm_ops": "Operations",
+    "load_fail": "Failed to load members",
+    "create_ok": "Member created",
+    "create_fail": "Create failed",
+    "update_ok": "Updated",
+    "update_fail": "Update failed",
+    "password_ok": "Password updated",
+    "delete_ok": "Deleted",
+    "delete_fail": "Delete failed"
+  },
+  "perm": {
+    "nav": {
+      "monitor": "Monitor",
+      "sites": "Sites",
+      "ssh": "SSH",
+      "files": "Files",
+      "logs": "Logs",
+      "automation": "Automation",
+      "docker": "Docker",
+      "system": "System",
+      "members": "Members"
+    },
+    "ops": {
+      "system": {
+        "read": "System overview"
+      },
+      "service": {
+        "read": "Container view",
+        "control": "Container control",
+        "log": "Container logs"
+      },
+      "gateway": {
+        "read": "Gateway view",
+        "control": "Gateway control",
+        "write": "Gateway config write"
+      },
+      "log": {
+        "read": "Log read"
+      },
+      "ssh": {
+        "connect": "SSH connect"
+      },
+      "member": {
+        "manage": "Manage members"
+      },
+      "automation": {
+        "manage": "Manage automation"
+      }
+    }
   }
 }

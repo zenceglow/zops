@@ -38,12 +38,12 @@ export function useSites() {
   }, [fetchAll]);
 
   const serverAction = useCallback(
-    async (action: string) => {
-      const res = await postServerAction(action);
-      if (res?.ok) {
+    async (action: 'start' | 'stop' | 'reload') => {
+      try {
+        await postServerAction(action);
         setMsg(t(`sites.${action}_success`));
         setTimeout(() => fetchAll(), 500);
-      } else {
+      } catch {
         setMsg(t('sites.action_fail'));
       }
     },
@@ -54,13 +54,9 @@ export function useSites() {
     setInstalling(true);
     setMsg(t('sites.install_doing'));
     try {
-      const res = await installGateway();
-      if (res?.ok) {
-        setMsg(t('sites.install_success'));
-        fetchAll();
-      } else {
-        setMsg(t('sites.install_fail'));
-      }
+      await installGateway();
+      setMsg(t('sites.install_success'));
+      fetchAll();
     } catch {
       setMsg(t('sites.install_fail'));
     }

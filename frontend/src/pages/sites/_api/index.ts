@@ -1,38 +1,43 @@
-import { apiGet, apiPost } from '../../../lib/api';
+import { del, get, post, put } from '../../../lib/api';
 import type { GatewayConfig, GatewayStatus } from './types';
 
-const GW = '/api/ops/gateway';
-
 export async function fetchGatewayStatus() {
-  return apiGet<GatewayStatus>(`${GW}/server/status`);
+  const res = await get<GatewayStatus>('/gateway/status');
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
 }
 
 export async function fetchGatewayConfig() {
-  return apiGet<GatewayConfig>(`${GW}/file`);
+  const res = await get<GatewayConfig>('/gateway/file');
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
 }
 
-export async function serverAction(action: string) {
-  return apiPost(`${GW}/server/${action}`);
+export async function serverAction(action: 'start' | 'stop' | 'reload') {
+  const res = await post(`/gateway/${action}`);
+  if (!res.success) throw new Error(res.message || 'Failed');
 }
 
 export async function installGateway() {
-  return apiPost(`${GW}/server/install`);
+  const res = await post('/gateway/install');
+  if (!res.success) throw new Error(res.message || 'Failed');
 }
 
 export async function saveGatewayConfig(raw: string) {
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${GW}/file`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ raw }),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(errText);
-  }
+  const res = await put('/gateway/file', { raw });
+  if (!res.success) throw new Error(res.message || 'Failed');
+}
+
+export async function startContainer(id: string) {
+  return post('/service/start', { id });
+}
+
+export async function stopContainer(id: string) {
+  return post('/service/stop', { id });
+}
+
+export async function removeContainer(id: string) {
+  return del('/service', { id });
 }
 
 export type { GatewayConfig, GatewayStatus, Directive, SiteEntry } from './types';
