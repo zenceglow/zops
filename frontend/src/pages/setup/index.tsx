@@ -1,7 +1,7 @@
 import { AuthPrefs } from '../../components/auth-prefs';
-import { LoginForm } from './_components/login-form';
+import { SetupForm } from './_components/setup-form';
 
-export default function LoginPage() {
+export default function SetupPage() {
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
@@ -15,7 +15,7 @@ export default function LoginPage() {
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 py-12">
-        <LoginForm />
+        <SetupForm />
       </main>
     </div>
   );

@@ -1,15 +1,9 @@
-import { Zap, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { BrandLogo } from '../../../components/brand-logo';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '../../../components/ui/card';
 import { useLogin } from '../_hooks/use-login';
 
 export function LoginForm() {
@@ -19,7 +13,6 @@ export function LoginForm() {
     setUsername,
     password,
     setPassword,
-    err,
     loading,
     showPw,
     setShowPw,
@@ -27,70 +20,64 @@ export function LoginForm() {
   } = useLogin();
 
   return (
-    <div className="w-full max-w-sm space-y-6">
-      <div className="flex justify-center">
-        <div className="flex size-12 items-center justify-center rounded-2xl bg-primary shadow-sm">
-          <Zap className="size-6 text-primary-foreground" />
-        </div>
+    <div className="w-full max-w-[360px]">
+      <div className="mb-10 flex flex-col items-center text-center">
+        <BrandLogo className="mb-5 size-12" />
+        <h1 className="text-[1.65rem] font-semibold tracking-tight text-foreground">
+          {t('app.name')}
+        </h1>
+        <p className="mt-2 text-[0.9375rem] leading-relaxed text-muted-foreground">
+          {t('login.subtitle')}
+        </p>
       </div>
 
-      <Card>
-        <CardHeader className="text-center">
-          <CardTitle className="text-xl">{t('app.name')}</CardTitle>
-          <CardDescription>{t('login.subtitle')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">{t('login.username')}</Label>
-              <Input
-                id="username"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder={t('login.username')}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">{t('login.password')}</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPw ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t('login.password')}
-                  className="pr-9"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="absolute right-1 top-1/2 -translate-y-1/2"
-                  onClick={() => setShowPw(!showPw)}
-                  tabIndex={-1}
-                >
-                  {showPw ? <EyeOff /> : <Eye />}
-                </Button>
-              </div>
-            </div>
-
-            {err && <p className="text-sm text-destructive text-center">{err}</p>}
-
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={loading || !username || !password}
+      <form onSubmit={submit} className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="username">{t('login.username')}</Label>
+          <Input
+            id="username"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder={t('login.username')}
+            className="h-10"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="password">{t('login.password')}</Label>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPw ? 'text' : 'password'}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={t('login.password')}
+              className="h-10 pr-9"
+            />
+            <button
+              type="button"
+              className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              onClick={() => setShowPw(!showPw)}
+              tabIndex={-1}
+              aria-label={showPw ? 'Hide password' : 'Show password'}
             >
-              {loading ? t('login.submitting') : t('login.submit')}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
+        </div>
 
-      <p className="text-xs text-center text-muted-foreground">
-        Zenceglow Ops Panel v0.1.0
+        <Button
+          type="submit"
+          className="h-10 w-full font-medium"
+          disabled={loading || !username || !password}
+        >
+          {loading ? t('login.submitting') : t('login.submit')}
+        </Button>
+      </form>
+
+      <p className="mt-10 text-center text-xs text-muted-foreground/80">
+        Zenceglow Ops · v0.1.0
       </p>
     </div>
   );
