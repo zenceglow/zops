@@ -1,7 +1,24 @@
-mod api;
 mod assets;
-mod assets_router;
-mod state;
+mod config;
+mod domain;
+mod http;
+mod infrastructure;
+mod service;
+mod shared;
+
+use std::sync::Arc;
+
+use config::Config;
+use http::AppState;
+use infrastructure::{
+    caddy::CaddyProcess, db::Database, docker::DockerClient, system::SysInfoProvider,
+};
+use service::{
+    auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
+    container::ContainerService,
+    gateway::GatewayService, logs::LogService, member::MemberService, setup::SetupService,
+    system::SystemService,
+};
 
 fn main() {
     tracing_subscriber::fmt()
@@ -16,16 +33,34 @@ fn main() {
 }
 
 async fn async_main() {
-    let state = std::sync::Arc::new(state::AppState::new().expect("初始化状态失败"));
-    let router = api::build_router(state.clone());
-    let app = assets_router::assets_router(router);
+    let cfg = Config::from_env();
 
-    let port: u16 = std::env::var("OPS_PORT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(5000);
-    let addr = format!("0.0.0.0:{port}");
+    let db = Arc::new(Database::open(&cfg.db_path()).expect("打开数据库失败"));
+    let jwt_secret = db.ensure_jwt_secret().expect("JWT secret");
 
+    let setup = Arc::new(SetupService::new(db.clone(), cfg.port));
+    setup.ensure_banner_if_needed().expect("setup banner");
+
+    let sys = Arc::new(SysInfoProvider::new());
+    let docker = Arc::new(DockerClient::connect());
+    let caddy = Arc::new(CaddyProcess::new(cfg.caddyfile_path.clone()));
+
+    let state = Arc::new(AppState {
+        auth: Arc::new(AuthService::new(db.clone(), jwt_secret)),
+        setup: setup.clone(),
+        system: Arc::new(SystemService::new(sys)),
+        containers: Arc::new(ContainerService::new(docker)),
+        gateway: Arc::new(GatewayService::new(caddy.clone())),
+        caddyfile: Arc::new(CaddyfileService::new(caddy)),
+        logs: Arc::new(LogService::new(db.clone())),
+        members: Arc::new(MemberService::new(db.clone())),
+        automation: Arc::new(AutomationService::new(db.clone())),
+    });
+
+    let router = http::build_router(state);
+    let app = http::assets_router(router);
+
+    let addr = format!("0.0.0.0:{}", cfg.port);
     tracing::info!("Zenceglow Ops Panel listening on {addr}");
     axum::serve(
         tokio::net::TcpListener::bind(&addr).await.expect("bind"),

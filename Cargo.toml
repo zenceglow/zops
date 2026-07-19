@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.8", features = ["macros", "ws"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -18,9 +18,13 @@ sysinfo = "0.33"
 bollard = "0.18"
 jsonwebtoken = "9"
 uuid = { version = "1", features = ["v4"] }
-argon2 = "0.5"
+argon2 = { version = "0.5", features = ["std"] }
 rust-embed = "8"
 mime_guess = "2"
 futures-util = "0.3"
 regex = "1"
 tokio-util = "0.7"
+rusqlite = { version = "0.32", features = ["bundled"] }
+russh = "0.62"
+base64 = "0.22"
+cron = "0.12"

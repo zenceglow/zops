@@ -1,0 +1,137 @@
+//! RBAC permission catalog and helpers.
+
+use serde::Serialize;
+
+/// Built-in roles.
+pub const ROLE_SUPER_ADMIN: &str = "super_admin";
+pub const ROLE_MEMBER: &str = "member";
+
+/// Sidebar permissions.
+pub const NAV_MONITOR: &str = "nav.monitor";
+pub const NAV_SITES: &str = "nav.sites";
+pub const NAV_SSH: &str = "nav.ssh";
+pub const NAV_DOCKER: &str = "nav.docker";
+pub const NAV_SYSTEM: &str = "nav.system";
+pub const NAV_MEMBERS: &str = "nav.members";
+pub const NAV_FILES: &str = "nav.files";
+
+/// Operation permissions.
+pub const OPS_SYSTEM_READ: &str = "ops.system.read";
+pub const OPS_SERVICE_READ: &str = "ops.service.read";
+pub const OPS_SERVICE_CONTROL: &str = "ops.service.control";
+pub const OPS_SERVICE_LOG: &str = "ops.service.log";
+pub const OPS_GATEWAY_READ: &str = "ops.gateway.read";
+pub const OPS_GATEWAY_CONTROL: &str = "ops.gateway.control";
+pub const OPS_GATEWAY_WRITE: &str = "ops.gateway.write";
+pub const OPS_LOG_READ: &str = "ops.log.read";
+pub const OPS_SSH_CONNECT: &str = "ops.ssh.connect";
+pub const OPS_MEMBER_MANAGE: &str = "ops.member.manage";
+pub const OPS_AUTOMATION_MANAGE: &str = "ops.automation.manage";
+
+/// Additional navigation permissions.
+pub const NAV_LOG_VIEWER: &str = "nav.logs";
+pub const NAV_AUTOMATION: &str = "nav.automation";
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PermissionDef {
+    pub id: &'static str,
+    pub group: &'static str,
+}
+
+/// Full catalog for `GET /api/ops/permission/list`.
+pub fn all_permissions() -> Vec<PermissionDef> {
+    vec![
+        PermissionDef {
+            id: NAV_MONITOR,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_SITES,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_SSH,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_DOCKER,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_SYSTEM,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_MEMBERS,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_FILES,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_LOG_VIEWER,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_AUTOMATION,
+            group: "nav",
+        },
+        PermissionDef {
+            id: OPS_SYSTEM_READ,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_SERVICE_READ,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_SERVICE_CONTROL,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_SERVICE_LOG,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_GATEWAY_READ,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_GATEWAY_CONTROL,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_GATEWAY_WRITE,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_LOG_READ,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_SSH_CONNECT,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_MEMBER_MANAGE,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_AUTOMATION_MANAGE,
+            group: "ops",
+        },
+    ]
+}
+
+pub fn all_permission_ids() -> Vec<&'static str> {
+    all_permissions().into_iter().map(|p| p.id).collect()
+}
+
+pub fn is_known_permission(id: &str) -> bool {
+    all_permission_ids().contains(&id)
+}
+
+pub fn is_valid_role(role: &str) -> bool {
+    role == ROLE_SUPER_ADMIN || role == ROLE_MEMBER
+}
