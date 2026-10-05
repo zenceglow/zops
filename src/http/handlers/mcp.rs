@@ -5,11 +5,12 @@
 //! `ops_…` token, so these routes verify the token hash themselves. A panel JWT
 //! is also accepted (that is what lets the browser-backed /skill preview work).
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{ConnectInfo, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -459,7 +460,7 @@ fn rpc_error(status: StatusCode, id: Value, code: i64, message: impl Into<String
     json_response(status, mcp::error(id, code, message))
 }
 
-async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest) -> Response {
+async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest, ip: &str) -> Response {
     // Notifications carry no id and must not be answered.
     let Some(id) = req.id.clone() else {
         return StatusCode::ACCEPTED.into_response();
@@ -520,6 +521,7 @@ async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest) ->
                 .cloned()
                 .unwrap_or_else(|| json!({}));
             let result = call_tool(state, principal, &name, &args).await;
+            audit_tool_call(state, principal, &name, &args, &result, &ip);
             json_response(StatusCode::OK, mcp::result(id, result))
         }
         other => rpc_error(
@@ -533,9 +535,11 @@ async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest) ->
 
 async fn mcp_post(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let ip = crate::service::audit::client_ip(&headers, Some(addr));
     let principal = match resolve_principal(&state, &headers) {
         Ok(p) => p,
         Err(err) => {
@@ -558,7 +562,57 @@ async fn mcp_post(
         }
     };
 
-    handle_rpc(&state, &principal, req).await
+    handle_rpc(&state, &principal, req, &ip).await
+}
+
+/// agent 的工具调用留痕。
+///
+/// 只记会改状态的工具：`ops_system_overview` 这种只读的，一个 agent 一次排障能调
+/// 十几次，全记下来会把"谁重启了容器"这类真正要紧的行淹掉。判断依据是工具自带的
+/// 权限 —— 权限以 `.read` 结尾的就是只读。
+fn audit_tool_call(
+    state: &AppState,
+    principal: &Principal,
+    tool: &str,
+    args: &Value,
+    result: &Value,
+    ip: &str,
+) {
+    let Some(def) = tool_catalog().into_iter().find(|t| t.name == tool) else {
+        return;
+    };
+    if def.permission.ends_with(".read") {
+        return;
+    }
+
+    let (actor, kind) = match principal {
+        Principal::Token { id, .. } => {
+            // 日志里写令牌的名字而不是 id：出事时看的是"哪个 agent 干的"。
+            let name = state
+                .tokens
+                .list()
+                .ok()
+                .and_then(|list| list.into_iter().find(|t| &t.id == id).map(|t| t.name))
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("token:{}", &id[..id.len().min(8)]));
+            (name, "agent")
+        }
+        Principal::User(u) => (u.username.clone(), "user"),
+    };
+
+    let failed = result.get("isError").and_then(Value::as_bool).unwrap_or(false);
+    let detail = crate::service::audit::summarize_body(&serde_json::to_vec(args).unwrap_or_default());
+    state.audit.record(
+        &actor,
+        kind,
+        ip,
+        "MCP",
+        tool,
+        if failed { 500 } else { 200 },
+        &format!("MCP 调用工具 {tool}"),
+        &detail,
+        0,
+    );
 }
 
 /// MCP allows servers to skip the optional SSE stream. Answering 405 is

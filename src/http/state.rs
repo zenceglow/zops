@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::service::{
+    audit::AuditService,
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     container::ContainerService,
     files::FilesService,
@@ -10,6 +11,7 @@ use crate::service::{
 };
 
 pub struct AppState {
+    pub audit: Arc<AuditService>,
     pub auth: Arc<AuthService>,
     pub setup: Arc<SetupService>,
     pub system: Arc<SystemService>,

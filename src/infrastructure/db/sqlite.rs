@@ -13,6 +13,8 @@ const META_SETUP_SECRET_HASH: &str = "setup_secret_hash";
 const META_JWT_SECRET: &str = "jwt_secret";
 /// 保留多少份 Caddyfile 历史。按一周改动几次估算，五十份够翻很久了。
 const CADDYFILE_HISTORY_KEEP: i64 = 50;
+/// 审计日志保留条数。按每天几十次操作算，五千条够回溯几个月。
+const AUDIT_KEEP: i64 = 5000;
 
 #[derive(Debug, Clone)]
 pub struct UserRow {
@@ -35,6 +37,23 @@ pub struct ApiTokenRow {
     pub permissions: String,
     pub created_at: String,
     pub last_used_at: Option<String>,
+}
+
+/// 一条操作审计。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AuditRow {
+    pub id: i64,
+    pub at: String,
+    pub actor: String,
+    /// user | agent
+    pub actor_kind: String,
+    pub ip: String,
+    pub method: String,
+    pub path: String,
+    pub status: i64,
+    pub summary: String,
+    pub detail: String,
+    pub duration_ms: i64,
 }
 
 /// 回收站里的一项。
@@ -154,6 +173,22 @@ impl Database {
             -- 回收站索引。文件本身被挪到 <数据目录>/trash/<id>，这里只记它原来在哪。
             -- 不做数据库和文件系统的双写事务：万一有一条对不上，宁可界面上少一项，
             -- 也不能因为记不上账就把用户的文件删掉。
+            -- 操作审计。只记会改状态的动作（写接口和 agent 工具调用），GET 不记 ——
+            -- 记了只会把日志淹掉，真出事时反而难找。
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                at          TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                actor       TEXT NOT NULL DEFAULT '',
+                actor_kind  TEXT NOT NULL DEFAULT 'user',
+                ip          TEXT NOT NULL DEFAULT '',
+                method      TEXT NOT NULL DEFAULT '',
+                path        TEXT NOT NULL DEFAULT '',
+                status      INTEGER NOT NULL DEFAULT 0,
+                summary     TEXT NOT NULL DEFAULT '',
+                detail      TEXT NOT NULL DEFAULT '',
+                duration_ms INTEGER NOT NULL DEFAULT 0
+            );
+
             CREATE TABLE IF NOT EXISTS trash_items (
                 id            TEXT PRIMARY KEY NOT NULL,
                 name          TEXT NOT NULL,
@@ -575,6 +610,52 @@ impl Database {
             )
             .optional()?;
         Ok(row)
+    }
+
+    // ── 操作审计 ──
+
+    pub fn add_audit_log(&self, r: &AuditRow) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO audit_logs(at, actor, actor_kind, ip, method, path, status, summary, detail, duration_ms)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![r.at, r.actor, r.actor_kind, r.ip, r.method, r.path, r.status, r.summary, r.detail, r.duration_ms],
+        )?;
+        let _ = conn.execute(
+            "DELETE FROM audit_logs WHERE id NOT IN
+             (SELECT id FROM audit_logs ORDER BY id DESC LIMIT ?1)",
+            params![AUDIT_KEEP],
+        );
+        Ok(())
+    }
+
+    pub fn list_audit_logs(&self, limit: i64, kind: Option<&str>) -> Result<Vec<AuditRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, at, actor, actor_kind, ip, method, path, status, summary, detail, duration_ms
+             FROM audit_logs
+             WHERE (?1 IS NULL OR actor_kind = ?1)
+             ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![kind, limit], |row| {
+                Ok(AuditRow {
+                    id: row.get(0)?,
+                    at: row.get(1)?,
+                    actor: row.get(2)?,
+                    actor_kind: row.get(3)?,
+                    ip: row.get(4)?,
+                    method: row.get(5)?,
+                    path: row.get(6)?,
+                    status: row.get(7)?,
+                    summary: row.get(8)?,
+                    detail: row.get(9)?,
+                    duration_ms: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     // ── 回收站 ──

@@ -32,6 +32,8 @@ pub const OPS_FILES_READ: &str = "ops.files.read";
 pub const OPS_FILES_WRITE: &str = "ops.files.write";
 pub const OPS_SSH_CONNECT: &str = "ops.ssh.connect";
 pub const OPS_MEMBER_MANAGE: &str = "ops.member.manage";
+/// 读操作审计。谁干了什么这件事本身是敏感的，单独一个权限。
+pub const OPS_AUDIT_READ: &str = "ops.audit.read";
 pub const OPS_AUTOMATION_MANAGE: &str = "ops.automation.manage";
 
 /// Additional navigation permissions.
@@ -142,6 +144,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
         },
         PermissionDef {
             id: OPS_MEMBER_MANAGE,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_AUDIT_READ,
             group: "ops",
         },
         PermissionDef {

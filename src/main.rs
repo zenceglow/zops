@@ -14,6 +14,7 @@ use infrastructure::{
     caddy::CaddyProcess, db::Database, docker::DockerClient, system::SysInfoProvider,
 };
 use service::{
+    audit::AuditService,
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     files::FilesService,
     container::ContainerService,
@@ -51,6 +52,7 @@ async fn async_main() {
     let updates_worker = system.clone();
 
     let state = Arc::new(AppState {
+        audit: Arc::new(AuditService::new(db.clone())),
         auth: Arc::new(AuthService::new(db.clone(), jwt_secret)),
         setup: setup.clone(),
         system,
@@ -85,7 +87,8 @@ async fn async_main() {
     tracing::info!("Zenceglow Ops Panel listening on {addr}");
     axum::serve(
         tokio::net::TcpListener::bind(&addr).await.expect("bind"),
-        app,
+        // 带 connect info：审计日志在拿不到转发头时，还能记下 socket 对端 IP。
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .await
     .expect("serve");
