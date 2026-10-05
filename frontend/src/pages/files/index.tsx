@@ -26,14 +26,19 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { cn } from '../../lib/utils';
 import { listDir, previewFile, searchFiles, type DirListing, type FileEntry, type FilePreview } from './_api';
 
-/** 访达侧栏那种"常用位置"。写死几个运维天天要去的，比让人从 / 开始翻强。 */
+/**
+ * 访达侧栏那种"常用位置"。写死几个运维天天要去的，比让人从 / 开始翻强。
+ *
+ * 侧栏直接写路径本身，不翻译成"家目录/日志/临时"：这是运维面板，路径就是它的
+ * 名字，翻译一遍反而要人在脑子里再对一次。
+ */
 const FAVORITES = [
-  { label: '家目录', path: '~', icon: Home },
-  { label: '根目录', path: '/', icon: HardDrive },
-  { label: '日志', path: '/var/log', icon: FileText },
-  { label: 'Caddy', path: '/etc/caddy', icon: FileText },
-  { label: '临时', path: '/tmp', icon: FileText },
-  { label: '应用', path: '/opt', icon: FileText },
+  { path: '~', icon: Home },
+  { path: '/', icon: HardDrive },
+  { path: '/var/log', icon: FileText },
+  { path: '/etc/caddy', icon: FileText },
+  { path: '/tmp', icon: FileText },
+  { path: '/opt', icon: FileText },
 ];
 
 function human(bytes: number): string {
@@ -219,7 +224,7 @@ export default function FilesPage() {
               )}
             >
               <f.icon className="size-3.5 shrink-0" />
-              <span className="truncate">{f.label}</span>
+              <span className="truncate font-mono text-xs">{f.path}</span>
             </button>
           ))}
         </aside>
