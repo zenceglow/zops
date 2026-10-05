@@ -338,7 +338,10 @@
     "status_busy": "A little busy, still steady",
     "status_critical": "Something is running hot",
     "uptime_prefix": "up",
-    "more": "More details"
+    "more": "More details",
+    "todo": "To-do",
+    "todo_empty": "Reserved — tell me what goes here.",
+    "monitor": "Monitor"
   },
   "net": {
     "realtime": "Live",
@@ -362,5 +365,11 @@
     "no_sites": "No sites configured",
     "enable": "Enable",
     "manage": "Manage sites"
+  },
+  "topology": {
+    "title": "Request path",
+    "desc": "Internet → site entry → container, matched by port",
+    "to_port": "to port",
+    "empty": "No site entries yet"
   }
 }

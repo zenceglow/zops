@@ -56,6 +56,26 @@
   }
 }
 
+/* 拓扑连线：虚线在流动，方向就是请求的走向（地球 → 入口 → 容器）。 */
+@keyframes topology-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.topology-edge {
+  stroke-dasharray: 3 7;
+  animation: topology-flow 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topology-edge,
+  .animate-breathe,
+  .animate-ping {
+    animation: none;
+  }
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

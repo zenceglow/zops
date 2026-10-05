@@ -6,6 +6,9 @@ import { ContainerGrid } from './_components/container-grid';
 import { GatewayEntry } from './_components/gateway-entry';
 import { NetworkWidget } from './_components/network-widget';
 import { Ring } from './_components/ring';
+import { Stats } from './_components/stats';
+import { Topology } from './_components/topology';
+import { useGatewayEntries } from './_hooks/use-gateway';
 
 function greetingKey(hour: number) {
   if (hour < 5) return 'home.night';
@@ -28,6 +31,7 @@ export default function MonitorPage() {
   const { t } = useTranslation();
   const user = useUserStore((s) => s.user);
   const { sys, containers, dockerSt, loading } = useMonitor();
+  const gateway = useGatewayEntries();
 
   if (loading || !sys) {
     return (
@@ -45,8 +49,14 @@ export default function MonitorPage() {
           </div>
         </section>
 
-        {/* 入口卡片自己会拉数据、自己出骨架，所以这里直接挂着就行。 */}
-        <GatewayEntry />
+        <GatewayEntry {...gateway} />
+
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+          <Skeleton className="h-[220px] rounded-2xl" />
+          <Skeleton className="h-[220px] rounded-2xl" />
+        </section>
+
+        <Skeleton className="h-[360px] rounded-2xl" />
 
         <section className="grid grid-cols-2 justify-items-center gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -131,7 +141,27 @@ export default function MonitorPage() {
       </section>
 
       {/* 站点入口放在最上面：它是"外面的人从哪儿进来"，比机器自己的负载更该先被看到。 */}
-      <GatewayEntry />
+      <GatewayEntry {...gateway} />
+
+      {/* 待办是预留位（还没定要放什么），右边是横向柱状的占用对比。 */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        <div className="flex flex-col rounded-2xl border border-dashed border-border/70 px-4 py-4">
+          <p className="text-sm font-medium">{t('home.todo')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('home.todo_empty')}</p>
+        </div>
+        <div className="flex flex-col rounded-2xl border border-border/60 px-4 py-4">
+          <p className="mb-3 text-sm font-medium">{t('home.monitor')}</p>
+          <Stats
+            sys={sys}
+            diskPct={diskPct}
+            diskSub={worstDisk ? `${worstDisk.mount} · ${formatBytes(worstDisk.used)} / ${formatBytes(worstDisk.total)}` : '—'}
+            loadPct={loadPct}
+            swapPct={swapPct}
+          />
+        </div>
+      </section>
+
+      <Topology entries={gateway.sites} containers={containers} />
 
       {/* 五个环均分整行：内容只有这么点，再挤在左边就只剩一大片空。等宽列让它们
           像一排仪表铺开，右边缘也对齐了。 */}

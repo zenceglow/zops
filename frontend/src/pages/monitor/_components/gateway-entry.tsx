@@ -1,53 +1,11 @@
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ExternalLink } from 'lucide-react';
 import { SiCaddy } from 'react-icons/si';
 import { Skeleton } from '../../../components/ui/skeleton';
-import { fetchGatewayConfig, fetchGatewayStatus } from '../../sites/_api';
 import type { GatewayStatus, SiteEntry } from '../../sites/_api';
+import { siteUrl } from '../../../lib/site-url';
 import { cn } from '../../../lib/utils';
-
-/**
- * 站点地址 → 能点的 URL。
- *
- * Caddy 的地址写法很杂：`flashsync.cn`、`http://localhost:8080`、`:443`、`*.a.com`。
- * 只有前两种浏览器能直接打开；`:443` 是"本机所有网卡的这个端口"，`*.a.com` 是通配，
- * 都没有可访问的主机名，原样显示成文本就好。
- */
-function siteUrl(addr: string): string | null {
-  const head = addr.trim().split(/\s+/)[0];
-  if (!head) return null;
-  if (/^https?:\/\//i.test(head)) return head;
-  if (head.startsWith(':') || head.includes('*')) return null;
-  return `https://${head}`;
-}
-
-function useGatewayEntry() {
-  const [status, setStatus] = useState<GatewayStatus | null>(null);
-  const [sites, setSites] = useState<SiteEntry[]>([]);
-  // 请求结束（无论成败）后就不再显示骨架：否则网关没装/接口挂了会让首页永远挂着
-  // 一个加载中的占位，比"这块没有"更让人困惑。
-  const [settled, setSettled] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    // 两个都失败也无所谓 —— 首页不该因为网关没装就整块崩掉。
-    Promise.all([fetchGatewayStatus().catch(() => null), fetchGatewayConfig().catch(() => null)]).then(
-      ([st, cfg]) => {
-        if (!alive) return;
-        setStatus(st);
-        setSites(cfg?.parsed.sites ?? []);
-        setSettled(true);
-      },
-    );
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  return { status, sites, settled };
-}
 
 /**
  * 首页的站点入口。
@@ -55,9 +13,16 @@ function useGatewayEntry() {
  * 刻意跟容器那排不一样：那是"机器上跑着什么"，这是"外面的人从哪儿进来"。所以给它
  * 卡片壳、品牌色图标和明确的箭头 —— 一排图标里混着它的话，看不出这是个门。
  */
-export function GatewayEntry() {
+export function GatewayEntry({
+  status,
+  sites,
+  settled,
+}: {
+  status: GatewayStatus | null;
+  sites: SiteEntry[];
+  settled: boolean;
+}) {
   const { t } = useTranslation();
-  const { status, sites, settled } = useGatewayEntry();
 
   // 状态没回来时占住同样的位置：直接 return null 的话，卡片会在数据到达的瞬间冒
   // 出来，把下面的统计环整体往下顶一格 —— 比"先看到骨架"更难受。

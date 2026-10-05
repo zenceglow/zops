@@ -338,7 +338,10 @@
     "status_busy": "有点忙，但还稳",
     "status_critical": "有资源告急，值得看一眼",
     "uptime_prefix": "已运行",
-    "more": "更多详情"
+    "more": "更多详情",
+    "todo": "待办",
+    "todo_empty": "这块先留着，等你定要放什么。",
+    "monitor": "监控"
   },
   "net": {
     "realtime": "实时",
@@ -362,5 +365,11 @@
     "no_sites": "还没有配置站点",
     "enable": "去启用",
     "manage": "管理站点"
+  },
+  "topology": {
+    "title": "请求链路",
+    "desc": "外网 → 站点入口 → 容器，中间按端口匹配",
+    "to_port": "指向",
+    "empty": "还没有配置站点入口"
   }
 }
