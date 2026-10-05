@@ -20,6 +20,7 @@ export const Perm = {
   NAV_LOG_VIEWER: 'nav.logs',
   NAV_AUTOMATION: 'nav.automation',
   NAV_AGENT: 'nav.agent',
+  NAV_NOTIFY: 'nav.notify',
   OPS_SYSTEM_READ: 'ops.system.read',
   OPS_SERVICE_READ: 'ops.service.read',
   OPS_SERVICE_CONTROL: 'ops.service.control',
@@ -32,6 +33,7 @@ export const Perm = {
   OPS_MEMBER_MANAGE: 'ops.member.manage',
   OPS_AUTOMATION_MANAGE: 'ops.automation.manage',
   OPS_AGENT_MANAGE: 'ops.agent.manage',
+  OPS_NOTIFY_MANAGE: 'ops.notify.manage',
 } as const;
 
 export type PermissionId = (typeof Perm)[keyof typeof Perm];

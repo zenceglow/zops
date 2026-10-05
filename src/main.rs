@@ -19,7 +19,9 @@ use service::{
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     files::FilesService,
     container::ContainerService,
-    gateway::GatewayService, logs::LogService, member::MemberService, setup::SetupService,
+    gateway::GatewayService, logs::LogService, member::MemberService,
+    notify::NotifyService,
+    setup::SetupService, watch::Watcher,
     system::SystemService,
     token::TokenService,
 };
@@ -68,9 +70,18 @@ async fn async_main() {
         caddyfile: Arc::new(CaddyfileService::new(caddy, db.clone())),
         logs: Arc::new(LogService::new(db.clone())),
         members: Arc::new(MemberService::new(db.clone())),
+        notify: Arc::new(NotifyService::new(db.clone())),
         automation: Arc::new(AutomationService::new(db.clone())),
         tokens: Arc::new(TokenService::new(db.clone())),
     });
+
+    // 盯压力与容器掉线。每 60 秒看一次，越线且没在冷却期里就推通知。
+    let watcher = Watcher::new(
+        state.notify.clone(),
+        state.system.clone(),
+        state.containers.clone(),
+    );
+    tokio::spawn(watcher.run());
 
     let router = http::build_router(state);
     let app = http::assets_router(router);

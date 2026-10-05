@@ -8,6 +8,7 @@ pub mod gateway;
 pub mod logs;
 pub mod mcp;
 pub mod member;
+pub mod notify;
 pub mod permission;
 pub mod service;
 pub mod setup;

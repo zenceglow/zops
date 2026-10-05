@@ -26,6 +26,7 @@ import {
   HiClock,
   HiCpuChip,
   HiChartBarSquare,
+  HiBellAlert,
 } from 'react-icons/hi2';
 import { SiDocker } from 'react-icons/si';
 import { cn } from '../../lib/utils';
@@ -47,6 +48,7 @@ function navIcon(Icon: IconType) {
 export const NavHomeIcon = navIcon(HiHome);
 // 大屏用柱状图——这一格本来描述的就是"统计"，和首页的"回桌面"不冲突。
 export const NavScreenIcon = navIcon(HiChartBarSquare);
+export const NavNotifyIcon = navIcon(HiBellAlert);
 export const NavSitesIcon = navIcon(HiGlobeAlt);
 export const NavSshIcon = navIcon(HiCommandLine);
 export const NavFilesIcon = navIcon(HiFolderOpen);

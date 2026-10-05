@@ -5,5 +5,6 @@ pub mod db;
 pub mod docker;
 pub mod fs;
 pub mod geoip;
+pub mod notify;
 pub mod ssh;
 pub mod system;

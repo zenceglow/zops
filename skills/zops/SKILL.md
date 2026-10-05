@@ -26,6 +26,7 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 |---|---|---|
 | `ops_panel_info` | 面板版本、当前凭证范围、可用工具数 | — |
 | `ops_system_overview` | CPU / 内存 / Swap / 磁盘 / 网络 / 负载 / 进程数 | read |
+| `ops_port_list` | 正在监听的端口、占用它们的进程或容器，以及几个空端口 | read |
 | `ops_container_list` | Docker 容器列表 | read |
 | `ops_container_status` | Docker 引擎可用性与版本 | read |
 | `ops_container_logs` | 容器最近日志（`tail` 默认 100） | read |
@@ -34,11 +35,13 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 | `ops_caddyfile_get` | 读取 Caddyfile 原文 | read |
 | `ops_log_source_list` | 已登记的日志文件路径 | read |
 | `ops_log_tail` | 读某个日志文件末尾若干行 | read |
+| `ops_notify_channel_list` | 已配置的通知渠道及订阅的事件 | read |
 | `ops_container_start` / `_stop` / `_restart` | 启停容器 | **write** |
 | `ops_gateway_reload` | 重载 Caddy | **write** |
 | `ops_caddyfile_put` | 整体替换 Caddyfile（不自动重载） | **write** |
 | `ops_automation_task_list` / `_run` | 列定时任务 / 立刻执行 | **write** |
 | `ops_member_list` | 面板成员与权限 | **write** |
+| `ops_notify_send` | 往订阅了该事件的渠道推一条通知 | **write** |
 
 ## 破坏性操作
 
@@ -68,6 +71,13 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 
 常见故障的分步处置见 `references/troubleshooting.md`：
 磁盘满、容器反复重启、网站 502、证书签发失败、内存吃紧、Caddyfile 改坏回滚。
+
+## 部署剧本
+
+用户说"把这个项目部署上去"时看 `references/deploy.md`。核心是**别再手写 Docker
+配置**：这台机器上端口区间、网络、日志、反代都有既定习惯，先 `ops_port_list`
+挑一个空端口，照那份文档里的模板生成 compose，起来之后验证、接网关、最后
+`ops_notify_send` 通知一声。
 
 ## 不要做的事
 

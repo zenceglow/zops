@@ -15,6 +15,26 @@ use crate::http::middleware::auth::require_perm;
 use crate::http::AppState;
 use crate::shared::{ApiResponse, AppError};
 
+/// 端口占用 + 建议的空端口。
+///
+/// 部署一个服务最先要回答的就是"用哪个端口"，而这台机器上可能已经堆了十几个
+/// 容器和几个数据库。给 agent 用的价值更大：它可以先问这一嘴，再挑一个没人用
+/// 的端口把服务起起来，不用人肉翻 compose 文件。
+async fn ports(
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_READ)?;
+    let listeners = crate::infrastructure::system::listeners();
+    let used: std::collections::HashSet<u16> = listeners.iter().map(|p| p.port).collect();
+    // 8000-9999 是这套项目一直在用的区间（8000 系列给应用，9000 系列给工具），
+    // 顺着这个习惯找，别把新服务扔到 30000 上面去。
+    let suggested = crate::infrastructure::system::suggest_free(&used, 8000, 9999, 8);
+    Ok(Json(ApiResponse::ok(serde_json::json!({
+        "listeners": listeners,
+        "suggested": suggested,
+    }))))
+}
+
 /// 面板自身的信息。关于页用。
 ///
 /// 故意**不**要 `ops.system.read`：这是"这个软件是什么、去哪提问题"，任何登录
@@ -97,6 +117,7 @@ async fn set_timezone(
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/panel", get(panel))
+        .route("/ports", get(ports))
         .route("/overview", get(overview))
         .route("/updates", get(updates))
         .route("/updates/check", post(check_updates))

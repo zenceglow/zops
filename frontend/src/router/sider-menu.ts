@@ -18,6 +18,7 @@ import {
   NavUsersIcon,
   NavAgentIcon,
   NavScreenIcon,
+  NavNotifyIcon,
 } from '../components/icons/nav-icons';
 import { Perm } from '../lib/permissions';
 import {
@@ -46,6 +47,7 @@ const Icons = {
   NavUsersIcon,
   NavAgentIcon,
   NavScreenIcon,
+  NavNotifyIcon,
 } as const;
 
 export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
@@ -63,6 +65,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { path: '/files', labelKey: 'nav.files', icon: Icons.NavFilesIcon, perm: Perm.NAV_FILES },
       { path: '/logs', labelKey: 'nav.logs', icon: Icons.NavLogViewerIcon, perm: Perm.NAV_LOG_VIEWER },
       { path: '/agent', labelKey: 'nav.agent', icon: Icons.NavAgentIcon, perm: Perm.NAV_AGENT },
+      { path: '/notify', labelKey: 'nav.notify', icon: Icons.NavNotifyIcon, perm: Perm.NAV_NOTIFY },
     ],
   },
   {

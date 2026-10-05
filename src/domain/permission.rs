@@ -43,9 +43,13 @@ pub const NAV_LOG_VIEWER: &str = "nav.logs";
 pub const NAV_AUTOMATION: &str = "nav.automation";
 /// "接入 Codex" page: MCP endpoint + agent tokens + skill install.
 pub const NAV_AGENT: &str = "nav.agent";
+/// 通知渠道页面。
+pub const NAV_NOTIFY: &str = "nav.notify";
 
 /// Manage programmatic access tokens (MCP / skills) and read the skill pack.
 pub const OPS_AGENT_MANAGE: &str = "ops.agent.manage";
+/// 配置通知渠道（飞书 / 钉钉 / 企业微信等）。webhook 地址本身就是凭据。
+pub const OPS_NOTIFY_MANAGE: &str = "ops.notify.manage";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PermissionDef {
@@ -98,6 +102,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
         },
         PermissionDef {
             id: NAV_AGENT,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_NOTIFY,
             group: "nav",
         },
         PermissionDef {
@@ -162,6 +170,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
         },
         PermissionDef {
             id: OPS_AGENT_MANAGE,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_NOTIFY_MANAGE,
             group: "ops",
         },
     ]

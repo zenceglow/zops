@@ -239,6 +239,34 @@ impl Database {
                 offset     INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            -- 通知渠道。webhook 地址本身就是凭据（钉钉/飞书的机器人地址泄漏了谁都能
+            -- 往群里发消息），所以这一页要权限，界面上也做打码。
+            CREATE TABLE IF NOT EXISTS notify_channels (
+                id         TEXT PRIMARY KEY NOT NULL,
+                name       TEXT NOT NULL,
+                kind       TEXT NOT NULL,
+                url        TEXT NOT NULL,
+                secret     TEXT NOT NULL DEFAULT '',
+                events     TEXT NOT NULL DEFAULT '[]',
+                enabled    INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                last_at    TEXT,
+                last_ok    INTEGER,
+                last_error TEXT NOT NULL DEFAULT ''
+            );
+
+            -- 投递记录。机器人静默失败过一次，没记录就只能靠猜。
+            CREATE TABLE IF NOT EXISTS notify_log (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                at      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                channel TEXT NOT NULL DEFAULT '',
+                kind    TEXT NOT NULL DEFAULT '',
+                event   TEXT NOT NULL DEFAULT '',
+                ok      INTEGER NOT NULL DEFAULT 0,
+                status  INTEGER NOT NULL DEFAULT 0,
+                detail  TEXT NOT NULL DEFAULT ''
+            );
             ",
         )?;
 
@@ -1330,6 +1358,117 @@ impl Database {
         })?)
     }
 
+    // ── 通知渠道 ──
+
+    pub fn list_notify_channels(&self) -> Result<Vec<NotifyChannelRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, kind, url, secret, events, enabled, created_at, last_at, last_ok, last_error
+             FROM notify_channels ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(NotifyChannelRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                kind: row.get(2)?,
+                url: row.get(3)?,
+                secret: row.get(4)?,
+                events: row.get(5)?,
+                enabled: row.get::<_, i64>(6)? != 0,
+                created_at: row.get(7)?,
+                last_at: row.get(8)?,
+                last_ok: row.get::<_, Option<i64>>(9)?.map(|v| v != 0),
+                last_error: row.get(10)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn upsert_notify_channel(&self, c: &NotifyChannelRow) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO notify_channels (id, name, kind, url, secret, events, enabled)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name, kind = excluded.kind, url = excluded.url,
+                secret = excluded.secret, events = excluded.events, enabled = excluded.enabled",
+            params![
+                c.id,
+                c.name,
+                c.kind,
+                c.url,
+                c.secret,
+                c.events,
+                c.enabled as i64
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_notify_enabled(&self, id: &str, enabled: bool) -> Result<bool> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        Ok(conn.execute(
+            "UPDATE notify_channels SET enabled = ?2 WHERE id = ?1",
+            params![id, enabled as i64],
+        )? > 0)
+    }
+
+    pub fn delete_notify_channel(&self, id: &str) -> Result<bool> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        Ok(conn.execute("DELETE FROM notify_channels WHERE id = ?1", params![id])? > 0)
+    }
+
+    pub fn touch_notify_channel(&self, id: &str, ok: bool, error: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "UPDATE notify_channels SET last_at = datetime('now','localtime'), last_ok = ?2, last_error = ?3 WHERE id = ?1",
+            params![id, ok as i64, error],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_notify_log(
+        &self,
+        channel: &str,
+        kind: &str,
+        event: &str,
+        ok: bool,
+        status: i64,
+        detail: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO notify_log (channel, kind, event, ok, status, detail) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![channel, kind, event, ok as i64, status, detail],
+        )?;
+        // 只留最近 200 条：这是给人看"刚才发出去没有"，不是审计台账。
+        conn.execute(
+            "DELETE FROM notify_log WHERE id NOT IN (SELECT id FROM notify_log ORDER BY id DESC LIMIT 200)",
+            [],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_notify_log(&self, limit: i64) -> Result<Vec<NotifyLogRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, at, channel, kind, event, ok, status, detail FROM notify_log ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(NotifyLogRow {
+                id: row.get(0)?,
+                at: row.get(1)?,
+                channel: row.get(2)?,
+                kind: row.get(3)?,
+                event: row.get(4)?,
+                ok: row.get::<_, i64>(5)? != 0,
+                status: row.get(6)?,
+                detail: row.get(7)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     // ── 安全面：攻击 / 机器人 ──
 
     /// UA 命中这批关键词的请求数。
@@ -1469,6 +1608,34 @@ pub struct NewAccessEvent {
     pub duration_ms: f64,
     pub ua: String,
     pub source: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NotifyChannelRow {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub url: String,
+    pub secret: String,
+    /// JSON 数组，订阅了哪些事件。
+    pub events: String,
+    pub enabled: bool,
+    pub created_at: String,
+    pub last_at: Option<String>,
+    pub last_ok: Option<bool>,
+    pub last_error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotifyLogRow {
+    pub id: i64,
+    pub at: String,
+    pub channel: String,
+    pub kind: String,
+    pub event: String,
+    pub ok: bool,
+    pub status: i64,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone)]

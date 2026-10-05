@@ -113,6 +113,10 @@ curl -fsSL -H "Authorization: Bearer ${token}" \\
   ${origin}/api/ops/skill/references/troubleshooting \\
   -o "$D/references/troubleshooting.md.new" \\
   && mv "$D/references/troubleshooting.md.new" "$D/references/troubleshooting.md"
+curl -fsSL -H "Authorization: Bearer ${token}" \\
+  ${origin}/api/ops/skill/references/deploy \\
+  -o "$D/references/deploy.md.new" \\
+  && mv "$D/references/deploy.md.new" "$D/references/deploy.md"
 echo "已装到 $D"`;
 
   const create = async () => {

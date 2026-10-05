@@ -23,7 +23,8 @@ use crate::domain::auth::{AuthUser, Claims};
 use crate::domain::mcp::{self, Request as RpcRequest};
 use crate::domain::permission::{
     OPS_AUTOMATION_MANAGE, OPS_GATEWAY_CONTROL, OPS_GATEWAY_READ, OPS_GATEWAY_WRITE, OPS_LOG_READ,
-    OPS_MEMBER_MANAGE, OPS_SERVICE_CONTROL, OPS_SERVICE_LOG, OPS_SERVICE_READ, OPS_SYSTEM_READ,
+    OPS_MEMBER_MANAGE, OPS_NOTIFY_MANAGE, OPS_SERVICE_CONTROL, OPS_SERVICE_LOG, OPS_SERVICE_READ,
+    OPS_SYSTEM_READ,
 };
 use crate::domain::token::TOKEN_PREFIX;
 use crate::http::handlers::automation::execute_command;
@@ -130,6 +131,9 @@ enum ToolId {
     AutomationTaskList,
     AutomationTaskRun,
     MemberList,
+    PortList,
+    NotifyChannels,
+    NotifySend,
 }
 
 struct ToolDef {
@@ -350,6 +354,38 @@ fn tool_catalog() -> Vec<ToolDef> {
             schema: empty_schema,
             id: ToolId::MemberList,
         },
+        ToolDef {
+            name: "ops_port_list",
+            description: "宿主机上正在监听的 TCP 端口、占用它们的进程或容器，以及几个空出来的端口。部署新服务前先问这个，别撞端口。",
+            permission: OPS_SYSTEM_READ,
+            schema: empty_schema,
+            id: ToolId::PortList,
+        },
+        ToolDef {
+            name: "ops_notify_channel_list",
+            description: "已配置的通知渠道（飞书 / 钉钉 / 企业微信 / Slack 等）及其订阅的事件。",
+            permission: OPS_NOTIFY_MANAGE,
+            schema: empty_schema,
+            id: ToolId::NotifyChannels,
+        },
+        ToolDef {
+            name: "ops_notify_send",
+            description: "往订阅了该事件的渠道推一条通知（部署完成、故障处理完等）。事件取值见 ops_notify_channel_list。",
+            permission: OPS_NOTIFY_MANAGE,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "event": { "type": "string", "description": "deploy / container / pressure / test" },
+                        "title": { "type": "string", "description": "标题，一行" },
+                        "text": { "type": "string", "description": "正文，说清做了什么、结果如何" }
+                    },
+                    "required": ["event", "title", "text"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::NotifySend,
+        },
     ]
 }
 
@@ -474,7 +510,26 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
                 "note": "已在后台执行，可用面板「自动化」页查看输出"
             }))
         }
-            ToolId::MemberList => Ok(json!({ "members": state.members.list()? })),
+        ToolId::MemberList => Ok(json!({ "members": state.members.list()? })),
+        ToolId::PortList => {
+            let listeners = crate::infrastructure::system::listeners();
+            let used: std::collections::HashSet<u16> = listeners.iter().map(|p| p.port).collect();
+            Ok(json!({
+                "listeners": listeners,
+                "suggested": crate::infrastructure::system::suggest_free(&used, 8000, 9999, 8),
+            }))
+        }
+        ToolId::NotifyChannels => Ok(json!({ "channels": state.notify.list()? })),
+        ToolId::NotifySend => {
+            let event = require_str(args, "event").map_err(AppError::bad_request)?;
+            if !crate::service::notify::is_known_event(&event) {
+                return Err(AppError::bad_request(format!("不认识的事件: {event}")));
+            }
+            let title = require_str(args, "title").map_err(AppError::bad_request)?;
+            let text = require_str(args, "text").map_err(AppError::bad_request)?;
+            let (sent, ok) = state.notify.broadcast(&event, &title, &text).await;
+            Ok(json!({ "sent": sent, "delivered": ok }))
+        }
         }
     }
     .await;
@@ -743,6 +798,7 @@ pub fn skill_routes() -> Router<Arc<AppState>> {
         .route("/", get(skill))
         .route("/raw", get(skill_raw))
         .route("/references/troubleshooting", get(skill_troubleshooting))
+        .route("/references/deploy", get(skill_deploy))
 }
 
 /// Referenced by SKILL.md, so the install one-liner has to fetch it too —
@@ -756,6 +812,20 @@ async fn skill_troubleshooting(
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
         crate::domain::mcp::SKILL_REF_TROUBLESHOOTING,
+    )
+        .into_response())
+}
+
+/// 部署剧本，同样由安装命令一并抓下来。
+async fn skill_deploy(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let _ = resolve_principal(&state, &headers)?;
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
+        crate::domain::mcp::SKILL_REF_DEPLOY,
     )
         .into_response())
 }

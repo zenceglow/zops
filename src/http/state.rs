@@ -6,7 +6,8 @@ use crate::service::{
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     container::ContainerService,
     files::FilesService,
-    gateway::GatewayService, logs::LogService, member::MemberService, setup::SetupService,
+    gateway::GatewayService, logs::LogService, member::MemberService,
+    notify::NotifyService, setup::SetupService,
     system::SystemService,
     token::TokenService,
 };
@@ -23,6 +24,7 @@ pub struct AppState {
     pub caddyfile: Arc<CaddyfileService>,
     pub logs: Arc<LogService>,
     pub members: Arc<MemberService>,
+    pub notify: Arc<NotifyService>,
     pub automation: Arc<AutomationService>,
     /// Agent access tokens (MCP / skills). Verified by `handlers::mcp`.
     pub tokens: Arc<TokenService>,

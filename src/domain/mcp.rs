@@ -26,6 +26,11 @@ pub const SKILL_CONTENT: &str = include_str!("../../skills/zops/SKILL.md");
 pub const SKILL_REF_TROUBLESHOOTING: &str =
     include_str!("../../skills/zops/references/troubleshooting.md");
 
+/// 部署剧本。用户说"把这个项目部署上去"时 agent 照着走 —— 把这台机器上的部署
+/// 习惯（端口区间、网络、日志、反代）写死在文档里，就不用每个项目再手写一遍
+/// Dockerfile 和 compose。
+pub const SKILL_REF_DEPLOY: &str = include_str!("../../skills/zops/references/deploy.md");
+
 pub const PARSE_ERROR: i64 = -32700;
 pub const INVALID_REQUEST: i64 = -32600;
 pub const METHOD_NOT_FOUND: i64 = -32601;

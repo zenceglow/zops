@@ -16,7 +16,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::http::handlers::{
     analytics, audit, auth, automation, caddyfile, files, gateway, logs, member, permission,
-    service, setup, ssh, system, mcp, token as token_handler,
+    notify, service, setup, ssh, system, mcp, token as token_handler,
 };
 use crate::http::middleware::{audit::audit_middleware, auth::auth_middleware};
 
@@ -39,6 +39,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/token", token_handler::routes())
         .nest("/audit", audit::routes())
         .nest("/analytics", analytics::routes())
+        .nest("/notify", notify::routes())
         .nest("/agent", mcp::catalog_routes())
         // 顺序要紧：后加的层在外层、先执行。审计要看到 AuthUser，所以必须套在
         // 鉴权里面；同时它要在 handler 之前，才能同时拿到请求体和最终状态码。

@@ -39,6 +39,7 @@ const DOCK_ORDER = [
   '/sites',
   '/docker',
   '/members',
+  '/notify',
 ];
 
 const ALL_ITEMS: SidebarItem[] = SIDEBAR_GROUPS.flatMap((g) => g.items);
