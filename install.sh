@@ -71,6 +71,8 @@ msg() {
     d_port) [ "$L" = zh ] && printf '  端口      %s' "$1" || printf '  Port      %s' "$1" ;;
     d_domain) [ "$L" = zh ] && printf '  域名      %s' "$1" || printf '  Domain    %s' "$1" ;;
     mode_upgrade) [ "$L" = zh ] && printf '将升级 %s → %s（数据保留，账号密码不动）' "$1" "$2" || printf 'Upgrading %s → %s (data and credentials are kept)' "$1" "$2" ;;
+    mode_upgrade_unknown) [ "$L" = zh ] && printf '将升级到 %s（原版本问不出来 —— 那一版还没有 --version，接口里也没带版本号；数据保留）' "$1" || printf 'Upgrading to %s (the installed version could not be read — that build predates --version; data is kept)' "$1" ;;
+    mode_replace) [ "$L" = zh ] && printf '将重新安装一遍（数据保留）' || printf 'Reinstalling over it (data kept)' ;;
     mode_same) [ "$L" = zh ] && printf '已经是最新的 %s，将重新安装一遍（数据保留）' "$1" || printf 'Already on %s — reinstalling over it (data kept)' "$1" ;;
     mode_downgrade) [ "$L" = zh ] && printf '将降级 %s → %s。旧库比这版新，可能不兼容 —— 已经自动备份，但请留意。' "$1" "$2" || printf 'Downgrading %s → %s. The data was written by a newer build and may not be compatible — a backup has been taken.' "$1" "$2" ;;
     mode_fresh) [ "$L" = zh ] && printf '将安装 %s' "$1" || printf 'Installing %s' "$1" ;;
@@ -244,6 +246,27 @@ command -v curl >/dev/null 2>&1 || die "curl is required / 缺少 curl"
 #
 # 下载放在最前面，是因为"这次是升级还是全新安装"要拿新旧两个版本号比 —— 不知道
 # 新版本是多少就没法回答。反正装的时候本来也要下，早下晚下一样。
+
+# 带超时地跑一个命令。
+#
+# 这里必须限时：**问一个不认识 --version 的旧二进制要版本号，它不会报错，
+# 而是直接启动一个面板跑起来** —— 于是安装脚本就永远停在那儿了。这不是假设，
+# 47.99.101.158 上第一次测试就是这么卡住的。
+run_with_timeout() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    # timeout 超时返回 124，而调用处是 `VAR="$(run_with_timeout …)"` —— 在
+    # `set -e` 下那会直接结束整个安装脚本。超时是预期结果，不是失败。
+    timeout "$secs" "$@" || true
+  else
+    "$@" & local pid=$!
+    ( sleep "$secs"; kill -9 "$pid" 2>/dev/null ) &
+    # 被 kill 的子进程让 wait 返回 137，同样不能让它冒泡出去。
+    wait "$pid" 2>/dev/null || true
+  fi
+  return 0
+}
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -254,7 +277,9 @@ else
   curl -fsSL "$BIN_URL" -o "$NEW_BIN" || die "Download failed / 下载失败：$BIN_URL"
 fi
 chmod +x "$NEW_BIN"
-NEW_VER="$("$NEW_BIN" --version 2>/dev/null | awk '{print $2}')"
+# 给个一次性数据目录 + 端口 0：万一下来的包是个旧版本，它启动的那个实例也碰不到
+# 真库、占不到真端口。
+NEW_VER="$(OPS_DATA_DIR="$TMP/verprobe" OPS_PORT=0 run_with_timeout 5 "$NEW_BIN" --version 2>/dev/null | awk '{print $2}')"
 [ -n "$NEW_VER" ] || NEW_VER="unknown"
 
 # ─────────────────────── 已有安装的检测 ───────────────────────
@@ -308,14 +333,13 @@ detect_existing() {
     s="$(curl -fsS --max-time 4 "http://127.0.0.1:$EXIST_PORT/api/ops/setup/status" 2>/dev/null || true)"
     EXIST_VER="$(printf '%s' "$s" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
   fi
-  # 服务没在跑就问二进制自己。
-  if [ -z "$EXIST_VER" ] && [ -x "$BIN_PATH" ]; then
-    EXIST_VER="$("$BIN_PATH" --version 2>/dev/null | awk '{print $2}')"
-  fi
   # 最后看安装时留下的版本文件。
   if [ -z "$EXIST_VER" ] && [ -f "$EXIST_DATA/version" ]; then
     EXIST_VER="$(head -1 "$EXIST_DATA/version" 2>/dev/null | tr -d '[:space:]')"
   fi
+  # 故意**不**去执行已装的那个二进制问版本：不认识 --version 的老版本会直接
+  # 启动一个面板，把安装脚本挂死（真踩过）。问不出来就报"版本未知"，那不影响
+  # 升级 —— 数据目录和端口是从 unit 里读的，跟版本号没关系。
   if [ -n "$EXIST_PORT" ]; then
     EXIST_DOMAIN="$(find_domain "$EXIST_PORT")"
   fi
@@ -383,8 +407,12 @@ if [ "$EXISTING" = "1" ]; then
     fi
   elif [ -n "$NEW_VER" ] && [ "$NEW_VER" = "$EXIST_VER" ]; then
     MODE="same"; say "$(msg mode_same "$NEW_VER")"
+  elif [ -n "$NEW_VER" ]; then
+    # 新版本知道、老版本问不出来。真实场景：装的那一版还没有 --version，
+    # /setup/status 也还没带 version 字段。
+    MODE="upgrade"; say "$(msg mode_upgrade_unknown "$NEW_VER")"
   else
-    MODE="upgrade"; say "$(msg mode_upgrade "${EXIST_VER:-?}" "${NEW_VER:-?}")"
+    MODE="upgrade"; say "$(msg mode_replace)"
   fi
   choose "$(msg confirm_proceed)" "$(msg continue_now)" "$(msg cancel)" 1
   [ "$REPLY" = "2" ] && die "$(msg cancel)"
