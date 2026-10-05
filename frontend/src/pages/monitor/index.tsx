@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { Skeleton } from '../../components/ui/skeleton';
-import { cn } from '../../lib/utils';
 import useUserStore from '../../stores/user.store';
 import { formatBytes, formatUptime, useMonitor } from './_hooks/use-monitor';
+import { ContainerGrid } from './_components/container-grid';
 import { NetworkWidget } from './_components/network-widget';
 import { Ring } from './_components/ring';
 
@@ -53,18 +53,22 @@ export default function MonitorPage() {
 
   return (
     <div className="space-y-9">
-      <section className="pt-6 sm:pt-10">
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-          {t(greetingKey(new Date().getHours()))}
-          {user?.username ? `${t('home.name_sep')}${user.username}` : ''}
-        </h1>
-        <p className="mt-4 text-base text-muted-foreground">
-          {t(`home.status_${status}`)}
-          <span className="mx-2 opacity-40">·</span>
-          {sys.hostname}
-          <span className="mx-2 opacity-40">·</span>
-          {t('home.uptime_prefix')} {formatUptime(sys.uptime_secs)}
-        </p>
+      {/* 顶部一行：左边问候，右边网络。网络固定 188px 高，跟左列同排对齐。 */}
+      <section className="flex flex-col gap-8 pt-6 sm:flex-row sm:items-start sm:justify-between sm:pt-10">
+        <div className="min-w-0">
+          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+            {t(greetingKey(new Date().getHours()))}
+            {user?.username ? `${t('home.name_sep')}${user.username}` : ''}
+          </h1>
+          <p className="mt-4 text-base text-muted-foreground">
+            {t(`home.status_${status}`)}
+            <span className="mx-2 opacity-40">·</span>
+            {sys.hostname}
+            <span className="mx-2 opacity-40">·</span>
+            {t('home.uptime_prefix')} {formatUptime(sys.uptime_secs)}
+          </p>
+        </div>
+        <NetworkWidget />
       </section>
 
       <section className="grid grid-cols-2 justify-items-center gap-x-6 gap-y-10 sm:grid-cols-4">
@@ -98,27 +102,7 @@ export default function MonitorPage() {
         />
       </section>
 
-      <NetworkWidget />
-
-      {dockerSt?.available && containers.length > 0 && (
-        <section className="flex flex-wrap items-center justify-center gap-2">
-          {containers.map((c) => (
-            <span
-              key={c.id}
-              className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/50 px-3 py-1.5 text-xs"
-              title={c.image}
-            >
-              <span
-                className={cn(
-                  'size-1.5 shrink-0 rounded-full',
-                  c.state === 'running' ? 'bg-emerald-500' : 'bg-muted-foreground/40',
-                )}
-              />
-              <span className="text-foreground/90">{c.name}</span>
-            </span>
-          ))}
-        </section>
-      )}
+      {dockerSt?.available && <ContainerGrid containers={containers} />}
     </div>
   );
 }
