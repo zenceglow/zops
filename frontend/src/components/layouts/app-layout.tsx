@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom';
 import { Dock } from './dock';
+import { MenuBar } from './menu-bar';
 import useAuthorizeStore from '../../stores/authorize.store';
 
 /**
@@ -27,7 +28,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="relative min-h-screen bg-background">
-      <main className="mx-auto w-full max-w-6xl px-5 pb-32 pt-6 sm:px-8">{children}</main>
+            {/* pt-11：给顶部 28px 的菜单栏让位，再留一点呼吸。 */}
+      <main className="mx-auto w-full max-w-6xl px-5 pb-32 pt-11 sm:px-8">{children}</main>
+      <MenuBar />
       <Dock />
     </div>
   );

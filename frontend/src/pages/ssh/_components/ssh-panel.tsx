@@ -21,7 +21,9 @@ export function SshPanel() {
   } = useSshTerminal();
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
+    // 高度减掉的是外壳给上下留的边距：顶部菜单栏 2.75rem + 底部给 Dock 的 8rem。
+    // 以前按 8rem 算，加了菜单栏之后页面会多出可滚动的一截。
+    <div className="flex h-[calc(100vh-11rem)] flex-col gap-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{t('ssh.title')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t('ssh.subtitle')}</p>
