@@ -18,7 +18,8 @@ use crate::domain::auth::Claims;
 use crate::domain::permission::OPS_SSH_CONNECT;
 use crate::http::AppState;
 use crate::infrastructure::ssh::{
-    run_bridge, ClientBridgeIn, ClientMsg, ServerMsg, SshConnectParams, SshSession,
+    is_local_host, run_bridge, ClientBridgeIn, ClientMsg, LocalSession, ServerMsg,
+    Session, SshConnectParams, SshSession,
 };
 
 #[derive(Deserialize)]
@@ -108,7 +109,15 @@ async fn handle_socket(socket: WebSocket) {
         }
     };
 
-    let ssh = match SshSession::connect(connect).await {
+    // 目标是本机就直接开本地 PTY：面板本来就以 root 跑在这台机器上，让人再去
+    // SSH 回自己、还得输密码，纯属绕路（而且很多机器根本不允许 root 密码登录）。
+    let session = if is_local_host(&connect.host) {
+        LocalSession::spawn(connect.cols, connect.rows).map(Session::Local)
+    } else {
+        SshSession::connect(connect).await.map(Session::Ssh)
+    };
+
+    let session = match session {
         Ok(s) => s,
         Err(e) => {
             let _ = send_json(
@@ -130,7 +139,7 @@ async fn handle_socket(socket: WebSocket) {
     let (to_ssh_tx, to_ssh_rx) = mpsc::channel::<ClientBridgeIn>(256);
     let (from_ssh_tx, mut from_ssh_rx) = mpsc::channel::<ServerMsg>(256);
 
-    tokio::spawn(run_bridge(ssh, to_ssh_rx, from_ssh_tx));
+    tokio::spawn(run_bridge(session, to_ssh_rx, from_ssh_tx));
 
     loop {
         tokio::select! {

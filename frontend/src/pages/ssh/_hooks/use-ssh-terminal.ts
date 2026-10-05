@@ -14,6 +14,12 @@ export type ConnectForm = {
   password: string;
 };
 
+/**
+ * local：直接开本机 shell，不碰网络，也不需要凭据。
+ * remote：对方是另一台机器，按 SSH 正常认证。
+ */
+export type ConnectMode = 'local' | 'remote';
+
 export function useSshTerminal() {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -23,8 +29,11 @@ export function useSshTerminal() {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
+  const [mode, setMode] = useState<ConnectMode>('local');
   const [form, setForm] = useState<ConnectForm>({
-    host: '127.0.0.1',
+    // 不预填 127.0.0.1：本机模式根本用不到主机，而在远程模式下预填本机地址
+    // 只会让人以为"远程连自己"，何况后端认得出本机、会直接走本地 shell。
+    host: '',
     port: 22,
     username: 'root',
     password: '',
@@ -50,7 +59,9 @@ export function useSshTerminal() {
       setStatus(t('ssh.status_need_login'));
       return;
     }
-    if (!form.host.trim() || !form.username.trim()) {
+    // 本机模式没有主机和用户名可填，那两栏的校验只对远程生效。
+    const local = mode === 'local';
+    if (!local && (!form.host.trim() || !form.username.trim())) {
       setStatus(t('ssh.status_need_fields'));
       return;
     }
@@ -79,10 +90,11 @@ export function useSshTerminal() {
       const rows = term?.rows ?? 24;
       send({
         type: 'connect',
-        host: form.host.trim(),
-        port: form.port || 22,
-        username: form.username.trim(),
-        password: form.password,
+        // 后端认这几个写法为"本机"，走本地 PTY，凭据字段会被忽略。
+        host: local ? 'localhost' : form.host.trim(),
+        port: local ? 22 : form.port || 22,
+        username: local ? '' : form.username.trim(),
+        password: local ? '' : form.password,
         cols,
         rows,
       });
@@ -124,7 +136,7 @@ export function useSshTerminal() {
       setConnecting(false);
       wsRef.current = null;
     };
-  }, [disconnect, form, send, t]);
+  }, [disconnect, form, mode, send, t]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -190,6 +202,8 @@ export function useSshTerminal() {
     containerRef,
     form,
     setForm,
+    mode,
+    setMode,
     connected,
     connecting,
     status,

@@ -140,7 +140,7 @@
   },
   "ssh": {
     "title": "SSH",
-    "subtitle": "通过面板连接到远程主机的交互式终端",
+    "subtitle": "交互式终端：本机直连，或连到远程主机",
     "host": "主机",
     "port": "端口",
     "username": "用户名",
@@ -153,7 +153,10 @@
     "status_closed": "会话已关闭",
     "status_need_login": "未登录",
     "status_need_fields": "请填写主机与用户名",
-    "status_ws_error": "WebSocket 错误"
+    "status_ws_error": "WebSocket 错误",
+    "mode_local": "本机",
+    "mode_remote": "远程主机",
+    "local_hint": "直接打开这台机器的 shell，不需要密码。"
   },
   "files": {
     "title": "文件",

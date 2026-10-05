@@ -140,7 +140,7 @@
   },
   "ssh": {
     "title": "SSH",
-    "subtitle": "Interactive terminal to a remote host from the panel",
+    "subtitle": "Interactive terminal: this machine, or a remote host",
     "host": "Host",
     "port": "Port",
     "username": "Username",
@@ -153,7 +153,10 @@
     "status_closed": "Session closed",
     "status_need_login": "Not signed in",
     "status_need_fields": "Host and username are required",
-    "status_ws_error": "WebSocket error"
+    "status_ws_error": "WebSocket error",
+    "mode_local": "This machine",
+    "mode_remote": "Remote host",
+    "local_hint": "Opens a shell on the machine running the panel — no password needed."
   },
   "files": {
     "title": "Files",
