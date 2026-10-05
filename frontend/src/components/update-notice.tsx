@@ -101,7 +101,11 @@ export function UpdateNotice() {
         if (!o && dismissible) snooze();
       }}
     >
-      <DialogContent className="sm:max-w-md" showCloseButton={dismissible}>
+      {/* `[&>*]:min-w-0` 不能省：DialogContent 是个 grid，grid 子项默认
+          `min-width: auto`，于是"一行命令不许换行"的 min-content 会把整块内容
+          顶到弹窗外面去 —— 命令越长溢出越多，看着像弹窗没生效。放开子项的最小
+          宽度，里面的 truncate 才有机会真的截断。 */}
+      <DialogContent className="sm:max-w-md [&>*]:min-w-0" showCloseButton={dismissible}>
         <DialogHeader>
           <DialogTitle>{t('update.title', { version: latest })}</DialogTitle>
           {!done && (
