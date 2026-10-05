@@ -5,7 +5,6 @@ import { formatBytes, formatUptime, useMonitor } from './_hooks/use-monitor';
 import { ContainerGrid } from './_components/container-grid';
 import { GatewayEntry } from './_components/gateway-entry';
 import { NetworkWidget } from './_components/network-widget';
-import { Ring } from './_components/ring';
 import { Stats } from './_components/stats';
 import { Topology } from './_components/topology';
 import { useGatewayEntries } from './_hooks/use-gateway';
@@ -58,14 +57,6 @@ export default function MonitorPage() {
 
         <Skeleton className="h-[360px] rounded-2xl" />
 
-        <section className="grid grid-cols-2 justify-items-center gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex flex-col items-center gap-5">
-              <Skeleton className="size-[116px] rounded-full" />
-              <Skeleton className="h-4 w-16" />
-            </div>
-          ))}
-        </section>
 
         <section className="space-y-6">
           <Skeleton className="h-5 w-24" />
@@ -91,34 +82,6 @@ export default function MonitorPage() {
   const worst = Math.max(sys.cpu_usage, sys.memory_percent, diskPct, swapPct);
   const status = worst >= 90 ? 'critical' : worst >= 75 ? 'busy' : 'ok';
 
-  const rings = [
-    { value: sys.cpu_usage, label: t('monitor.cpu'), sub: `${sys.cpu_cores} ${t('monitor.cores')}` },
-    {
-      value: loadPct,
-      label: t('monitor.load'),
-      sub: sys.load_avg.map((n) => n.toFixed(1)).join(' / '),
-    },
-    {
-      value: sys.memory_percent,
-      label: t('monitor.memory'),
-      sub: `${formatBytes(sys.memory_used)} / ${formatBytes(sys.memory_total)}`,
-    },
-    {
-      value: diskPct,
-      label: t('monitor.disk'),
-      sub: worstDisk
-        ? `${worstDisk.mount} · ${formatBytes(worstDisk.used)} / ${formatBytes(worstDisk.total)}`
-        : '—',
-    },
-    {
-      value: swapPct,
-      label: t('monitor.swap'),
-      sub:
-        sys.swap_total > 0
-          ? `${formatBytes(sys.swap_used)} / ${formatBytes(sys.swap_total)}`
-          : '—',
-    },
-  ];
 
   return (
     <div className="space-y-8">
@@ -163,13 +126,6 @@ export default function MonitorPage() {
 
       <Topology entries={gateway.sites} containers={containers} />
 
-      {/* 五个环均分整行：内容只有这么点，再挤在左边就只剩一大片空。等宽列让它们
-          像一排仪表铺开，右边缘也对齐了。 */}
-      <section className="grid grid-cols-2 justify-items-center gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
-        {rings.map((r) => (
-          <Ring key={r.label} value={r.value} label={r.label} sub={r.sub} />
-        ))}
-      </section>
 
       {dockerSt?.available && <ContainerGrid containers={containers} />}
     </div>
