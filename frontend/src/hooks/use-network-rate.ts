@@ -4,7 +4,58 @@ import type { SysInfo } from '../pages/monitor/_api';
 
 const POLL_MS = 2000;
 /** 保留最近 60 个采样点 ≈ 2 分钟，够画一条能看出起伏的曲线。 */
-const HISTORY = 60;
+export const NET_HISTORY_SIZE = 60;
+
+/**
+ * 曲线存在浏览器会话里。
+ *
+ * 速率是"两次采样的差值"，只能在前端算，后端没有历史可查 —— 于是刷新一下
+ * 页面，攒了两分钟的曲线就没了。存 sessionStorage 而不是 localStorage：它
+ * 跟着标签页走，关掉标签页即清空，不会把几天前的旧趋势拿来配今天的数据。
+ */
+const STORAGE_KEY = 'zops:net-rate-history:v1';
+/**
+ * 恢复时的断档上限。
+ *
+ * 不能按"绝对年龄"来裁剪：缓冲区本来就是 2 分钟，若只留最近 1 分钟，每次刷新
+ * 曲线都会凭空短一截，看起来就像"还是没存住"。改成只看**最后一点距今多久** ——
+ * 普通刷新只差一两秒，整条曲线原样接上；笔记本休眠后回来再看，最后一点已是
+ * 十分钟前，这时候才整段丢弃，免得多出一条跨越空洞的假折线。
+ */
+const MAX_GAP_MS = 30_000;
+
+type Sample = { t: number; rx: number; tx: number };
+
+function loadHistory(): Sample[] {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const tail = parsed
+      .filter(
+        (p): p is Sample =>
+          !!p &&
+          typeof p.t === 'number' &&
+          typeof p.rx === 'number' &&
+          typeof p.tx === 'number',
+      )
+      .slice(-NET_HISTORY_SIZE);
+    const last = tail[tail.length - 1];
+    if (!last || Date.now() - last.t > MAX_GAP_MS) return [];
+    return tail;
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(points: Sample[]) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(points.slice(-NET_HISTORY_SIZE)));
+  } catch {
+    // 无痕模式 / 配额已满：存不下就让曲线退化成"仅本次会话有效"，不该因此报错。
+  }
+}
 
 export type IfaceRate = {
   name: string;
@@ -45,7 +96,9 @@ export function isPrimaryIface(name: string) {
 export function useNetworkRate(enabled = true): NetStats | null {
   const [stats, setStats] = useState<NetStats | null>(null);
   const prev = useRef<{ t: number; byName: Map<string, { rx: number; tx: number }> } | null>(null);
-  const history = useRef<{ rx: number; tx: number }[]>([]);
+  const history = useRef<Sample[] | null>(null);
+  // 懒加载：只在首次渲染读一次会话存储，effect 因 enabled 变化重跑时不该再读。
+  if (history.current === null) history.current = loadHistory();
 
   useEffect(() => {
     if (!enabled) return;
@@ -81,8 +134,17 @@ export function useNetworkRate(enabled = true): NetStats | null {
         }
       }
 
+      // 首次采样没有前值可差分，此时 rxRate/txRate 恒为 0，记进去会在曲线开头
+      // 留下一个掉到底的假尖点，所以只在真正算出速率之后才落点。
+      const first = prev.current === null;
       prev.current = { t: now, byName };
-      history.current = [...history.current, { rx: rxRate, tx: txRate }].slice(-HISTORY);
+      if (!first) {
+        const points = [...(history.current ?? []), { t: now, rx: rxRate, tx: txRate }].slice(
+          -NET_HISTORY_SIZE,
+        );
+        history.current = points;
+        saveHistory(points);
+      }
 
       setStats({
         rxRate,
@@ -96,7 +158,7 @@ export function useNetworkRate(enabled = true): NetStats | null {
           rxTotal: n.rx_bytes,
           txTotal: n.tx_bytes,
         })),
-        history: history.current,
+        history: (history.current ?? []).map(({ rx, tx }) => ({ rx, tx })),
       });
     };
 
