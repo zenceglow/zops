@@ -68,10 +68,54 @@
   animation: topology-flow 1.4s linear infinite;
 }
 
+/* 清理弹窗：扫描时一道光扫过去，执行时进度条来回跑。 */
+@keyframes scan-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.scan-sweep {
+  animation: scan-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes bar-slide {
+  0% {
+    transform: translateX(-70%);
+  }
+  100% {
+    transform: translateX(230%);
+  }
+}
+
+.bar-slide {
+  animation: bar-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.pop-in {
+  animation: pop-in 0.22s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .topology-edge,
   .animate-breathe,
-  .animate-ping {
+  .animate-ping,
+  .scan-sweep,
+  .bar-slide {
     animation: none;
   }
 }

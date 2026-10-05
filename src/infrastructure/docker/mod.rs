@@ -1,3 +1,3 @@
 pub mod client;
 
-pub use client::{DockerClient, PruneRequest, PruneResult};
+pub use client::{DockerClient, JunkSummary, PruneRequest, PruneResult};

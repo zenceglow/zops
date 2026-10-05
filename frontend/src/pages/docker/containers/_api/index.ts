@@ -45,6 +45,24 @@ export interface PruneResult {
   bytes: number;
 }
 
+export interface JunkItem {
+  count: number;
+  bytes: number;
+}
+
+export interface JunkSummary {
+  images: JunkItem;
+  containers: JunkItem;
+  networks: JunkItem;
+}
+
+/** 扫一遍有多少可清理的。跟 prune 同一套口径，不然两个数对不上。 */
+export async function fetchJunk() {
+  const res = await get<JunkSummary>('/service/junk');
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
+}
+
 /** 清理垃圾。默认只清"没人还在用"的三类；卷不在接口里，后端也不动它。 */
 export async function pruneJunk(what: { containers: boolean; images: boolean; networks: boolean }) {
   const res = await post<PruneResult>('/service/prune', what);

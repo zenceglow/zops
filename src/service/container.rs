@@ -47,6 +47,13 @@ impl ContainerService {
         Ok(serde_json::json!({ "logs": logs }))
     }
 
+    /// 扫一遍可清理项（悬空镜像 / 已停止容器 / 未使用网络）。不碰卷。
+    pub async fn junk_summary(
+        &self,
+    ) -> Result<crate::infrastructure::docker::JunkSummary, AppError> {
+        self.docker.junk_summary().await
+    }
+
     /// 清理垃圾（悬空镜像 / 已停止容器 / 未使用网络）。不碰卷。
     pub async fn prune(
         &self,

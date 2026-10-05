@@ -404,6 +404,19 @@
     "running": "Cleaning…",
     "done": "Removed {{count}} items, freed {{size}}",
     "nothing": "Nothing to clean up.",
-    "fail": "Cleanup failed"
+    "fail": "Cleanup failed",
+    "scanning": "Scanning for reclaimable space…",
+    "scan_fail": "Scan failed",
+    "items": "items",
+    "confirm_desc": "Confirm what will be removed.",
+    "confirm_title": "Clean up?",
+    "confirm_body": "Removes {{count}} items and frees about {{size}}. This cannot be undone.",
+    "confirm_yes": "Yes, clean up",
+    "back": "Back",
+    "running_hint": "Cleaning up…",
+    "done_title": "Cleanup finished",
+    "done_desc": "The cleanup has finished.",
+    "done_body": "Removed {{count}} items",
+    "close": "Done"
   }
 }

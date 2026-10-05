@@ -404,6 +404,19 @@
     "running": "清理中…",
     "done": "已清理 {{count}} 项，释放 {{size}}",
     "nothing": "没有可清理的内容。",
-    "fail": "清理失败"
+    "fail": "清理失败",
+    "scanning": "正在扫描可清理的内容…",
+    "scan_fail": "扫描失败",
+    "items": "项",
+    "confirm_desc": "确认一下要清理的范围。",
+    "confirm_title": "确认清理？",
+    "confirm_body": "将删除 {{count}} 项，预计释放 {{size}}。此操作不可撤销。",
+    "confirm_yes": "确认清理",
+    "back": "返回",
+    "running_hint": "正在清理…",
+    "done_title": "清理完成",
+    "done_desc": "本次清理已结束。",
+    "done_body": "删除 {{count}} 项",
+    "close": "完成"
   }
 }

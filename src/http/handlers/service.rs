@@ -99,6 +99,15 @@ async fn logs(
     Ok(Json(ApiResponse::ok(data)))
 }
 
+/// 扫描可清理项。前端弹窗"扫描"那一步的数据来源。
+async fn junk(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<crate::infrastructure::docker::JunkSummary>>, AppError> {
+    require_perm(&user, OPS_SERVICE_CONTROL)?;
+    Ok(Json(ApiResponse::ok(state.containers.junk_summary().await?)))
+}
+
 /// 清理垃圾。要显式指定清哪几类 —— 不给默认值，免得前端漏传一个参数就把
 /// 用户没打算删的东西删了。
 async fn prune(
@@ -117,6 +126,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/start", post(start))
         .route("/stop", post(stop))
         .route("/restart", post(restart))
+        .route("/junk", get(junk))
         .route("/prune", post(prune))
         .route("/", delete(remove))
         .route("/log", get(logs))

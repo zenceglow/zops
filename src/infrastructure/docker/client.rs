@@ -47,6 +47,20 @@ pub struct PruneResult {
     pub bytes: i64,
 }
 
+/// 一类可清理的东西：有几项、大概能释放多少。
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct JunkItem {
+    pub count: i64,
+    pub bytes: i64,
+}
+
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct JunkSummary {
+    pub images: JunkItem,
+    pub containers: JunkItem,
+    pub networks: JunkItem,
+}
+
 /// 端口映射的线上格式：`宿主ip:宿主端口-容器端口`，多条用逗号分隔。
 ///
 /// 只声明、没映射到宿主端口的写成 `0.0.0.0:0-容器端口`，前端会跳过宿主端口为 0
@@ -469,6 +483,78 @@ impl DockerClient {
             result.networks = r.networks_deleted.map(|v| v.len() as i64).unwrap_or(0);
         }
         Ok(result)
+    }
+
+    /// 扫一遍"有多少垃圾可清"。
+    ///
+    /// 口径必须和 `prune` 一致，否则弹窗说"可释放 2.1 GB"、点完只放出 300 MB，
+    /// 用户下次就不信这个数了：镜像只算**悬空**的（没标签也没被引用），容器只算
+    /// 已经停掉的，网络只算除 docker 自带的 bridge/host/none 之外、没容器接入的。
+    pub async fn junk_summary(&self) -> Result<JunkSummary, AppError> {
+        let docker = self.docker()?;
+        let mut out = JunkSummary::default();
+
+        if let Ok(images) = docker
+            .list_images(None::<bollard::image::ListImagesOptions<String>>)
+            .await
+        {
+            for img in images {
+                // 悬空镜像的 repo_tags 是空的，或者只剩 <none>:<none>。
+                let dangling = img.repo_tags.is_empty()
+                    || img
+                        .repo_tags
+                        .iter()
+                        .all(|t| t.starts_with("<none>"));
+                if dangling {
+                    out.images.count += 1;
+                    // size 里含与其他镜像共享的层，减掉才是真正能回收的。
+                    out.images.bytes += (img.size - img.shared_size).max(0);
+                }
+            }
+        }
+
+        if let Ok(list) = docker
+            .list_containers(Some(ListContainersOptions::<String> {
+                all: true,
+                ..Default::default()
+            }))
+            .await
+        {
+            for c in list {
+                if c.state.as_deref() != Some("running") {
+                    out.containers.count += 1;
+                    out.containers.bytes += c.size_rw.unwrap_or(0).max(0);
+                }
+            }
+        }
+
+        if let Ok(list) = docker
+            .list_networks(None::<bollard::network::ListNetworksOptions<String>>)
+            .await
+        {
+            for n in list {
+                let name = n.name.unwrap_or_default();
+                // bridge / host / none 是 dockerd 自己建的，prune 也不会碰它们。
+                if matches!(name.as_str(), "bridge" | "host" | "none") {
+                    continue;
+                }
+                // 必须逐个 inspect：**列表接口不返回网络里挂了哪些容器**，那个字段
+                // 一直是空的。只看列表的话，所有 compose 网络都会被算成"没在使用"
+                // —— 实测报出 6 个，而实际上它们各自都接着容器。
+                let in_use = docker
+                    .inspect_network(&name, None::<bollard::network::InspectNetworkOptions<String>>)
+                    .await
+                    .ok()
+                    .and_then(|d| d.containers)
+                    .map(|c| !c.is_empty())
+                    .unwrap_or(true); // 查不到就当在用，宁可少清也不要清错
+                if !in_use {
+                    out.networks.count += 1;
+                }
+            }
+        }
+
+        Ok(out)
     }
 
     pub async fn restart(&self, id: &str) -> Result<(), AppError> {
