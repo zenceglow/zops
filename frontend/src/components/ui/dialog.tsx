@@ -129,7 +129,9 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-[20px] border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        // 不要独立底色、也不要那条分割线：那是"表单页脚"的写法，会把一个对话框
+        // 切成上下两截。现在只是内容区最后一行按钮，靠间距分组就够了。
+        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
