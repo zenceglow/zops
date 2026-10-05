@@ -9,7 +9,7 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 
 **先确认能力边界**：调用 `ops_panel_info` 看当前凭证的 `credential_scope`。
 `read` 只能看，写操作会返回权限错误；`write` 可以启停容器、重载网关。
-如果只读令牌不够用，让用户在面板「接入 Codex」页新建一个 write 令牌。
+如果只读令牌不够用，让用户在面板「MCP」页新建一个 write 令牌。
 
 ## 工作方式
 

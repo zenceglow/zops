@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bot, Copy, KeyRound, Plus, RefreshCw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Copy, KeyRound, Plus, Puzzle, Trash2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import {
   Select,
   SelectContent,
@@ -13,6 +11,7 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { toast } from '../../components/ui/sonner';
+import { cn } from '../../lib/utils';
 import {
   createToken,
   getSkill,
@@ -22,97 +21,109 @@ import {
   type ApiTokenInfo,
 } from './_api';
 
-function CopyRow({ label, value, mono = true }: { label?: string; value: string; mono?: boolean }) {
+/** 从 SKILL.md 的 frontmatter 里取名字和描述，正文不用整篇铺出来。 */
+function skillSummary(content: string) {
+  const fm = content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+  const pick = (k: string) => fm.match(new RegExp(`^${k}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? '';
+  return { name: pick('name'), description: pick('description') };
+}
+
+function CopyBlock({
+  label,
+  value,
+  className,
+}: {
+  label?: string;
+  value: string;
+  className?: string;
+}) {
+  const [done, setDone] = useState(false);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(value);
-      toast.success('已复制');
+      setDone(true);
+      setTimeout(() => setDone(false), 1600);
     } catch {
       toast.error('复制失败，请手动选择');
     }
   };
   return (
-    <div className="space-y-1.5">
-      {label && <p className="text-xs text-muted-foreground">{label}</p>}
-      <div className="flex items-start gap-2">
-        <pre
-          className={`min-w-0 flex-1 overflow-x-auto rounded-lg border bg-muted/40 p-3 text-xs leading-relaxed ${
-            mono ? 'font-mono' : ''
-          }`}
-        >
-          {value}
-        </pre>
-        <Button variant="secondary" size="sm" onClick={copy} className="shrink-0">
-          <Copy />
-          复制
-        </Button>
-      </div>
+    <div className={cn('relative', className)}>
+      {label && <p className="mb-1.5 text-xs text-muted-foreground">{label}</p>}
+      <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-3 pr-20 font-mono text-xs leading-relaxed">
+        {value}
+      </pre>
+      <Button variant="secondary" size="sm" className="absolute right-2 bottom-2" onClick={copy}>
+        {done ? <Check /> : <Copy />}
+        {done ? '已复制' : '复制'}
+      </Button>
     </div>
   );
 }
 
-export default function AgentPage() {
+/**
+ * MCP 接入。
+ *
+ * 这一页只回答三件事：用哪个令牌、把哪段配置粘给 agent、有什么技能可用。
+ * 之前那版把令牌表单、三种命令行、SKILL.md 全文都摊在一屏上 —— 那是在演示
+ * "我们支持多少种用法"，而不是让用户两分钟接完。技能正文收进折叠里，要看再看。
+ */
+export default function McpPage() {
   const [tokens, setTokens] = useState<ApiTokenInfo[]>([]);
-  const [skill, setSkill] = useState<string>('');
-  const [name, setName] = useState('');
+  const [skill, setSkill] = useState('');
   const [scope, setScope] = useState('read');
   const [created, setCreated] = useState<ApiTokenCreated | null>(null);
+  const [flavor, setFlavor] = useState<'codex' | 'json'>('codex');
   const [busy, setBusy] = useState(false);
+  const [showSkill, setShowSkill] = useState(false);
 
   const refresh = useCallback(async () => {
     const res = await listTokens();
     if (res.success && res.data) setTokens(res.data);
-    else toast.error(res.message || '加载令牌失败');
   }, []);
 
   useEffect(() => {
     void refresh();
-    void getSkill().then((r) => {
-      if (r.success && r.data) setSkill(r.data.content);
-    });
+    void getSkill().then((r) => setSkill(r.content));
   }, [refresh]);
 
   const origin = window.location.origin;
-  // MCP 走独立路径（自带 Bearer 校验），不是面板的 /api/ops 组。
   const mcpUrl = `${origin}/api/ops/mcp`;
-  const skillUrl = `${origin}/api/ops/skill/raw`;
-  const refUrl = `${origin}/api/ops/skill/references/troubleshooting`;
+  const token = created?.token ?? 'ops_在此粘贴你的令牌';
+  const [showToken, setShowToken] = useState(false);
 
-  const tokenForSnippet = created?.token ?? 'ops_在此粘贴你的令牌';
-
-  const cliSnippet = `# 1) 把令牌放进环境变量（写进 ~/.zshrc 或 ~/.bashrc 可长期生效）
-export OPS_TOKEN="${tokenForSnippet}"
-
-# 2) 注册 MCP 服务器
-codex mcp add zops --url ${mcpUrl} --bearer-token-env-var OPS_TOKEN`;
-
-  const tomlSnippet = `# ~/.codex/config.toml
+  const config = {
+    codex: `# ~/.codex/config.toml
 [mcp_servers.zops]
 url = "${mcpUrl}"
-# 从环境变量取令牌（推荐，不把密钥写进配置文件）
-bearer_token_env_var = "OPS_TOKEN"
+http_headers = { Authorization = "Bearer ${token}" }`,
+    json: `{
+  "mcpServers": {
+    "zops": {
+      "url": "${mcpUrl}",
+      "headers": { "Authorization": "Bearer ${token}" }
+    }
+  }
+}`,
+  }[flavor];
 
-# 不想用环境变量？改成静态请求头即可：
-# http_headers = { Authorization = "Bearer ${tokenForSnippet}" }`;
-
-  const skillSnippet = `mkdir -p ~/.agents/skills/zops/references
-curl -fsSL -H "Authorization: Bearer ${tokenForSnippet}" \\
-  ${skillUrl} > ~/.agents/skills/zops/SKILL.md
-curl -fsSL -H "Authorization: Bearer ${tokenForSnippet}" \\
-  ${refUrl} > ~/.agents/skills/zops/references/troubleshooting.md`;
+  const skillCmd = `mkdir -p ~/.agents/skills/zops/references
+curl -fsSL -H "Authorization: Bearer ${token}" \\
+  ${origin}/api/ops/skill/raw > ~/.agents/skills/zops/SKILL.md
+curl -fsSL -H "Authorization: Bearer ${token}" \\
+  ${origin}/api/ops/skill/references/troubleshooting > ~/.agents/skills/zops/references/troubleshooting.md`;
 
   const create = async () => {
     setBusy(true);
     try {
-      const res = await createToken({ name: name.trim() || 'Codex', scope });
+      const res = await createToken({ name: 'MCP agent', scope });
       if (!res.success || !res.data) {
         toast.error(res.message || '创建失败');
         return;
       }
       setCreated(res.data);
-      setName('');
+      setShowToken(true);
       await refresh();
-      toast.success('令牌已创建，请立即复制');
     } finally {
       setBusy(false);
     }
@@ -129,146 +140,136 @@ curl -fsSL -H "Authorization: Bearer ${tokenForSnippet}" \\
     await refresh();
   };
 
+  const summary = skillSummary(skill);
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">接入 Codex</h1>
+        <h1 className="text-2xl font-bold tracking-tight">MCP</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          把本面板作为 MCP 服务器接进 Codex，让 Codex 用这些工具帮你运维这台服务器。
+          把这个面板作为 MCP 服务器接进 Codex、Workbuddy 等支持标准 MCP 的 agent，
+          它就能帮你运维这台服务器。
         </p>
       </div>
 
+      {/* 1. 令牌 */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Bot className="size-4" />
-            MCP 地址
-          </CardTitle>
-          <CardDescription>
-            Codex 通过这个地址访问。默认安装不需要域名，直接用 IP:端口即可。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <CopyRow value={mcpUrl} />
-          <div className="flex flex-wrap gap-2 text-xs">
-            <Badge variant="secondary">JSON-RPC over HTTP</Badge>
-            <Badge variant="secondary">鉴权：Authorization: Bearer ops_…</Badge>
-            <Badge variant="secondary">只支持 POST（未开 SSE）</Badge>
-          </div>
-          <div className="flex items-start gap-2 rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-            <ShieldAlert className="mt-0.5 size-4 shrink-0" />
-            <span>
-              走公网 IP 的 http 是明文传输，令牌会被同链路上的设备看到。长期使用建议在面板里挂个域名
-              （Caddy 反代 + HTTPS），或只在内网/跳板机上使用。
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
           <CardTitle className="flex items-center gap-2 text-base">
             <KeyRound className="size-4" />
             访问令牌
           </CardTitle>
-          <CardDescription>
-            令牌明文只在创建时显示一次，服务端只存哈希。只读令牌能看负载/日志/容器，但不能改任何东西。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-[180px] flex-1 space-y-1.5">
-              <Label htmlFor="token-name">名称</Label>
-              <Input
-                id="token-name"
-                placeholder="例如：我的 Codex"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div className="w-[150px] space-y-1.5">
-              <Label>权限</Label>
-              <Select value={scope} onValueChange={setScope}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="read">只读</SelectItem>
-                  <SelectItem value="write">可写</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button onClick={create} disabled={busy}>
+          <div className="flex items-center gap-2">
+            <Select value={scope} onValueChange={setScope}>
+              <SelectTrigger className="h-8 w-[104px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="read">只读</SelectItem>
+                <SelectItem value="write">可写</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={create} disabled={busy}>
               <Plus />
-              创建
-            </Button>
-            <Button variant="secondary" onClick={() => void refresh()}>
-              <RefreshCw />
-              刷新
+              新建令牌
             </Button>
           </div>
-
+        </CardHeader>
+        <CardContent className="space-y-3">
           {created && (
-            <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
-              <p className="flex items-center gap-1.5 text-sm font-medium">
-                <ShieldCheck className="size-4 text-primary" />
-                令牌已创建 —— 现在复制，关掉就看不到了
-              </p>
-              <CopyRow value={created.token} />
+            <div className="space-y-2 rounded-xl border border-primary/40 bg-primary/5 p-3">
+              <p className="text-sm font-medium">令牌只显示这一次，复制走再关掉</p>
+              <CopyBlock value={created.token} />
             </div>
           )}
 
-          <div className="divide-y rounded-lg border">
-            {tokens.length === 0 && (
-              <p className="p-4 text-center text-sm text-muted-foreground">还没有令牌</p>
-            )}
-            {tokens.map((t) => (
-              <div key={t.id} className="flex items-center justify-between gap-3 p-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{t.name}</span>
-                    <Badge variant={t.scope === 'write' ? 'default' : 'secondary'}>
-                      {t.scope === 'write' ? '可写' : '只读'}
-                    </Badge>
-                  </div>
-                  <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                    {t.prefix}…{t.last_used_at ? ` · 最近使用 ${t.last_used_at}` : ' · 尚未使用'}
-                  </p>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => void revoke(t.id, t.name)}>
-                  <Trash2 />
-                  删除
-                </Button>
-              </div>
+          {tokens.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {tokens.map((tk) => (
+                <span
+                  key={tk.id}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border/60 py-1 pr-1 pl-2.5 text-xs"
+                >
+                  <Badge variant={tk.scope === 'write' ? 'default' : 'secondary'} className="h-5">
+                    {tk.scope === 'write' ? '可写' : '只读'}
+                  </Badge>
+                  <span className="font-mono text-muted-foreground">{tk.prefix}…</span>
+                  <button
+                    type="button"
+                    onClick={() => void revoke(tk.id, tk.name)}
+                    className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                    aria-label={`删除 ${tk.name}`}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {!created && tokens.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              还没有令牌 —— 先点「新建令牌」，下面的配置会自动带上它。
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 2. 配置 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">复制给 Agent</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="inline-flex rounded-xl bg-muted/60 p-0.5">
+            {(['codex', 'json'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFlavor(f)}
+                className={cn(
+                  'rounded-lg px-3 py-1 text-xs transition-colors',
+                  flavor === f ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground',
+                )}
+              >
+                {f === 'codex' ? 'Codex' : '通用 JSON'}
+              </button>
             ))}
           </div>
+          <CopyBlock
+            label={flavor === 'codex' ? '~/.codex/config.toml' : 'Workbuddy / Cursor / Claude Desktop 等'}
+            value={config}
+          />
+          <p className="text-xs text-muted-foreground">
+            令牌没填的话，先把上面新建的令牌复制进来；走公网 IP 的 http 是明文传输，长期用建议配域名走 HTTPS。
+          </p>
         </CardContent>
       </Card>
 
+      {/* 3. 技能 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">复制给 Codex</CardTitle>
-          <CardDescription>
-            先创建令牌，再挑一种方式粘贴。下面已经带上当前面板地址和令牌。
-          </CardDescription>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Puzzle className="size-4" />
+            技能
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <CopyRow label="方式一：命令行注册（推荐）" value={cliSnippet} />
-          <CopyRow label="方式二：写进 config.toml" value={tomlSnippet} />
-          <CopyRow label="顺便装上技能包（让 Codex 会用它）" value={skillSnippet} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">技能内容</CardTitle>
-          <CardDescription>
-            这是随二进制分发的 SKILL.md。装到 ~/.agents/skills/zops/ 后，Codex 会在
-            「服务器出问题」时自动用上。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <CopyRow value={skill || '（加载中…）'} />
+        <CardContent className="space-y-3">
+          <div className="rounded-xl border border-border/60 px-4 py-3">
+            <p className="font-mono text-sm font-medium">{summary.name || 'zops'}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {summary.description || '（加载中…）'}
+            </p>
+          </div>
+          <CopyBlock label="装到 agent 的技能目录" value={skillCmd} />
+          <button
+            type="button"
+            onClick={() => setShowSkill((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronDown className={cn('size-3.5 transition-transform', showSkill && 'rotate-180')} />
+            {showSkill ? '收起技能原文' : '查看技能原文'}
+          </button>
+          {showSkill && <CopyBlock value={skill || '（加载中…）'} />}
         </CardContent>
       </Card>
     </div>
