@@ -113,13 +113,16 @@ function ContainerTile({ c }: { c: ContainerInfo }) {
     <div className="flex w-[132px] flex-col items-center text-center">
       <span
         className={cn(
-          'flex size-12 items-center justify-center rounded-2xl bg-muted/70 ring-1 ring-border/50',
+          // 反色块：深色主题下白底黑图标，浅色主题下黑底白图标。品牌图标本身
+          // 细节密（mysql 的海豚、redis 的字标），贴在 muted 灰底上远看就是一团
+          // 模糊；反色之后轮廓才立得住，一排容器也像一排应用图标。
+          'flex size-12 items-center justify-center rounded-2xl bg-foreground text-background',
           'transition-transform duration-150 hover:-translate-y-0.5',
           !running && 'opacity-50',
         )}
       >
         {/* 品牌图标（mysql 的海豚、redis 的字标）细节比线性图标密，给大一号才认得出来。 */}
-        <Icon className="size-6 text-foreground/90" />
+        <Icon className="size-6" />
       </span>
       <span className="mt-3 w-full truncate text-sm font-medium" title={c.name}>
         {c.name}
