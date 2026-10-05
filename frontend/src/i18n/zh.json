@@ -204,7 +204,25 @@
     "logs": "日志",
     "logs_auto": "每 5 秒自动刷新",
     "refresh": "刷新",
-    "logs_empty": "暂无日志输出"
+    "logs_empty": "暂无日志输出",
+    "overview": "概览",
+    "engine_line": "Docker {{version}} · 存储驱动 {{driver}}",
+    "running": "运行中",
+    "stats": "占用",
+    "stats_hint": "每 3 秒刷新",
+    "cpu_short": "CPU",
+    "mem_short": "内存",
+    "images_count": "{{count}} 个",
+    "dangling": "（悬空镜像）",
+    "in_use": "{{count}} 容器在用",
+    "attached": "{{count}} 个容器",
+    "view_all": "全部容器",
+    "junk": "Docker 垃圾",
+    "junk_line": "悬空镜像 {{count}} 个，占用 {{size}}；另有已停止的容器和没在用的网络可以在清理里一起看。",
+    "junk_hint": "清理前会先扫描，确认后才动手",
+    "config_json": "引擎配置",
+    "show": "展开 JSON",
+    "hide": "收起"
   },
   "system": {
     "title": "系统",
@@ -694,13 +712,9 @@
   },
   "update": {
     "title": "有新版本 {{version}}",
-    "desc": "当前 {{current}}，最新 {{latest}}。升级不会动数据：账号、令牌、审计、访问流水都会保留，升级前还会自动备份数据库。",
-    "howto": "在服务器上跑这一行就行：",
-    "safe": "升级会自动识别版本、备份数据、重启服务。",
-    "copy": "复制",
+    "desc": "当前 {{current}}，升级不会动数据。",
+    "copy": "复制升级命令",
     "copied": "已复制",
-    "skip": "这个版本不再提醒",
-    "releases": "看更新日志",
-    "got_it": "知道了"
+    "later": "稍后"
   }
 }

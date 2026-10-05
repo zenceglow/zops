@@ -8,7 +8,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::domain::auth::AuthUser;
-use crate::domain::container::{ContainerList, DockerStatus};
+use crate::domain::container::{ContainerList, DockerInfo, DockerStatus, ImageList, NetworkList};
 use crate::domain::permission::{OPS_SERVICE_CONTROL, OPS_SERVICE_LOG, OPS_SERVICE_READ};
 use crate::http::middleware::auth::require_perm;
 use crate::http::AppState;
@@ -44,6 +44,31 @@ async fn list(
 ) -> Result<Json<ApiResponse<ContainerList>>, AppError> {
     require_perm(&user, OPS_SERVICE_READ)?;
     Ok(Json(ApiResponse::ok(state.containers.list().await?)))
+}
+
+async fn images(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<ImageList>>, AppError> {
+    require_perm(&user, OPS_SERVICE_READ)?;
+    Ok(Json(ApiResponse::ok(state.containers.images().await?)))
+}
+
+async fn networks(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<NetworkList>>, AppError> {
+    require_perm(&user, OPS_SERVICE_READ)?;
+    Ok(Json(ApiResponse::ok(state.containers.networks().await?)))
+}
+
+/// Docker 引擎自身的配置（`docker info` 的原始 JSON）。
+async fn info(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<DockerInfo>>, AppError> {
+    require_perm(&user, OPS_SERVICE_READ)?;
+    Ok(Json(ApiResponse::ok(state.containers.info().await)))
 }
 
 async fn start(
@@ -123,6 +148,9 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/list", get(list))
         .route("/status", get(status))
+        .route("/images", get(images))
+        .route("/networks", get(networks))
+        .route("/info", get(info))
         .route("/start", post(start))
         .route("/stop", post(stop))
         .route("/restart", post(restart))

@@ -204,7 +204,25 @@
     "logs": "Logs",
     "logs_auto": "refreshes every 5s",
     "refresh": "Refresh",
-    "logs_empty": "No log output yet"
+    "logs_empty": "No log output yet",
+    "overview": "Overview",
+    "engine_line": "Docker {{version}} · storage driver {{driver}}",
+    "running": "Running",
+    "stats": "Usage",
+    "stats_hint": "refreshes every 3s",
+    "cpu_short": "CPU",
+    "mem_short": "MEM",
+    "images_count": "{{count}} total",
+    "dangling": "(dangling)",
+    "in_use": "in use by {{count}}",
+    "attached": "{{count}} ctr",
+    "view_all": "All containers",
+    "junk": "Docker junk",
+    "junk_line": "{{count}} dangling image(s) taking {{size}}; stopped containers and unused networks show up in the cleanup dialog too.",
+    "junk_hint": "scans first, then asks",
+    "config_json": "Engine config",
+    "show": "Show JSON",
+    "hide": "Hide"
   },
   "system": {
     "title": "System",
@@ -693,14 +711,10 @@
     "hint_generic": "POSTs {event, title, text, host} as JSON — for your own service."
   },
   "update": {
-    "title": "Version {{version}} is out",
-    "desc": "You are on {{current}}, latest is {{latest}}. Upgrading keeps your data — accounts, tokens, audit and traffic history all stay, and the database is backed up first.",
-    "howto": "Run this on the server:",
-    "safe": "The installer detects the version, backs up the database and restarts the service.",
-    "copy": "Copy",
+    "title": "Version {{version}} available",
+    "desc": "You are on {{current}}. Upgrading keeps your data.",
+    "copy": "Copy upgrade command",
     "copied": "Copied",
-    "skip": "Don't remind me about this version",
-    "releases": "Release notes",
-    "got_it": "Got it"
+    "later": "Later"
   }
 }

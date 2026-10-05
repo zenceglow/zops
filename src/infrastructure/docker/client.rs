@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use bollard::image::PruneImagesOptions;
+use bollard::image::{ListImagesOptions, PruneImagesOptions};
+use bollard::network::ListNetworksOptions;
 use bollard::container::{
     InspectContainerOptions, ListContainersOptions, LogsOptions, RemoveContainerOptions,
     MemoryStatsStats, Stats, StatsOptions, StopContainerOptions,
@@ -15,7 +16,19 @@ use futures_util::StreamExt;
 /// bollard 的默认超时是私有的，这里自己给一个：容器列表/日志都是短请求。
 const DOCKER_TIMEOUT_SECS: u64 = 30;
 
-use crate::domain::container::ContainerDto;
+use crate::domain::container::{ContainerDto, DockerInfo, ImageDto, ImageList, NetworkDto, NetworkList};
+
+/// 跑一条 docker CLI 命令并拿回 stdout。
+///
+/// `docker info --format '{{json .}}'` 这种活儿交给 CLI 比用 bollard 的类型化结构
+/// 再手工转 JSON 稳得多：字段是 Docker 自己维护的，我们不用跟着它的版本改代码。
+fn docker_cli(args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("docker").args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
 use crate::shared::AppError;
 
 /// Docker 的完整 id 是 64 位，面板上只用到前 12 位（docker CLI 的惯例）。
@@ -425,6 +438,117 @@ impl DockerClient {
         .await;
 
         Ok(out)
+    }
+
+    /// 镜像列表。带 tag 的和悬空的都要 —— 悬空的正是"垃圾"那一类，
+    /// 不列出来用户根本不知道有它们的
+    pub async fn list_images(&self) -> Result<ImageList, AppError> {
+        let docker = self.docker()?;
+        let options = ListImagesOptions::<String> {
+            all: true,
+            ..Default::default()
+        };
+        let images = docker
+            .list_images(Some(options))
+            .await
+            .map_err(|_| AppError::internal("读取镜像列表失败"))?;
+
+        let mut out: Vec<ImageDto> = images
+            .into_iter()
+            .map(|i| {
+                // `<none>:<none>` 是 Docker 给悬空镜像的占位，别当成真 tag 显示。
+                let tags: Vec<String> = i
+                    .repo_tags
+                    .into_iter()
+                    .filter(|t| t != "<none>:<none>" && !t.is_empty())
+                    .collect();
+                let dangling = i.repo_digests.is_empty() && tags.is_empty();
+                ImageDto {
+                    id: short_id(&i.id),
+                    dangling,
+                    tags,
+                    size: i.size.max(0) as u64,
+                    created: i.created,
+                    containers: i.containers,
+                }
+            })
+            .collect();
+        // 大的排前面：要找的就是"谁占着我的盘"。
+        out.sort_by(|a, b| b.size.cmp(&a.size));
+
+        let dangling_size = out.iter().filter(|i| i.dangling).map(|i| i.size).sum();
+        Ok(ImageList {
+            images: out,
+            dangling_size,
+        })
+    }
+
+    pub async fn list_networks(&self) -> Result<NetworkList, AppError> {
+        let docker = self.docker()?;
+        let networks = docker
+            .list_networks(None::<ListNetworksOptions<String>>)
+            .await
+            .map_err(|_| AppError::internal("读取网络列表失败"))?;
+
+        // 列表接口不带"哪些容器挂在上面"，得逐个 inspect。网络一般就几个，并发问一遍
+        // 比让用户自己再去翻快得多；单个失败就当 0。
+        let mut out: Vec<NetworkDto> = join_all(networks.into_iter().map(|n| {
+            let docker = docker.clone();
+            async move {
+                let id = n.id.clone().unwrap_or_default();
+                let containers = docker
+                    .inspect_network(&id, None::<bollard::network::InspectNetworkOptions<String>>)
+                    .await
+                    .ok()
+                    .and_then(|d| d.containers)
+                    .map(|c| c.len())
+                    .unwrap_or(0);
+                NetworkDto {
+                    id: short_id(&id),
+                    name: n.name.unwrap_or_default(),
+                    driver: n.driver.unwrap_or_default(),
+                    scope: n.scope.unwrap_or_default(),
+                    internal: n.internal.unwrap_or(false),
+                    containers,
+                    subnet: n
+                        .ipam
+                        .and_then(|i| i.config)
+                        // ipam.config 是一个网络的地址池列表，取第一个（多池的很少见）。
+                        .and_then(|c| c.into_iter().find_map(|c| c.subnet))
+                        .unwrap_or_default(),
+                }
+            }
+        }))
+        .await;
+        // 默认网络排最后：那是 Docker 自己建的，不是用户要管的。
+        out.sort_by_key(|n| (n.name == "bridge" || n.name == "host" || n.name == "none", n.name.clone()));
+        Ok(NetworkList { networks: out })
+    }
+
+    /// Docker 引擎自己的配置。
+    ///
+    /// 走 CLI 拿原始 JSON，不用 bollard 的类型化结构再手工转换 —— 前者字段由
+    /// Docker 自己维护，我们不用跟着它的版本改代码；后者漏一个字段就是"面板上看
+    /// 不到这条配置"。
+    pub async fn info(&self) -> DockerInfo {
+        let parse = |raw: Option<String>| -> serde_json::Value {
+            raw.and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or(serde_json::Value::Null)
+        };
+        let info = tokio::task::spawn_blocking(|| docker_cli(&["info", "--format", "{{json .}}"]))
+            .await
+            .ok()
+            .flatten();
+        let version =
+            tokio::task::spawn_blocking(|| docker_cli(&["version", "--format", "{{json .}}"]))
+                .await
+                .ok()
+                .flatten();
+        DockerInfo {
+            available: info.is_some(),
+            info: parse(info),
+            version: parse(version),
+        }
     }
 
     pub async fn start(&self, id: &str) -> Result<(), AppError> {

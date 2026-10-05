@@ -12,8 +12,17 @@ export type UpdateStatus = {
   install_command: string;
 };
 
-/** 关掉某个版本的提示后记在这里，下次不再打扰。 */
+/** "别再提醒这个版本" —— 点了它就一直安静到下次真的发新版。 */
 const SKIP_KEY = 'zops.update.skip';
+
+/**
+ * "稍后" 和点遮罩关掉走这里：只压一天，不是永远。
+ *
+ * 原来所有关闭动作都等于"永不再提"，所以文案只能写"不再提醒"，又长又劝退；
+ * 而且手滑按到 Esc 就再也收不到更新提示了 —— 一个提示组件不该有这种暗雷。
+ */
+const SNOOZE_KEY = 'zops.update.snooze';
+const SNOOZE_MS = 24 * 60 * 60 * 1000;
 
 /** 半小时问一次服务端。真正出门拉 CDN 的节奏由服务端控制（6 小时）。 */
 const POLL_MS = 30 * 60 * 1000;
@@ -22,6 +31,9 @@ export function useRelease() {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(() =>
     localStorage.getItem(SKIP_KEY),
+  );
+  const [snoozedAt, setSnoozedAt] = useState<number>(() =>
+    Number(localStorage.getItem(SNOOZE_KEY) ?? 0),
   );
 
   useEffect(() => {
@@ -49,6 +61,14 @@ export function useRelease() {
     setDismissed(status.latest);
   };
 
-  const show = !!status?.has_update && status.latest !== dismissed;
-  return { status, show, skip };
+  const snooze = () => {
+    const now = Date.now();
+    localStorage.setItem(SNOOZE_KEY, String(now));
+    setSnoozedAt(now);
+  };
+
+  // 半小时一次轮询会重新渲染，所以"压了一天"到期后自会重新冒出来，不用定时器。
+  const snoozed = snoozedAt > 0 && Date.now() - snoozedAt < SNOOZE_MS;
+  const show = !!status?.has_update && status.latest !== dismissed && !snoozed;
+  return { status, show, skip, snooze };
 }

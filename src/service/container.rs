@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::container::{ContainerList, DockerStatus};
+use crate::domain::container::{DockerInfo, ImageList, NetworkList};
 use crate::infrastructure::docker::DockerClient;
 use crate::shared::AppError;
 
@@ -24,6 +25,18 @@ impl ContainerService {
         Ok(ContainerList {
             containers: self.docker.list_containers().await?,
         })
+    }
+
+    pub async fn images(&self) -> Result<ImageList, AppError> {
+        self.docker.list_images().await
+    }
+
+    pub async fn networks(&self) -> Result<NetworkList, AppError> {
+        self.docker.list_networks().await
+    }
+
+    pub async fn info(&self) -> DockerInfo {
+        self.docker.info().await
     }
 
     pub async fn start(&self, id: &str) -> Result<(), AppError> {

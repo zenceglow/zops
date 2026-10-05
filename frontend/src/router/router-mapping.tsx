@@ -27,6 +27,7 @@ export const APP_ROUTES: RouteDef[] = [
   { path: '/profile', lazy: page(() => import('../pages/profile')) },
   { path: '/settings/system', lazy: page(() => import('../pages/settings/system')) },
   { path: '/settings/panel', lazy: page(() => import('../pages/settings/panel')) },
+  { path: '/docker', lazy: page(() => import('../pages/docker')) },
   { path: '/docker/containers', lazy: page(() => import('../pages/docker/containers')) },
   { path: '/docker/containers/:id', lazy: page(() => import('../pages/docker/containers/detail')) },
   { path: '/docker/images', lazy: page(() => import('../pages/docker/images')) },

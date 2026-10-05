@@ -82,11 +82,11 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
         labelKey: 'nav.docker',
         icon: Icons.NavDockerIcon,
         perm: Perm.NAV_DOCKER,
+        // 镜像、网络、垃圾、占用、引擎配置都并进了概览页 —— 那样一页能看全，
+        // 不用在四个页面之间来回跳；原来那三个子页只有占位图。
         children: [
+          { path: '/docker', labelKey: 'docker.overview', icon: Icons.NavDockerIcon, perm: Perm.NAV_DOCKER },
           { path: '/docker/containers', labelKey: 'docker.containers', icon: Icons.NavContainerIcon, perm: Perm.NAV_DOCKER },
-          { path: '/docker/images', labelKey: 'docker.images', icon: Icons.NavImagesIcon, perm: Perm.NAV_DOCKER },
-          { path: '/docker/networks', labelKey: 'docker.networks', icon: Icons.NavNetworksIcon, perm: Perm.NAV_DOCKER },
-          { path: '/docker/settings', labelKey: 'docker.settings', icon: Icons.NavSettingsIcon, perm: Perm.NAV_DOCKER },
         ],
       } as SidebarParent,
     ],
