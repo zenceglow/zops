@@ -1,4 +1,4 @@
-# Zenceglow Ops
+# ZOPS
 
 Server operations panel — system monitoring, Docker service management, and log viewer, all in a single Rust binary with an embedded web UI.
 
@@ -54,13 +54,13 @@ OPS_PORT=5200 OPS_USER=admin OPS_PASSWORD=xxx OPS_SKIP_DOMAIN=1 bash install.sh
 
 ```bash
 export OPS_TOKEN="ops_..."
-codex mcp add zenceglow-ops --url https://ops.example.com/api/ops/mcp \
+codex mcp add zops --url https://ops.example.com/api/ops/mcp \
   --bearer-token-env-var OPS_TOKEN
 ```
 
 ```toml
 # ~/.codex/config.toml
-[mcp_servers.zenceglow-ops]
+[mcp_servers.zops]
 url = "https://ops.example.com/api/ops/mcp"
 bearer_token_env_var = "OPS_TOKEN"
 ```
@@ -68,12 +68,12 @@ bearer_token_env_var = "OPS_TOKEN"
 装上技能包，Codex 才知道这些工具该怎么用：
 
 ```bash
-mkdir -p ~/.agents/skills/zenceglow-ops/references
+mkdir -p ~/.agents/skills/zops/references
 curl -fsSL -H "Authorization: Bearer $OPS_TOKEN" \
-  https://ops.example.com/api/ops/skill/raw > ~/.agents/skills/zenceglow-ops/SKILL.md
+  https://ops.example.com/api/ops/skill/raw > ~/.agents/skills/zops/SKILL.md
 curl -fsSL -H "Authorization: Bearer $OPS_TOKEN" \
   https://ops.example.com/api/ops/skill/references/troubleshooting \
-  > ~/.agents/skills/zenceglow-ops/references/troubleshooting.md
+  > ~/.agents/skills/zops/references/troubleshooting.md
 ```
 
 **令牌分两档**：`read` 只能看（负载 / 容器 / 日志 / Caddyfile），`write` 还能启停容器、
@@ -139,11 +139,11 @@ All JSON responses use:
 ## Project Structure
 
 ```
-zenceglow-ops/
+zops/
 ├── API-CONVENTIONS.md
 ├── Cargo.toml
 ├── install.sh                  # 一行安装（交互四步）
-├── skills/zenceglow-ops/       # Codex 技能包（编译进二进制，经 /api/ops/skill 下发）
+├── skills/zops/       # Codex 技能包（编译进二进制，经 /api/ops/skill 下发）
 │   ├── SKILL.md
 │   └── references/troubleshooting.md
 ├── src/

@@ -77,7 +77,7 @@ export function LoginForm() {
       </form>
 
       <p className="mt-10 text-center text-xs text-muted-foreground/80">
-        Zenceglow Ops · v0.1.0
+        ZOPS · v0.1.0
       </p>
     </div>
   );

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Zenceglow Ops — 一行安装
+# ZOPS — 一行安装
 #
 #   curl -fsSL https://cdn.senapixel.com/app/ops/install.sh | bash
 #
@@ -109,7 +109,7 @@ rand_word() { # 随机用户名/密码，避免一眼看出是默认口令
 command -v systemctl >/dev/null 2>&1 || die "没有 systemd，本脚本按 Linux systemd 环境编写"
 command -v curl >/dev/null 2>&1 || die "缺少 curl"
 
-title "Zenceglow Ops 安装"
+title "ZOPS 安装"
 say "${DIM}服务器运维面板 · MCP + Codex 技能${N}"
 
 # ─────────────────────── 第 1 步：端口 ───────────────────────
@@ -216,7 +216,7 @@ if [ -f /opt/docker-apps/caddy/config/Caddyfile ]; then
 fi
 cat > "$UNIT_PATH" <<UNIT
 [Unit]
-Description=Zenceglow Ops Panel
+Description=ZOPS Panel
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -293,7 +293,7 @@ if [ -n "$DOMAIN" ]; then
     cp "$CADDYFILE" "$CADDYFILE.bak.$(date +%s)"
     cat >> "$CADDYFILE" <<CADDY
 
-# zenceglow-ops panel (added $(date '+%Y-%m-%d %H:%M'))
+# ZOPS panel (added $(date '+%Y-%m-%d %H:%M'))
 $DOMAIN {
 	reverse_proxy 127.0.0.1:$PORT
 }

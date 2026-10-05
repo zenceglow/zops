@@ -49,7 +49,7 @@ fn print_setup_banner(port: u16, secret: &str) {
     let host_hint = local_ip_hint().unwrap_or_else(|| "<服务器IP>".into());
     eprintln!();
     eprintln!("=========================================");
-    eprintln!(" Zenceglow Ops — 尚未初始化");
+    eprintln!(" ZOPS — 尚未初始化");
     eprintln!("=========================================");
     eprintln!(" 初始化地址: http://{host_hint}:{port}/setup");
     eprintln!("             http://127.0.0.1:{port}/setup");

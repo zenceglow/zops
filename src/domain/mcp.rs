@@ -12,19 +12,19 @@ use serde_json::{json, Value};
 /// `initialize`; we echo theirs back when we know it, and fall back to this.
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
-pub const SERVER_NAME: &str = "zenceglow-ops";
+pub const SERVER_NAME: &str = "zops";
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Name of the bundled Codex skill (folder name under `skills/`).
-pub const SKILL_NAME: &str = "zenceglow-ops";
+pub const SKILL_NAME: &str = "zops";
 
 /// The skill pack, compiled into the binary. A host can hand the agent its own
 /// onboarding doc over the API instead of asking the operator to copy files.
-pub const SKILL_CONTENT: &str = include_str!("../../skills/zenceglow-ops/SKILL.md");
+pub const SKILL_CONTENT: &str = include_str!("../../skills/zops/SKILL.md");
 
 /// The troubleshooting playbook referenced by the skill.
 pub const SKILL_REF_TROUBLESHOOTING: &str =
-    include_str!("../../skills/zenceglow-ops/references/troubleshooting.md");
+    include_str!("../../skills/zops/references/troubleshooting.md");
 
 pub const PARSE_ERROR: i64 = -32700;
 pub const INVALID_REQUEST: i64 = -32600;

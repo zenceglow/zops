@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "========================================="
-echo " Zenceglow Ops — 本地开发启动"
+echo " ZOPS — 本地开发启动"
 echo "========================================="
 
 cleanup() {

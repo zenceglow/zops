@@ -84,10 +84,10 @@ export default function AgentPage() {
 export OPS_TOKEN="${tokenForSnippet}"
 
 # 2) 注册 MCP 服务器
-codex mcp add zenceglow-ops --url ${mcpUrl} --bearer-token-env-var OPS_TOKEN`;
+codex mcp add zops --url ${mcpUrl} --bearer-token-env-var OPS_TOKEN`;
 
   const tomlSnippet = `# ~/.codex/config.toml
-[mcp_servers.zenceglow-ops]
+[mcp_servers.zops]
 url = "${mcpUrl}"
 # 从环境变量取令牌（推荐，不把密钥写进配置文件）
 bearer_token_env_var = "OPS_TOKEN"
@@ -95,11 +95,11 @@ bearer_token_env_var = "OPS_TOKEN"
 # 不想用环境变量？改成静态请求头即可：
 # http_headers = { Authorization = "Bearer ${tokenForSnippet}" }`;
 
-  const skillSnippet = `mkdir -p ~/.agents/skills/zenceglow-ops/references
+  const skillSnippet = `mkdir -p ~/.agents/skills/zops/references
 curl -fsSL -H "Authorization: Bearer ${tokenForSnippet}" \\
-  ${skillUrl} > ~/.agents/skills/zenceglow-ops/SKILL.md
+  ${skillUrl} > ~/.agents/skills/zops/SKILL.md
 curl -fsSL -H "Authorization: Bearer ${tokenForSnippet}" \\
-  ${refUrl} > ~/.agents/skills/zenceglow-ops/references/troubleshooting.md`;
+  ${refUrl} > ~/.agents/skills/zops/references/troubleshooting.md`;
 
   const create = async () => {
     setBusy(true);
@@ -263,7 +263,7 @@ curl -fsSL -H "Authorization: Bearer ${tokenForSnippet}" \\
         <CardHeader>
           <CardTitle className="text-base">技能内容</CardTitle>
           <CardDescription>
-            这是随二进制分发的 SKILL.md。装到 ~/.agents/skills/zenceglow-ops/ 后，Codex 会在
+            这是随二进制分发的 SKILL.md。装到 ~/.agents/skills/zops/ 后，Codex 会在
             「服务器出问题」时自动用上。
           </CardDescription>
         </CardHeader>

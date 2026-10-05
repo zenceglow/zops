@@ -26,7 +26,7 @@ function warnInsecureOnce() {
   if (warnedInsecure) return;
   warnedInsecure = true;
   console.warn(
-    '[zenceglow-ops] 当前不是安全上下文，浏览器不提供 Web Crypto；' +
+    '[zops] 当前不是安全上下文，浏览器不提供 Web Crypto；' +
       '登录态将以明文保存在 localStorage。给面板配一个域名走 HTTPS 即可恢复加密存储。',
   );
 }

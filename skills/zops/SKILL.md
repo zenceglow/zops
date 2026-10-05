@@ -1,9 +1,9 @@
 ---
-name: zenceglow-ops
-description: 通过 Zenceglow Ops 面板的 MCP 服务器运维服务器：查看负载、Docker 容器、Caddy 网关、日志与定时任务，并在用户确认后重启容器、重载网关或改 Caddyfile。当用户提到 zenceglow-ops、MCP 里出现 ops_* 工具、或说"服务器变慢/磁盘满/容器挂了/网站 502/证书过期/帮我看看服务器"时使用。
+name: zops
+description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载、Docker 容器、Caddy 网关、日志与定时任务，并在用户确认后重启容器、重载网关或改 Caddyfile。当用户提到 ZOPS、MCP 里出现 ops_* 工具、或说"服务器变慢/磁盘满/容器挂了/网站 502/证书过期/帮我看看服务器"时使用。
 ---
 
-# Zenceglow Ops
+# ZOPS
 
 运维面板的 MCP 接口。它把一台服务器的只读观察和受控操作暴露成 `ops_*` 工具。
 
