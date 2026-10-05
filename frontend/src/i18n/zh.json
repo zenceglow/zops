@@ -168,7 +168,8 @@
     "status": "状态",
     "ports": "端口",
     "created": "创建时间",
-    "started": "启动"
+    "started": "启动",
+    "apps_services": "应用与服务"
   },
   "system": {
     "title": "系统",

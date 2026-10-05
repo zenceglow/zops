@@ -168,7 +168,8 @@
     "status": "Status",
     "ports": "Ports",
     "created": "Created",
-    "started": "Started"
+    "started": "Started",
+    "apps_services": "Apps & services"
   },
   "system": {
     "title": "System",

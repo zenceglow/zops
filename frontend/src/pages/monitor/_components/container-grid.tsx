@@ -297,6 +297,7 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
 
 /** 容器网格：有多少个显示多少个，贴着左边排，跟上面的环、标题对齐。 */
 export function ContainerGrid({ containers }: { containers: ContainerInfo[] }) {
+  const { t } = useTranslation();
   const now = useNow();
   if (containers.length === 0) return null;
 
@@ -308,8 +309,7 @@ export function ContainerGrid({ containers }: { containers: ContainerInfo[] }) {
 
   return (
     <section>
-      {/* 不做多语言：用户点名要 "Servers" 这个词，中英环境下都保持原样。 */}
-      <SectionTitle icon={Server} title="Servers" />
+      <SectionTitle icon={Server} title={t('docker.apps_services')} />
       {/* 三列：再宽下去，每格里"图标 + 三行字"只占左边一半，右半边空着反而更散。
           ~340px 刚好盛下最长的镜像名加一行占用，容器变多就自然往下续行。 */}
       <div className="mt-6 grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">

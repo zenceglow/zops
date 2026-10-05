@@ -48,8 +48,6 @@ export default function MonitorPage() {
           </div>
         </section>
 
-        <GatewayEntry {...gateway} />
-
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
           <Skeleton className="h-[220px] rounded-2xl" />
           <Skeleton className="h-[220px] rounded-2xl" />
@@ -57,6 +55,7 @@ export default function MonitorPage() {
 
         <Skeleton className="h-[360px] rounded-2xl" />
 
+        <GatewayEntry {...gateway} />
 
         <section className="space-y-6">
           <Skeleton className="h-5 w-24" />
@@ -103,9 +102,6 @@ export default function MonitorPage() {
         <NetworkWidget />
       </section>
 
-      {/* 站点入口放在最上面：它是"外面的人从哪儿进来"，比机器自己的负载更该先被看到。 */}
-      <GatewayEntry {...gateway} />
-
       {/* 待办是预留位（还没定要放什么），右边是横向柱状的占用对比。 */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <div className="flex flex-col rounded-2xl border border-dashed border-border/70 px-4 py-4">
@@ -126,7 +122,9 @@ export default function MonitorPage() {
 
       <Topology entries={gateway.sites} containers={containers} />
 
-
+      {/* 入口紧挨着 Servers：一个是"外面从哪进"，一个是"进来之后落在哪个进程"，
+          摆在一起才连得起来。 */}
+      <GatewayEntry {...gateway} />
       {dockerSt?.available && <ContainerGrid containers={containers} />}
     </div>
   );
