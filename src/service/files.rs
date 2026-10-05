@@ -4,9 +4,11 @@
 //! 那些是不可逆的，得先想清楚怎么给用户确认和回滚。
 
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use serde::Serialize;
 
+use crate::infrastructure::db::{Database, TrashRow};
 use crate::shared::AppError;
 
 /// 单个目录最多列这么多，再多就靠搜索；`/usr/lib` 这类目录能到几万条。
@@ -260,4 +262,265 @@ pub fn preview(input: &str) -> Result<FilePreview, AppError> {
             String::from_utf8_lossy(&buf).into_owned()
         },
     })
+}
+
+// ─────────────────────────── 写操作 ───────────────────────────
+
+/// 文件夹的读写入口。回收站要落在数据目录里（跟数据库同级），所以服务需要知道它。
+pub struct FilesService {
+    db: Arc<Database>,
+    /// 回收站的根：`<数据目录>/trash`。
+    trash: PathBuf,
+}
+
+impl FilesService {
+    pub fn new(db: Arc<Database>, data_dir: PathBuf) -> Self {
+        Self {
+            db,
+            trash: data_dir.join("trash"),
+        }
+    }
+
+    /// 不允许动手的地方。
+    ///
+    /// 三条都是真的踩过会出事的：删掉 `/` 等于删掉整台机器；把面板自己的数据目录
+    /// 挪走，面板当场就挂了、连恢复的界面都没了；把目录移进它自己的子目录，文件
+    /// 会在这个操作里消失。
+    fn guard(&self, path: &Path, action: &str) -> Result<(), AppError> {
+        if path == Path::new("/") {
+            return Err(AppError::bad_request("不能对根目录执行这个操作"));
+        }
+        if path.starts_with(&self.trash) || self.trash.starts_with(path) {
+            return Err(AppError::bad_request("不能对回收站目录执行这个操作"));
+        }
+        if !path.exists() {
+            return Err(AppError::bad_request(format!("{} 不存在", path.display())));
+        }
+        let _ = action;
+        Ok(())
+    }
+
+    /// 目标目录里没有重名时用原名字，有的话按访达的习惯叫「xxx 副本」「xxx 副本 2」。
+    fn unique_target(dir: &Path, name: &str) -> PathBuf {
+        let candidate = dir.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+        let (stem, ext) = match name.rsplit_once('.') {
+            // 只有 `.bashrc` 这种才算"整名都是主干"，别把隐藏文件拆成 "" 和 "bashrc"。
+            Some((s, e)) if !s.is_empty() && !e.is_empty() => (s.to_string(), format!(".{e}")),
+            _ => (name.to_string(), String::new()),
+        };
+        for n in 1..1000 {
+            let suffix = if n == 1 {
+                " 副本".to_string()
+            } else {
+                format!(" 副本 {n}")
+            };
+            let candidate = dir.join(format!("{stem}{suffix}{ext}"));
+            if !candidate.exists() {
+                return candidate;
+            }
+        }
+        candidate
+    }
+
+    /// 递归复制。目录要手写递归：标准库的 `fs::copy` 只认文件。
+    fn copy_recursive(from: &Path, to: &Path) -> Result<(), AppError> {
+        let meta = std::fs::symlink_metadata(from)
+            .map_err(|e| AppError::bad_request(format!("{} 无法读取：{e}", from.display())))?;
+        if meta.is_dir() {
+            std::fs::create_dir_all(to).map_err(|e| AppError::internal(e.to_string()))?;
+            for entry in std::fs::read_dir(from)
+                .map_err(|e| AppError::internal(e.to_string()))?
+                .filter_map(|e| e.ok())
+            {
+                Self::copy_recursive(&entry.path(), &to.join(entry.file_name()))?;
+            }
+        } else if meta.file_type().is_symlink() {
+            // 复制链接本身，而不是它指向的东西 —— 后者会把链接悄悄变成实文件。
+            #[cfg(unix)]
+            {
+                let target = std::fs::read_link(from).map_err(|e| AppError::internal(e.to_string()))?;
+                std::os::unix::fs::symlink(target, to).map_err(|e| AppError::internal(e.to_string()))?;
+            }
+        } else {
+            std::fs::copy(from, to).map_err(|e| AppError::internal(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// 搬到回收站：优先 rename（同一个文件系统上是瞬时的、也不占额外空间），
+    /// 跨文件系统时退回"复制 + 删除"。
+    fn move_to_trash(&self, from: &Path, id: &str) -> Result<(), AppError> {
+        std::fs::create_dir_all(&self.trash).map_err(|e| AppError::internal(e.to_string()))?;
+        let dest = self.trash.join(id);
+        match std::fs::rename(from, &dest) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                Self::copy_recursive(from, &dest)?;
+                Self::remove_recursive(from)
+            }
+        }
+    }
+
+    fn remove_recursive(path: &Path) -> Result<(), AppError> {
+        let meta = std::fs::symlink_metadata(path)
+            .map_err(|e| AppError::bad_request(format!("{} 无法读取：{e}", path.display())))?;
+        if meta.is_dir() {
+            std::fs::remove_dir_all(path).map_err(|e| AppError::internal(e.to_string()))
+        } else {
+            std::fs::remove_file(path).map_err(|e| AppError::internal(e.to_string()))
+        }
+    }
+
+    /// 目录大小。回收站列表要显示"删掉了多少"，不然用户没法判断该不该清。
+    fn dir_size(path: &Path) -> i64 {
+        let Ok(read) = std::fs::read_dir(path) else {
+            return 0;
+        };
+        read.filter_map(|e| e.ok())
+            .map(|e| match std::fs::symlink_metadata(e.path()) {
+                Ok(m) if m.is_dir() => Self::dir_size(&e.path()),
+                Ok(m) => m.len() as i64,
+                Err(_) => 0,
+            })
+            .sum()
+    }
+
+    pub fn move_into(&self, paths: &[String], to: &str) -> Result<(), AppError> {
+        let dest = resolve(to);
+        if !dest.is_dir() {
+            return Err(AppError::bad_request(format!("{} 不是目录", dest.display())));
+        }
+        for p in paths {
+            let from = resolve(p);
+            self.guard(&from, "移动")?;
+            // 把目录移进它自己的子树：rename 会先成功、然后文件凭空消失。
+            if from.is_dir() && dest.starts_with(&from) {
+                return Err(AppError::bad_request("不能把目录移动到它自己里面"));
+            }
+            let name = from
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "file".into());
+            let target = Self::unique_target(&dest, &name);
+            if std::fs::rename(&from, &target).is_err() {
+                Self::copy_recursive(&from, &target)?;
+                Self::remove_recursive(&from)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn copy_into(&self, paths: &[String], to: &str) -> Result<(), AppError> {
+        let dest = resolve(to);
+        if !dest.is_dir() {
+            return Err(AppError::bad_request(format!("{} 不是目录", dest.display())));
+        }
+        for p in paths {
+            let from = resolve(p);
+            self.guard(&from, "复制")?;
+            if from.is_dir() && dest.starts_with(&from) {
+                return Err(AppError::bad_request("不能把目录复制到它自己里面"));
+            }
+            let name = from
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "file".into());
+            Self::copy_recursive(&from, &Self::unique_target(&dest, &name))?;
+        }
+        Ok(())
+    }
+
+    /// 删除 = 进回收站，不是真的删掉。所以这个接口不会让人后悔。
+    pub fn trash_items(&self, paths: &[String]) -> Result<usize, AppError> {
+        let mut n = 0;
+        for p in paths {
+            let from = resolve(p);
+            self.guard(&from, "删除")?;
+            let meta = std::fs::symlink_metadata(&from)
+                .map_err(|e| AppError::bad_request(format!("{} 无法读取：{e}", from.display())))?;
+            let name = from
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "file".into());
+            let size = if meta.is_dir() { Self::dir_size(&from) } else { meta.len() as i64 };
+            let kind = if meta.is_dir() { "dir" } else { "file" };
+
+            let id = uuid::Uuid::new_v4().to_string();
+            // 先挪文件再记账：反过来的话，挪失败就在回收站里留下一条指向空气的记录。
+            self.move_to_trash(&from, &id)?;
+            self.db
+                .add_trash_item(&id, &name, &from.to_string_lossy(), size, kind)
+                .map_err(|e| AppError::internal(e.to_string()))?;
+            n += 1;
+        }
+        Ok(n)
+    }
+
+    pub fn trash_list(&self) -> Result<Vec<TrashRow>, AppError> {
+        self.db.list_trash().map_err(|e| AppError::internal(e.to_string()))
+    }
+
+    /// 恢复。原位置可能已经被别的东西占了，那就按同样的规则改名放回去，
+    /// 而不是报错让用户自己处理。
+    pub fn trash_restore(&self, ids: &[String]) -> Result<usize, AppError> {
+        let mut n = 0;
+        for id in ids {
+            let Some(row) = self
+                .db
+                .get_trash_item(id)
+                .map_err(|e| AppError::internal(e.to_string()))?
+            else {
+                continue;
+            };
+            let src = self.trash.join(id);
+            if !src.exists() {
+                // 文件没了但索引还在：清掉索引，别让界面上留一条永远恢复不了的记录。
+                let _ = self.db.remove_trash_items(&[id.clone()]);
+                continue;
+            }
+            let original = PathBuf::from(&row.original_path);
+            let parent = original.parent().unwrap_or(Path::new("/"));
+            std::fs::create_dir_all(parent).map_err(|e| AppError::internal(e.to_string()))?;
+            let target = Self::unique_target(parent, &row.name);
+            if std::fs::rename(&src, &target).is_err() {
+                Self::copy_recursive(&src, &target)?;
+                Self::remove_recursive(&src)?;
+            }
+            self.db
+                .remove_trash_items(&[id.clone()])
+                .map_err(|e| AppError::internal(e.to_string()))?;
+            n += 1;
+        }
+        Ok(n)
+    }
+
+    /// 彻底删除。到这一步就没有后悔药了 —— 界面上必须是单独的、说清楚的确认。
+    pub fn trash_purge(&self, ids: &[String]) -> Result<usize, AppError> {
+        let mut n = 0;
+        for id in ids {
+            let src = self.trash.join(id);
+            if src.exists() {
+                Self::remove_recursive(&src)?;
+            }
+            self.db
+                .remove_trash_items(&[id.clone()])
+                .map_err(|e| AppError::internal(e.to_string()))?;
+            n += 1;
+        }
+        Ok(n)
+    }
+
+    pub fn trash_empty(&self) -> Result<usize, AppError> {
+        let ids: Vec<String> = self
+            .db
+            .list_trash()
+            .map_err(|e| AppError::internal(e.to_string()))?
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        self.trash_purge(&ids)
+    }
 }

@@ -15,6 +15,7 @@ use infrastructure::{
 };
 use service::{
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
+    files::FilesService,
     container::ContainerService,
     gateway::GatewayService, logs::LogService, member::MemberService, setup::SetupService,
     system::SystemService,
@@ -54,6 +55,7 @@ async fn async_main() {
         setup: setup.clone(),
         system,
         containers: Arc::new(ContainerService::new(docker)),
+        files: Arc::new(FilesService::new(db.clone(), cfg.data_dir.clone())),
         gateway: Arc::new(GatewayService::new(caddy.clone())),
         caddyfile: Arc::new(CaddyfileService::new(caddy, db.clone())),
         logs: Arc::new(LogService::new(db.clone())),

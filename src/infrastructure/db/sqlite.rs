@@ -37,6 +37,17 @@ pub struct ApiTokenRow {
     pub last_used_at: Option<String>,
 }
 
+/// 回收站里的一项。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TrashRow {
+    pub id: String,
+    pub name: String,
+    pub original_path: String,
+    pub size: i64,
+    pub kind: String,
+    pub deleted_at: String,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -138,6 +149,18 @@ impl Database {
                 author     TEXT NOT NULL DEFAULT '',
                 note       TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            -- 回收站索引。文件本身被挪到 <数据目录>/trash/<id>，这里只记它原来在哪。
+            -- 不做数据库和文件系统的双写事务：万一有一条对不上，宁可界面上少一项，
+            -- 也不能因为记不上账就把用户的文件删掉。
+            CREATE TABLE IF NOT EXISTS trash_items (
+                id            TEXT PRIMARY KEY NOT NULL,
+                name          TEXT NOT NULL,
+                original_path TEXT NOT NULL,
+                size          INTEGER NOT NULL DEFAULT 0,
+                kind          TEXT NOT NULL DEFAULT 'file',
+                deleted_at    TEXT NOT NULL DEFAULT (datetime('now'))
             );
             ",
         )?;
@@ -552,6 +575,74 @@ impl Database {
             )
             .optional()?;
         Ok(row)
+    }
+
+    // ── 回收站 ──
+
+    pub fn add_trash_item(
+        &self,
+        id: &str,
+        name: &str,
+        original_path: &str,
+        size: i64,
+        kind: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO trash_items(id, name, original_path, size, kind) VALUES(?1, ?2, ?3, ?4, ?5)",
+            params![id, name, original_path, size, kind],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_trash(&self) -> Result<Vec<TrashRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, original_path, size, kind, deleted_at FROM trash_items ORDER BY deleted_at DESC, id DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(TrashRow {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    original_path: row.get(2)?,
+                    size: row.get(3)?,
+                    kind: row.get(4)?,
+                    deleted_at: row.get(5)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn get_trash_item(&self, id: &str) -> Result<Option<TrashRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let row = conn
+            .query_row(
+                "SELECT id, name, original_path, size, kind, deleted_at FROM trash_items WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(TrashRow {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        original_path: row.get(2)?,
+                        size: row.get(3)?,
+                        kind: row.get(4)?,
+                        deleted_at: row.get(5)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    pub fn remove_trash_items(&self, ids: &[String]) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        for id in ids {
+            conn.execute("DELETE FROM trash_items WHERE id = ?1", params![id])?;
+        }
+        Ok(())
     }
 
     // ── API Tokens ──

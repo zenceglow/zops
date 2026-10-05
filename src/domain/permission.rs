@@ -28,6 +28,8 @@ pub const OPS_GATEWAY_WRITE: &str = "ops.gateway.write";
 pub const OPS_LOG_READ: &str = "ops.log.read";
 /// 浏览文件系统。只读 —— 面板里能看日志、能开 SSH 终端，这一项不该更弱也不该更强。
 pub const OPS_FILES_READ: &str = "ops.files.read";
+/// 移动/复制/删除文件。删除进的是回收站，但仍然是在动别人的文件，单独一个权限。
+pub const OPS_FILES_WRITE: &str = "ops.files.write";
 pub const OPS_SSH_CONNECT: &str = "ops.ssh.connect";
 pub const OPS_MEMBER_MANAGE: &str = "ops.member.manage";
 pub const OPS_AUTOMATION_MANAGE: &str = "ops.automation.manage";
@@ -128,6 +130,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
         },
         PermissionDef {
             id: OPS_FILES_READ,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_FILES_WRITE,
             group: "ops",
         },
         PermissionDef {
