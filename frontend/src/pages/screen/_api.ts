@@ -3,6 +3,20 @@ import { get, post } from '../../lib/api';
 export type Count = { key: string; count: number };
 export type HourPoint = { hour: string; count: number };
 
+/** 地球上的一个落点。count 只对访问点有意义（服务器自己那个是 0）。 */
+export type GeoPoint = { label: string; lat: number; lon: number; count: number };
+
+export type Security = {
+  /** 被接入网关规则拦下的（403）。 */
+  blocked: number;
+  /** 自报是机器人的 UA。 */
+  bots: number;
+  /** 扫描器与脚本工具类 UA。 */
+  tools: number;
+  attackers: { ip: string; location: string; count: number }[];
+  blocked_paths: Count[];
+};
+
 export type AnalyticsOverview = {
   hours: number;
   total: number;
@@ -18,6 +32,9 @@ export type AnalyticsOverview = {
   /** 正在采集的访问日志文件。全是空的时候要能解释"为什么一条都没有"。 */
   sources: string[];
   geo: { enabled: boolean; endpoint: string; note: string };
+  self_location: GeoPoint | null;
+  points: GeoPoint[];
+  security: Security;
 };
 
 export type AccessEvent = {
@@ -34,6 +51,12 @@ export type AccessEvent = {
   status: number;
   bytes: number;
   ua: string;
+  /** 落点坐标；没查到归属地时是 0/0。 */
+  lat: number;
+  lon: number;
+  /** 被网关拦下 / UA 不像浏览器。 */
+  blocked: boolean;
+  bot: boolean;
 };
 
 export type EventsPage = { events: AccessEvent[]; cursor: number };

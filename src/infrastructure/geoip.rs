@@ -23,7 +23,10 @@ use serde_json::json;
 
 /// ip-api 的批量接口：一次最多 100 个 IP，返回里带 `query` 字段好回填。
 const DEFAULT_ENDPOINT: &str =
-    "http://ip-api.com/batch?lang=zh-CN&fields=status,message,country,regionName,city,isp,query";
+    "http://ip-api.com/batch?lang=zh-CN&fields=status,message,country,regionName,city,isp,lat,lon,query";
+/// 不带参数问它，返回的就是"我自己"在哪。用来把地球上的访问点连到这台服务器。
+const SELF_ENDPOINT: &str =
+    "http://ip-api.com/json/?lang=zh-CN&fields=status,message,country,regionName,city,isp,lat,lon,query";
 
 pub const MAX_BATCH: usize = 100;
 const TIMEOUT: Duration = Duration::from_secs(8);
@@ -35,6 +38,9 @@ pub struct Geo {
     pub country: String,
     pub city: String,
     pub isp: String,
+    /// 经纬度，给地球动画定位用。查不到就是 0/0（几内亚湾），别画。
+    pub lat: f64,
+    pub lon: f64,
 }
 
 /// 一眼能认出来的地址就不用出门问了。
@@ -105,6 +111,18 @@ pub async fn lookup(ips: &[String]) -> HashMap<String, Geo> {
     out
 }
 
+/// 这台服务器自己在外面的位置。
+///
+/// 地球动画要一条"从访客到我这台机器"的弧线才讲得通 —— 没有终点的话，那些点
+/// 只是散在地图上。ip-api 不带参数问就是问调用方自己的出口 IP。
+pub async fn lookup_self() -> Option<Geo> {
+    if !enabled() {
+        return None;
+    }
+    let out = get(SELF_ENDPOINT).await.ok()?;
+    parse_one(&out)
+}
+
 async fn query(ips: &[String]) -> Result<HashMap<String, Geo>, String> {
     let body = serde_json::to_vec(ips).map_err(|e| e.to_string())?;
     let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
@@ -115,6 +133,24 @@ async fn query(ips: &[String]) -> Result<HashMap<String, Geo>, String> {
         .body(Full::new(Bytes::from(body)))
         .map_err(|e| e.to_string())?;
 
+    let body = send(client, req).await?;
+    parse_response(&body)
+}
+
+async fn get(url: &str) -> Result<String, String> {
+    let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
+    let req = Request::builder()
+        .method("GET")
+        .uri(url)
+        .body(Full::new(Bytes::new()))
+        .map_err(|e| e.to_string())?;
+    send(client, req).await
+}
+
+async fn send(
+    client: Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>,
+    req: Request<Full<Bytes>>,
+) -> Result<String, String> {
     let res = tokio::time::timeout(TIMEOUT, client.request(req))
         .await
         .map_err(|_| "查询超时".to_string())?
@@ -128,7 +164,7 @@ async fn query(ips: &[String]) -> Result<HashMap<String, Geo>, String> {
         .await
         .map_err(|e| e.to_string())?
         .to_bytes();
-    parse_response(&String::from_utf8_lossy(&bytes))
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 #[derive(Deserialize)]
@@ -145,6 +181,10 @@ struct Row {
     city: String,
     #[serde(default)]
     isp: String,
+    #[serde(default)]
+    lat: f64,
+    #[serde(default)]
+    lon: f64,
 }
 
 fn parse_response(raw: &str) -> Result<HashMap<String, Geo>, String> {
@@ -169,10 +209,28 @@ fn parse_response(raw: &str) -> Result<HashMap<String, Geo>, String> {
                 country: row.country,
                 city: row.city,
                 isp: row.isp,
+                lat: row.lat,
+                lon: row.lon,
             },
         );
     }
     Ok(out)
+}
+
+fn parse_one(raw: &str) -> Option<Geo> {
+    let row: Row = serde_json::from_str(raw).ok()?;
+    if row.status != "success" {
+        return None;
+    }
+    let label = if row.city.is_empty() { row.region } else { row.city.clone() };
+    Some(Geo {
+        label,
+        country: row.country,
+        city: row.city,
+        isp: row.isp,
+        lat: row.lat,
+        lon: row.lon,
+    })
 }
 
 /// 给界面看的说明，说清楚这个数字是怎么来的。

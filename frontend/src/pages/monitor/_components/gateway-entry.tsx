@@ -99,7 +99,9 @@ function SiteEntryItem({ site }: { site: SiteEntry }) {
     </>
   );
 
-  const cls = 'flex min-w-0 items-center gap-3.5 rounded-2xl transition-colors hover:bg-muted/30';
+  // 和容器那条一样：悬停底色要留出内边距（p-2 + -m-2），贴边不好看。
+  const cls =
+    '-m-2 flex min-w-0 items-center gap-3.5 rounded-2xl p-2 transition-colors hover:bg-muted/40';
   // 域名能直接打开就外链，否则（`:443`、通配）去站点管理页 —— 两种都只渲染一个
   // 可点元素，不套娃。
   return url ? (

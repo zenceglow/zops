@@ -230,7 +230,10 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
     // 这种）排面上不显示，收进 tooltip。
     <Link
       to={`/docker/containers/${c.id}`}
-      className="group/tile flex min-w-0 items-center gap-3.5 rounded-2xl transition-colors hover:bg-muted/30"
+      // p-2 + -m-2：悬停底色往四周多出 8px，不然色块紧贴着图标和文字，像是
+      // "框住了内容"而不是"托住了这一项"。负边距把多出来的部分抵回去，栅格
+      // 间距不变（行距 24px，两侧各 8px 还剩 8px）。
+      className="group/tile -m-2 flex min-w-0 items-center gap-3.5 rounded-2xl p-2 transition-colors hover:bg-muted/40"
       title={`${c.name}\n${c.image}\n${c.status}${startedAt ? `\n${t('docker.started')}: ${formatExact(startedAt)}` : ''}`}
     >
       {/* 品牌变量挂在最外层：光晕和色块是同级的兄弟节点，变量放在色块上光晕就取

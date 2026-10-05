@@ -10,7 +10,9 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::infrastructure::caddy::{access, process::CaddyProcess};
-use crate::infrastructure::db::{AccessEventRow, Database, GeoRow, NewAccessEvent};
+use crate::infrastructure::db::{
+    AccessEventRow, Database, GeoPointRow, GeoRow, NewAccessEvent,
+};
 use crate::infrastructure::geoip;
 use crate::shared::AppError;
 
@@ -22,6 +24,44 @@ const BOOTSTRAP_TAIL: u64 = 1 << 20;
 const GEO_PER_ROUND: i64 = 300;
 /// 访问流水保留天数。
 const RETENTION_DAYS: i64 = 30;
+/// 这台服务器自己位置的缓存键。
+const SELF_LOCATION_KEY: &str = "geo.self";
+
+/// 自己声明是机器人的 UA。都是各爬虫的自报名，误判概率低。
+const BOT_HINTS: &[&str] = &[
+    "bot",
+    "spider",
+    "crawl",
+    "slurp",
+    "semrush",
+    "ahrefs",
+    "facebookexternalhit",
+    "headlesschrome",
+];
+
+/// 扫描器与脚本工具。出现在生产站点的正常流量里基本只有两种可能：监控探活，
+/// 或者有人在扫。所以这一档单独算，不混进"机器人"里 —— 前者是规矩的访客，
+/// 后者不是一回事。
+const TOOL_HINTS: &[&str] = &[
+    "sqlmap",
+    "nmap",
+    "nikto",
+    "masscan",
+    "zgrab",
+    "nuclei",
+    "gobuster",
+    "dirbuster",
+    "wpscan",
+    "python-requests",
+    "go-http-client",
+    "curl/",
+    "wget",
+    "libwww",
+    "scrapy",
+    "okhttp",
+    "java/",
+    "axios/",
+];
 
 #[derive(Serialize)]
 pub struct AnalyticsOverview {
@@ -41,6 +81,28 @@ pub struct AnalyticsOverview {
     /// 采集在跑、采到几条日志文件 —— 空数据时要能解释"为什么是 0"。
     pub sources: Vec<String>,
     pub geo: serde_json::Value,
+    /// 这台服务器自己在地球上的位置（拿不到就是 null，动画只在有点时才连线）。
+    pub self_location: Option<GeoPointRow>,
+    /// 地图上的落点。
+    pub points: Vec<GeoPointRow>,
+    pub security: Security,
+}
+
+#[derive(Serialize, Default)]
+pub struct Security {
+    /// 被接入网关规则拦下的（403）。
+    pub blocked: i64,
+    pub bots: i64,
+    pub tools: i64,
+    pub attackers: Vec<Attacker>,
+    pub blocked_paths: Vec<Count>,
+}
+
+#[derive(Serialize)]
+pub struct Attacker {
+    pub ip: String,
+    pub location: String,
+    pub count: i64,
 }
 
 #[derive(Serialize)]
@@ -77,6 +139,9 @@ pub struct EventOut {
     pub status: i64,
     pub bytes: i64,
     pub ua: String,
+    /// 被网关拦下 / UA 像机器人。前端据此把这行标红，不用再自己判断一遍。
+    pub blocked: bool,
+    pub bot: bool,
 }
 
 pub struct AnalyticsService {
@@ -149,11 +214,38 @@ impl AnalyticsService {
         }
 
         self.resolve_locations().await;
+        self.ensure_self_location().await;
         // 清理一天做一次就够了，但多做几次也无害（DELETE 走索引）。
         let cutoff = now_secs() - (RETENTION_DAYS * 86_400) as f64;
         let _ = self.db.prune_access_events(cutoff);
 
         Ok(inserted)
+    }
+
+    /// 这台服务器自己在外面的位置。只查一次，之后从配置表读。
+    ///
+    /// 地球动画要一条"从访客落点连到这台机器"的弧线才讲得通，不然那些点只是
+    /// 散在地图上。查不到就不画连线，不编一个坐标出来。
+    async fn ensure_self_location(&self) {
+        if self
+            .db
+            .get_config(SELF_LOCATION_KEY)
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            return;
+        }
+        let Some(geo) = geoip::lookup_self().await else {
+            return;
+        };
+        let value = serde_json::json!({
+            "label": geo.label,
+            "lat": geo.lat,
+            "lon": geo.lon,
+            "count": 0,
+        });
+        let _ = self.db.set_config(SELF_LOCATION_KEY, &value.to_string());
     }
 
     /// 把还没归属地的 IP 补上。内网地址本地就能判定，不用发请求。
@@ -176,6 +268,8 @@ impl AnalyticsService {
                     country: geo.country,
                     city: geo.city,
                     isp: geo.isp,
+                    lat: geo.lat,
+                    lon: geo.lon,
                 }),
                 None => ask.push(ip),
             }
@@ -190,6 +284,8 @@ impl AnalyticsService {
                     country: geo.country,
                     city: geo.city,
                     isp: geo.isp,
+                    lat: geo.lat,
+                    lon: geo.lon,
                 });
             }
         }
@@ -231,6 +327,38 @@ impl AnalyticsService {
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
             geo: geoip::resolver_hint(),
+            self_location: self
+                .db
+                .get_config(SELF_LOCATION_KEY)
+                .ok()
+                .flatten()
+                .and_then(|raw| serde_json::from_str::<GeoPointRow>(&raw).ok()),
+            points: self.db.access_geo_points(since, 60)?,
+            security: self.security(since)?,
+        })
+    }
+
+    fn security(&self, since: f64) -> Result<Security, AppError> {
+        Ok(Security {
+            blocked: self.db.access_count_blocked(since)?,
+            bots: self.db.access_count_ua(since, BOT_HINTS)?,
+            tools: self.db.access_count_ua(since, TOOL_HINTS)?,
+            attackers: self
+                .db
+                .access_top_attackers(since, TOOL_HINTS, 8)?
+                .into_iter()
+                .map(|(ip, location, count)| Attacker {
+                    ip,
+                    location,
+                    count,
+                })
+                .collect(),
+            blocked_paths: self
+                .db
+                .access_blocked_paths(since, 6)?
+                .into_iter()
+                .map(|(key, count)| Count { key, count })
+                .collect(),
         })
     }
 
@@ -265,6 +393,7 @@ impl From<AccessEventRow> for EventOut {
                     .to_string()
             })
             .unwrap_or_else(|| "—".to_string());
+        let bot = !is_browser(&r.ua);
         Self {
             id: r.id,
             ts: r.ts,
@@ -278,8 +407,25 @@ impl From<AccessEventRow> for EventOut {
             status: r.status,
             bytes: r.bytes,
             ua: r.ua,
+            blocked: r.status == 403,
+            bot,
         }
     }
+}
+
+/// UA 看着像人还是像机器。
+///
+/// 分成"自报的机器人"和"脚本工具"两批，但在这个标记上合并成一件事：**这条不是
+/// 人点出来的**。大屏上只需要一眼分出来，分得太细反而没人看。
+fn is_browser(ua: &str) -> bool {
+    if ua.trim().is_empty() {
+        return false;
+    }
+    let lower = ua.to_lowercase();
+    !BOT_HINTS
+        .iter()
+        .chain(TOOL_HINTS.iter())
+        .any(|h| lower.contains(h))
 }
 
 fn now_secs() -> f64 {

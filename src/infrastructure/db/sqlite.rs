@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use anyhow::{anyhow, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 
 use super::password::{hash_password, verify_password};
 use crate::domain::auth::MemberInfo;
@@ -226,6 +227,8 @@ impl Database {
                 country    TEXT NOT NULL DEFAULT '',
                 city       TEXT NOT NULL DEFAULT '',
                 isp        TEXT NOT NULL DEFAULT '',
+                lat        REAL NOT NULL DEFAULT 0,
+                lon        REAL NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -262,6 +265,19 @@ impl Database {
                 "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member'",
                 [],
             )?;
+        }
+        // geo_cache 是后加的，早先的库里没有经纬度列。
+        let has_coords: bool = {
+            let mut stmt = conn.prepare("PRAGMA table_info(geo_cache)")?;
+            let cols: Vec<String> = stmt
+                .query_map([], |row| row.get::<_, String>(1))?
+                .filter_map(|r| r.ok())
+                .collect();
+            cols.iter().any(|c| c == "lat")
+        };
+        if !has_coords {
+            conn.execute("ALTER TABLE geo_cache ADD COLUMN lat REAL NOT NULL DEFAULT 0", [])?;
+            conn.execute("ALTER TABLE geo_cache ADD COLUMN lon REAL NOT NULL DEFAULT 0", [])?;
         }
         // Promote earliest user to super_admin if none exists (upgrade path)
         let super_count: i64 = conn.query_row(
@@ -1148,14 +1164,15 @@ impl Database {
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO geo_cache (ip, label, country, city, isp, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+                "INSERT INTO geo_cache (ip, label, country, city, isp, lat, lon, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))
                  ON CONFLICT(ip) DO UPDATE SET
                     label = excluded.label, country = excluded.country,
-                    city = excluded.city, isp = excluded.isp, updated_at = excluded.updated_at",
+                    city = excluded.city, isp = excluded.isp,
+                    lat = excluded.lat, lon = excluded.lon, updated_at = excluded.updated_at",
             )?;
             for r in rows {
-                stmt.execute(params![r.ip, r.label, r.country, r.city, r.isp])?;
+                stmt.execute(params![r.ip, r.label, r.country, r.city, r.isp, r.lat, r.lon])?;
             }
         }
         tx.commit()?;
@@ -1279,7 +1296,8 @@ impl Database {
         let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
         let mut stmt = conn.prepare(
             "SELECT e.id, e.ts, e.ip, e.host, e.method, e.uri, e.status, e.bytes,
-                    e.duration_ms, e.ua, COALESCE(g.label, ''), COALESCE(g.isp, '')
+                    e.duration_ms, e.ua, COALESCE(g.label, ''), COALESCE(g.isp, ''),
+                    g.lat, g.lon
              FROM access_events e LEFT JOIN geo_cache g ON g.ip = e.ip
              WHERE e.id > ?1 ORDER BY e.id ASC LIMIT ?2",
         )?;
@@ -1297,6 +1315,8 @@ impl Database {
                 ua: row.get(9)?,
                 label: row.get(10)?,
                 isp: row.get(11)?,
+                lat: row.get::<_, Option<f64>>(12)?.unwrap_or(0.0),
+                lon: row.get::<_, Option<f64>>(13)?.unwrap_or(0.0),
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -1308,6 +1328,92 @@ impl Database {
         Ok(conn.query_row("SELECT COALESCE(MAX(id), 0) FROM access_events", [], |r| {
             r.get(0)
         })?)
+    }
+
+    // ── 安全面：攻击 / 机器人 ──
+
+    /// UA 命中这批关键词的请求数。
+    ///
+    /// 关键词以 JSON 数组传进 SQL 用 `json_each` 展开，拼 SQL 字符串会让这段代码
+    /// 离注入只有一步 —— 虽然这里是常量，但没有理由开这个口子。
+    pub fn access_count_ua(&self, since: f64, hints: &[&str]) -> Result<i64> {
+        let json = serde_json::to_string(hints).unwrap_or_else(|_| "[]".into());
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM access_events e
+             WHERE e.ts >= ?1 AND EXISTS (
+                SELECT 1 FROM json_each(?2) h WHERE instr(lower(e.ua), h.value) > 0)",
+            params![since, json],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// 被接入网关规则拦下的请求数（403）。
+    pub fn access_count_blocked(&self, since: f64) -> Result<i64> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM access_events WHERE ts >= ?1 AND status = 403",
+            params![since],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// 攻击来源 IP 排行：被拦下的，或者 UA 就是攻击工具的。
+    pub fn access_top_attackers(
+        &self,
+        since: f64,
+        tool_hints: &[&str],
+        limit: i64,
+    ) -> Result<Vec<(String, String, i64)>> {
+        let json = serde_json::to_string(tool_hints).unwrap_or_else(|_| "[]".into());
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT e.ip, COALESCE(NULLIF(g.label, ''), '未知') AS label, COUNT(*) c
+             FROM access_events e LEFT JOIN geo_cache g ON g.ip = e.ip
+             WHERE e.ts >= ?1 AND (
+                e.status = 403 OR EXISTS (
+                    SELECT 1 FROM json_each(?2) h WHERE instr(lower(e.ua), h.value) > 0))
+                -- 回环地址不进榜。服务器自己调自己（健康检查、定时任务、面板里敲的
+                -- curl）会带着工具类 UA 命中上面的条件，把它们排在第一行，这张攻击
+                -- 来源榜就没法看了。内网地址保留：那可能是被拿下的机器。
+                AND e.ip NOT LIKE '127.%' AND e.ip <> '::1'
+             GROUP BY e.ip ORDER BY c DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![since, json, limit], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// 被拦得最多的路径。
+    pub fn access_blocked_paths(&self, since: f64, limit: i64) -> Result<Vec<(String, i64)>> {
+        self.group_count(
+            "SELECT uri k, COUNT(*) c FROM access_events
+             WHERE ts >= ?1 AND status = 403 GROUP BY k ORDER BY c DESC LIMIT ?2",
+            since,
+            limit,
+        )
+    }
+
+    /// 地球动画要的落点：有经纬度的地方 + 各来了多少请求。
+    pub fn access_geo_points(&self, since: f64, limit: i64) -> Result<Vec<GeoPointRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT COALESCE(NULLIF(g.label, ''), '未知') AS label,
+                    ROUND(g.lat, 2) AS lat, ROUND(g.lon, 2) AS lon, COUNT(*) c
+             FROM access_events e JOIN geo_cache g ON g.ip = e.ip
+             WHERE e.ts >= ?1 AND (g.lat != 0 OR g.lon != 0)
+             GROUP BY lat, lon ORDER BY c DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![since, limit], |row| {
+            Ok(GeoPointRow {
+                label: row.get(0)?,
+                lat: row.get(1)?,
+                lon: row.get(2)?,
+                count: row.get(3)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
     /// 最近 N 条，按时间正序返回（旧 → 新）。
@@ -1324,7 +1430,8 @@ impl Database {
         let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
         let mut stmt = conn.prepare(
             "SELECT e.id, e.ts, e.ip, e.host, e.method, e.uri, e.status, e.bytes,
-                    e.duration_ms, e.ua, COALESCE(g.label, ''), COALESCE(g.isp, '')
+                    e.duration_ms, e.ua, COALESCE(g.label, ''), COALESCE(g.isp, ''),
+                    g.lat, g.lon
              FROM access_events e LEFT JOIN geo_cache g ON g.ip = e.ip
              ORDER BY e.id DESC LIMIT ?1",
         )?;
@@ -1342,6 +1449,8 @@ impl Database {
                 ua: row.get(9)?,
                 label: row.get(10)?,
                 isp: row.get(11)?,
+                lat: row.get::<_, Option<f64>>(12)?.unwrap_or(0.0),
+                lon: row.get::<_, Option<f64>>(13)?.unwrap_or(0.0),
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -1369,6 +1478,16 @@ pub struct GeoRow {
     pub country: String,
     pub city: String,
     pub isp: String,
+    pub lat: f64,
+    pub lon: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeoPointRow {
+    pub label: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub count: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -1385,6 +1504,8 @@ pub struct AccessEventRow {
     pub ua: String,
     pub label: String,
     pub isp: String,
+    pub lat: f64,
+    pub lon: f64,
 }
 
 #[derive(Debug, Clone)]

@@ -26,6 +26,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  // 大屏是"投在墙上的那一块"，不是页面里的一屏内容：给它全屏，不要菜单栏和
+  // Dock。它自己右上角有关闭。这个特例只此一处，不值得为它做一套布局体系。
+  if (pathname === '/screen') {
+    return <>{children}</>;
+  }
+
   return (
     <div className="relative min-h-screen bg-background">
             {/* pt-11：给顶部 28px 的菜单栏让位，再留一点呼吸。 */}
