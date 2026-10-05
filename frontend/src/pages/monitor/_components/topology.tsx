@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 import type { ContainerInfo } from '../_api';
 import type { SiteEntry } from '../../sites/_api';
 import { summarizeSite } from '../../sites/_lib/site-summary';
@@ -217,8 +218,18 @@ export function Topology({
         })}
       </svg>
 
+      {/* 空状态不能只是一句话：告诉用户"还没有"却不告诉他去哪儿加，等于把死路摆出来。 */}
       {entryNodes.length === 0 && (
-        <p className="py-10 text-center text-sm text-muted-foreground">{t('topology.empty')}</p>
+        <div className="flex flex-col items-center gap-3 py-10">
+          <p className="text-sm text-muted-foreground">{t('topology.empty')}</p>
+          <Link
+            to="/sites"
+            className="group inline-flex items-center gap-1.5 rounded-xl border border-border/70 px-3.5 py-2 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+          >
+            {t('topology.go_configure')}
+            <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </div>
       )}
     </div>
   );

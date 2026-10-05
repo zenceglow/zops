@@ -152,7 +152,28 @@
     "feature_log": "Access log",
     "feature_tls": "TLS",
     "feature_blocked": "Scanner block",
-    "feature_route": "Routing"
+    "feature_route": "Routing",
+    "runtime": "Runtime",
+    "runtime_docker": "Docker · {{name}}",
+    "runtime_binary": "Host binary",
+    "runtime_none": "Not installed",
+    "pid": "PID",
+    "container": "Container",
+    "version": "Version",
+    "config_modified": "Config changed",
+    "config_never": "never",
+    "view_logs": "View logs",
+    "logs_title": "Gateway logs",
+    "logs_desc": "When a site 502s, a certificate fails, or an upstream is unreachable, the answer is usually in these lines.",
+    "logs_source_unknown": "No log source found",
+    "logs_source": "Source",
+    "logs_updated": "updated {{time}}",
+    "logs_auto": "Auto refresh",
+    "logs_refresh": "Refresh",
+    "logs_empty": "No log output yet",
+    "logs_unavailable": "Logs unavailable",
+    "logs_fail": "Failed to read logs",
+    "close": "Close"
   },
   "docker": {
     "title": "Docker",
@@ -443,7 +464,8 @@
     "title": "Request path",
     "desc": "Internet → site entry → container, matched by port",
     "to_port": "to port",
-    "empty": "No site entries yet"
+    "empty": "No site entries yet",
+    "go_configure": "Configure a site entry"
   },
   "cleanup": {
     "title": "Clean up",

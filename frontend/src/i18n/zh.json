@@ -152,7 +152,28 @@
     "feature_log": "访问日志",
     "feature_tls": "TLS",
     "feature_blocked": "拦截扫描",
-    "feature_route": "路由分流"
+    "feature_route": "路由分流",
+    "runtime": "运行方式",
+    "runtime_docker": "Docker · {{name}}",
+    "runtime_binary": "本机二进制",
+    "runtime_none": "未安装",
+    "pid": "进程 PID",
+    "container": "容器",
+    "version": "版本",
+    "config_modified": "配置修改",
+    "config_never": "还没改过",
+    "view_logs": "查看日志",
+    "logs_title": "网关日志",
+    "logs_desc": "站点 502、证书签发失败、上游连不上时，答案基本都在这几行里。",
+    "logs_source_unknown": "未找到日志来源",
+    "logs_source": "来源",
+    "logs_updated": "更新于 {{time}}",
+    "logs_auto": "自动刷新",
+    "logs_refresh": "刷新",
+    "logs_empty": "暂无日志输出",
+    "logs_unavailable": "拿不到日志",
+    "logs_fail": "日志读取失败",
+    "close": "关闭"
   },
   "docker": {
     "title": "Docker",
@@ -443,7 +464,8 @@
     "title": "请求链路",
     "desc": "外网 → 站点入口 → 容器，中间按端口匹配",
     "to_port": "指向",
-    "empty": "还没有配置站点入口"
+    "empty": "还没有配置站点入口",
+    "go_configure": "去配置站点入口"
   },
   "cleanup": {
     "title": "垃圾清理",
