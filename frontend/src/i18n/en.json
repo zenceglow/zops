@@ -713,7 +713,17 @@
   "update": {
     "title": "Version {{version}} available",
     "desc": "You are on {{current}}. Upgrading keeps your data.",
+    "now": "Update now",
+    "downloading": "Downloading and verifying the new version…",
+    "downloading_short": "Downloading",
+    "restarting": "Restarting the panel — the page reloads in a few seconds…",
+    "restarting_short": "Restarting",
+    "done": "Updated to {{version}}, reloading…",
+    "apply_failed": "Update failed",
+    "restart_slow": "The panel is taking longer than expected to come back. Refresh in a moment; if it stays down, run systemctl restart zenceglow-ops on the server.",
+    "manual_hint": "This instance wasn't installed by the install script, so in-place upgrade doesn't apply. Run this instead:",
     "copy": "Copy upgrade command",
+    "copy_now": "Copy upgrade command",
     "copied": "Copied",
     "later": "Later"
   }

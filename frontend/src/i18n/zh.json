@@ -713,7 +713,17 @@
   "update": {
     "title": "有新版本 {{version}}",
     "desc": "当前 {{current}}，升级不会动数据。",
+    "now": "立即升级",
+    "downloading": "正在下载并校验新版本…",
+    "downloading_short": "下载中",
+    "restarting": "正在重启面板，几秒后自动刷新…",
+    "restarting_short": "重启中",
+    "done": "已升级到 {{version}}，正在刷新页面…",
+    "apply_failed": "升级没成功",
+    "restart_slow": "面板重启得比预期慢，刷新一下看看；如果还起不来，在服务器上跑 systemctl restart zenceglow-ops。",
+    "manual_hint": "这个实例不是安装脚本部署的，自动升级不适用，手动跑这行：",
     "copy": "复制升级命令",
+    "copy_now": "复制升级命令",
     "copied": "已复制",
     "later": "稍后"
   }

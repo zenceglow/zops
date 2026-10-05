@@ -6,6 +6,8 @@ export type UpdateStatus = {
   /** 拉不到清单时是 null —— 界面据此说"检查不了"，而不是谎报"已是最新"。 */
   latest: string | null;
   has_update: boolean;
+  /** 面板能不能自己升级（只有安装脚本装的那份二进制才行）。 */
+  can_apply: boolean;
   notes: string;
   published_at: string;
   checked_at: string | null;

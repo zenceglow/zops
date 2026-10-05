@@ -67,6 +67,17 @@ async fn release(
     Json(ApiResponse::ok(state.selfupdate.status()))
 }
 
+/// 就地升级面板自己：下载新版本、换掉二进制、重启服务。
+///
+/// 要 `OPS_SYSTEM_WRITE`：这一步会覆盖磁盘上的可执行文件，是真正会改主机的动作。
+async fn apply_release(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<crate::service::selfupdate::ApplyOutcome>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    Ok(Json(ApiResponse::ok(state.selfupdate.apply().await?)))
+}
+
 async fn overview(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
@@ -136,6 +147,7 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/panel", get(panel))
         .route("/release", get(release))
+        .route("/release/apply", post(apply_release))
         .route("/ports", get(ports))
         .route("/overview", get(overview))
         .route("/updates", get(updates))
