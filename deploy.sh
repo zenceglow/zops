@@ -2,12 +2,14 @@
 # 本地交叉编译 Linux amd64 → 上传到 R2 (senapixel)
 #
 # 用法:
-#   export CLOUDFLARE_API_TOKEN="cfat_..."
-#   export CLOUDFLARE_ACCOUNT_ID="d29e6f9ac661174f715491f9c3d070c7"
 #   ./deploy.sh
 #
-# R2 路径: senapixel/app/ops/zenceglow-ops-amd64
-# CDN 地址: https://cdn.senapixel.com/app/ops/zenceglow-ops-amd64
+# 认证：用 `wrangler login` 登好的账号就行。CI 里没有浏览器，再改成设
+#   export CLOUDFLARE_API_TOKEN="cfat_..."
+#   export CLOUDFLARE_ACCOUNT_ID="d29e6f9ac661174f715491f9c3d070c7"
+#
+# R2 路径: senapixel/app/ops/{zenceglow-ops-amd64,install.sh}
+# CDN 地址: https://cdn.senapixel.com/app/ops/…
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -15,6 +17,7 @@ cd "$(dirname "$0")"
 TARGET="${TARGET:-x86_64-unknown-linux-gnu}"
 BUCKET="senapixel"
 R2_PATH="app/ops/zenceglow-ops-amd64"
+INSTALL_PATH="app/ops/install.sh"
 
 # ---- 检查必要命令 ----
 need_cmd() {
@@ -30,13 +33,17 @@ need_cmd pnpm
 need_cmd zig
 
 # ---- 检查 R2 凭证 ----
+#
+# 没设 token 也能发 —— wrangler 会用 `wrangler login` 存的 OAuth 凭据。这里只是
+# 提前确认拿得到凭据，免得前端和 Rust 都编译完了才发现传不上去。
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-  echo "error: 请先设置环境变量 CLOUDFLARE_API_TOKEN" >&2
-  echo "       export CLOUDFLARE_API_TOKEN=\"cfat_...\"" >&2
-  exit 1
-fi
-if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-  echo "error: 请先设置 CLOUDFLARE_ACCOUNT_ID" >&2
+  if ! npx --yes wrangler whoami >/dev/null 2>&1; then
+    echo "error: 没有 Cloudflare 凭据。先跑 wrangler login，或设 CLOUDFLARE_API_TOKEN" >&2
+    exit 1
+  fi
+elif [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+  # 只设 token 不设 account，往往传到一半才报错，一起检查掉。
+  echo "error: 设了 CLOUDFLARE_API_TOKEN 就必须同时设 CLOUDFLARE_ACCOUNT_ID" >&2
   exit 1
 fi
 
@@ -74,13 +81,25 @@ echo "========================================="
 echo " 3/3  上传到 R2 → $BUCKET/$R2_PATH"
 echo "========================================="
 
+# `--remote` 不能省：wrangler 4 的 r2 命令默认打到**本地模拟器**，不加这个参数会
+# 打印 "Resource location: local" 然后说"上传完成" —— 远端什么都没变。
 npx wrangler r2 object put "${BUCKET}/${R2_PATH}" \
   --file "$BIN" \
   --content-type application/octet-stream \
-  --cache-control "public, max-age=300"
+  --cache-control "public, max-age=300" \
+  --remote
+
+# 安装脚本一起传：一行安装命令拉的是 CDN 上这份，不跟着更新，就会出现
+# "二进制是新的、安装脚本还是旧的"。
+npx wrangler r2 object put "${BUCKET}/${INSTALL_PATH}" \
+  --file install.sh \
+  --content-type "text/x-shellscript; charset=utf-8" \
+  --cache-control "public, max-age=300" \
+  --remote
 
 echo ""
 echo "========================================="
 echo " ✅ 发布完成"
 echo " CDN: https://cdn.senapixel.com/${R2_PATH}"
+echo "      https://cdn.senapixel.com/${INSTALL_PATH}"
 echo "========================================="
