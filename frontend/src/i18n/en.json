@@ -291,5 +291,13 @@
     "status_critical": "Something is running hot",
     "uptime_prefix": "up",
     "more": "More details"
+  },
+  "net": {
+    "realtime": "Live",
+    "down": "Down",
+    "up": "Up",
+    "total": "Total",
+    "iface": "interfaces",
+    "since_boot": "Totals since boot"
   }
 }

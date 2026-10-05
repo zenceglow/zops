@@ -291,5 +291,13 @@
     "status_critical": "有资源告急，值得看一眼",
     "uptime_prefix": "已运行",
     "more": "更多详情"
+  },
+  "net": {
+    "realtime": "实时",
+    "down": "下行",
+    "up": "上行",
+    "total": "累计",
+    "iface": "网卡",
+    "since_boot": "累计值自开机起算"
   }
 }

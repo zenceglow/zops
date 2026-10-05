@@ -114,7 +114,9 @@ export function Dock() {
         aria-label={t('app.name')}
         className={cn(
           'pointer-events-auto flex items-center gap-1 rounded-2xl border border-border/70 p-2',
-          'bg-background/70 shadow-lg shadow-black/20 backdrop-blur-xl',
+          // 85% 而不是 70%：内容滚到 Dock 后面时，70% 的透出会跟浮起来的图标
+          // 抢注意力，看着像没对齐而不是"浮在上面"。
+          'bg-background/85 shadow-lg shadow-black/20 backdrop-blur-xl',
         )}
       >
         {visible.map((item) => {

@@ -27,8 +27,8 @@ export function Ring({
   value,
   label,
   sub,
-  size = 164,
-  thickness = 16,
+  size = 148,
+  thickness = 14,
 }: {
   value: number;
   label: string;
