@@ -116,7 +116,7 @@ export function SshPanel() {
 
       <div
         ref={containerRef}
-        className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-[#0c0c0c] p-2"
+        className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-[#0c0c0c] p-4"
       />
     </div>
   );

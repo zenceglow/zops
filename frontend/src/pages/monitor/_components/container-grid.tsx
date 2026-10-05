@@ -107,24 +107,32 @@ function readableOn(hex: string): 'light' | 'dark' {
 }
 
 /**
- * 只取宿主端口。
+ * 端口映射，写成 `宿主→容器`。
  *
  * 后端已经把 Docker 的 `0.0.0.0:80->80/tcp, [::]:80->80/tcp` 归一成
- * `0.0.0.0:80-80, [::]:80-80`，所以这里只取中间那个宿主端口；v4/v6 两条记录
- * 会归到同一个端口上，用 Set 去重。`public_port = 0` 表示"只声明、没映射到宿主"，
- * 显示成 : 0 只会让人困惑，跳过。
+ * `0.0.0.0:80-80, [::]:80-80`，冒号后是宿主端口、横杠后是容器端口；v4/v6 两条
+ * 记录指向同一个映射，用 Set 去重。`public_port = 0` 表示"只声明、没映射到宿主"
+ * （mysql 那种 33060-33061/tcp），跳过。
  *
- * 没有可访问端口就返回空串，让调用方整行不渲染 —— 之前这里恒返回 "—"，因为
- * 正则匹配的是 Docker 原始格式，跟后端格式对不上，于是每个容器下面都挂着一行
- * 不知道是什么的横杠。
+ * 之前这里只显示宿主端口、还带个前导冒号（": 3307"），被读成"不对外映射"这种
+ * 莫名其妙的符号。写成箭头既说明了方向，也省掉猜。两端相同时只留一个数 —— 那时
+ * 本来就没有"哪个是哪个"的歧义。
+ *
+ * 没有任何映射就返回空串，让调用方整行不渲染。
  */
 function shortPorts(ports: string): string {
-  const found = new Set<string>();
+  const pairs = new Map<string, string>();
   for (const part of ports.split(',')) {
-    const host = part.match(/:(\d+)-/)?.[1];
-    if (host && host !== '0') found.add(host);
+    const m = part.match(/:(\d+)-(\d+)/);
+    if (!m) continue;
+    const [, host, container] = m;
+    if (host === '0') continue;
+    pairs.set(host, container);
   }
-  return found.size > 0 ? ': ' + Array.from(found).sort().join(' ') : '';
+  return Array.from(pairs)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([host, container]) => (host === container ? host : `${host}→${container}`))
+    .join(' ');
 }
 
 /**
@@ -271,7 +279,9 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
           {c.image}
         </p>
         <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-          {[ago(startedAt), ports].filter(Boolean).join(' · ')}
+          {[ago(startedAt), ports && `${t('docker.ports')} ${ports}`]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
         {running && (
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80 tabular-nums">
