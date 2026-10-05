@@ -1,32 +1,85 @@
 import { useTranslation } from 'react-i18next';
+import type { ComponentType } from 'react';
+import { Database, Globe, Package, Server, Terminal } from 'lucide-react';
 import {
-  AppWindow,
-  Box,
-  Database,
-  Globe,
-  Package,
-  Terminal,
-  type LucideIcon,
-} from 'lucide-react';
+  SiCaddy,
+  SiClickhouse,
+  SiDocker,
+  SiElasticsearch,
+  SiGitea,
+  SiGhost,
+  SiGrafana,
+  SiHomeassistant,
+  SiInfluxdb,
+  SiJenkins,
+  SiMariadb,
+  SiMinio,
+  SiMongodb,
+  SiMysql,
+  SiNextcloud,
+  SiNginx,
+  SiNodedotjs,
+  SiPortainer,
+  SiPostgresql,
+  SiPrometheus,
+  SiPython,
+  SiRabbitmq,
+  SiRedis,
+  SiSupabase,
+  SiTraefikproxy,
+  SiVault,
+} from 'react-icons/si';
 import { cn } from '../../../lib/utils';
 import type { ContainerInfo } from '../_api';
+import { SectionTitle } from './section-title';
 
 /**
  * 按镜像/名字猜一个"应用图标"。
  *
  * 后端不提供容器图标，也不值得为此加接口：容器名和镜像名本身就带着足够的
  * 线索（mysql / caddy / node），按关键词归类比统一画一个方块更像桌面。
+ *
+ * 认得出的产品直接给品牌图标 —— 一排容器全是同一个"数据库"图标等于没给信息，
+ * 而 mysql 和 redis 在运维眼里根本是两回事。认不出的才退回按形状归类。
  */
-const ICON_RULES: [RegExp, LucideIcon][] = [
-  [/mysql|maria|postgres|mongo|redis|memcache|database|\bdb\b/i, Database],
-  [/caddy|nginx|traefik|apache|httpd|\bweb\b/i, Globe],
-  [/node|bun|deno|next|vite|\bapp\b|webapp/i, AppWindow],
-  [/ssh|git|runner|agent|worker|jenkins|ci\b/i, Terminal],
-  [/docker|containerd|registry|kube/i, Box],
+type Glyph = ComponentType<{ className?: string }>;
+
+const ICON_RULES: [RegExp, Glyph][] = [
+  [/mariadb/i, SiMariadb],
+  [/mysql/i, SiMysql],
+  [/postgres|pgsql/i, SiPostgresql],
+  [/mongo/i, SiMongodb],
+  [/redis/i, SiRedis],
+  [/clickhouse/i, SiClickhouse],
+  [/influx/i, SiInfluxdb],
+  [/elastic|opensearch/i, SiElasticsearch],
+  [/rabbitmq/i, SiRabbitmq],
+  [/minio/i, SiMinio],
+  [/supabase/i, SiSupabase],
+  [/grafana/i, SiGrafana],
+  [/prometheus/i, SiPrometheus],
+  [/jenkins/i, SiJenkins],
+  [/gitea|forgejo/i, SiGitea],
+  [/nextcloud/i, SiNextcloud],
+  [/ghost/i, SiGhost],
+  [/home-?assistant/i, SiHomeassistant],
+  [/vault/i, SiVault],
+  [/portainer/i, SiPortainer],
+  [/traefik/i, SiTraefikproxy],
+  [/caddy/i, SiCaddy],
+  [/nginx/i, SiNginx],
+  [/node|bun|deno|next\.?js|vite/i, SiNodedotjs],
+  [/python|django|flask|uvicorn|gunicorn|celery/i, SiPython],
+  [/registry|docker/i, SiDocker],
+  // 兜底：至少区分出"数据库 / 站点 / 任务"这几类形状。
+  [/mysql|data|database|\bdb\b|sql/i, Database],
+  [/web|http|proxy|gateway/i, Globe],
+  [/ssh|git|runner|agent|worker|job|ci\b/i, Terminal],
 ];
 
-function iconFor(c: ContainerInfo): LucideIcon {
-  const hay = `${c.name} ${c.image}`;
+function iconFor(c: ContainerInfo): Glyph {
+  // 镜像名在前：名字是用户自己起的（"myserver-1"），镜像才是这个容器到底跑了什么。
+  const hay = `${c.image} ${c.name}`;
   for (const [re, Icon] of ICON_RULES) {
     if (re.test(hay)) return Icon;
   }
@@ -60,12 +113,13 @@ function ContainerTile({ c }: { c: ContainerInfo }) {
     <div className="flex w-[132px] flex-col items-center text-center">
       <span
         className={cn(
-          'flex size-12 items-center justify-center rounded-2xl bg-muted/60 ring-1 ring-border/50',
+          'flex size-12 items-center justify-center rounded-2xl bg-muted/70 ring-1 ring-border/50',
           'transition-transform duration-150 hover:-translate-y-0.5',
           !running && 'opacity-50',
         )}
       >
-        <Icon className="size-5 text-foreground/80" />
+        {/* 品牌图标（mysql 的海豚、redis 的字标）细节比线性图标密，给大一号才认得出来。 */}
+        <Icon className="size-6 text-foreground/90" />
       </span>
       <span className="mt-3 w-full truncate text-sm font-medium" title={c.name}>
         {c.name}
@@ -92,14 +146,18 @@ function ContainerTile({ c }: { c: ContainerInfo }) {
   );
 }
 
-/** 容器网格：有多少个显示多少个，最后一行也左右居中。 */
+/** 容器网格：有多少个显示多少个，贴着左边排，跟上面的环、标题对齐。 */
 export function ContainerGrid({ containers }: { containers: ContainerInfo[] }) {
   if (containers.length === 0) return null;
   return (
-    <section className="mx-auto flex max-w-4xl flex-wrap justify-center gap-x-4 gap-y-6">
-      {containers.map((c) => (
-        <ContainerTile key={c.id} c={c} />
-      ))}
+    <section>
+      {/* 不做多语言：用户点名要 "Servers" 这个词，中英环境下都保持原样。 */}
+      <SectionTitle icon={Server} title="Servers" />
+      <div className="mt-6 flex flex-wrap gap-x-4 gap-y-6">
+        {containers.map((c) => (
+          <ContainerTile key={c.id} c={c} />
+        ))}
+      </div>
     </section>
   );
 }

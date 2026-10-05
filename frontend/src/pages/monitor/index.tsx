@@ -32,9 +32,9 @@ export default function MonitorPage() {
     return (
       <div className="space-y-8 pt-2">
         <Skeleton className="h-12 w-96 max-w-full" />
-        <div className="grid grid-cols-2 justify-items-center gap-y-8 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="size-[128px] rounded-full" />
+        <div className="flex flex-wrap gap-x-8 gap-y-8">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="size-[104px] rounded-full" />
           ))}
         </div>
         <Skeleton className="mx-auto h-40 w-full max-w-2xl rounded-2xl" />
@@ -48,8 +48,40 @@ export default function MonitorPage() {
   const worstDisk = disks.slice().sort((a, b) => b.percent - a.percent)[0];
   const diskPct = worstDisk?.percent ?? 0;
   const swapPct = sys.swap_total > 0 ? (sys.swap_used / sys.swap_total) * 100 : 0;
+  const load1 = sys.load_avg[0] ?? 0;
+  // 负载按"占满几核"折算成百分比：8 核上 load=8 就是刚好跑满，这个口径比裸数字直观。
+  const loadPct = sys.cpu_cores > 0 ? (load1 / sys.cpu_cores) * 100 : 0;
   const worst = Math.max(sys.cpu_usage, sys.memory_percent, diskPct, swapPct);
   const status = worst >= 90 ? 'critical' : worst >= 75 ? 'busy' : 'ok';
+
+  const rings = [
+    { value: sys.cpu_usage, label: t('monitor.cpu'), sub: `${sys.cpu_cores} ${t('monitor.cores')}` },
+    {
+      value: loadPct,
+      label: t('monitor.load'),
+      sub: sys.load_avg.map((n) => n.toFixed(1)).join(' / '),
+    },
+    {
+      value: sys.memory_percent,
+      label: t('monitor.memory'),
+      sub: `${formatBytes(sys.memory_used)} / ${formatBytes(sys.memory_total)}`,
+    },
+    {
+      value: diskPct,
+      label: t('monitor.disk'),
+      sub: worstDisk
+        ? `${worstDisk.mount} · ${formatBytes(worstDisk.used)} / ${formatBytes(worstDisk.total)}`
+        : '—',
+    },
+    {
+      value: swapPct,
+      label: t('monitor.swap'),
+      sub:
+        sys.swap_total > 0
+          ? `${formatBytes(sys.swap_used)} / ${formatBytes(sys.swap_total)}`
+          : '—',
+    },
+  ];
 
   return (
     <div className="space-y-8">
@@ -71,35 +103,14 @@ export default function MonitorPage() {
         <NetworkWidget />
       </section>
 
-      <section className="grid grid-cols-2 justify-items-center gap-x-6 gap-y-8 sm:grid-cols-4">
-        <Ring
-          value={sys.cpu_usage}
-          label={t('monitor.cpu')}
-          sub={`${sys.cpu_cores} ${t('monitor.cores')} · ${sys.load_avg.map((n) => n.toFixed(1)).join(' / ')}`}
-        />
-        <Ring
-          value={sys.memory_percent}
-          label={t('monitor.memory')}
-          sub={`${formatBytes(sys.memory_used)} / ${formatBytes(sys.memory_total)}`}
-        />
-        <Ring
-          value={diskPct}
-          label={t('monitor.disk')}
-          sub={
-            worstDisk
-              ? `${worstDisk.mount} · ${formatBytes(worstDisk.used)} / ${formatBytes(worstDisk.total)}`
-              : '—'
-          }
-        />
-        <Ring
-          value={swapPct}
-          label={t('monitor.swap')}
-          sub={
-            sys.swap_total > 0
-              ? `${formatBytes(sys.swap_used)} / ${formatBytes(sys.swap_total)}`
-              : '—'
-          }
-        />
+      {/* 定宽列 + 左对齐：环变小之后，按均分整行的排法会让它们之间空出一大片，
+          看起来像没排完；贴着左边排开才像一排"仪表"。 */}
+      <section className="flex flex-wrap items-start gap-x-8 gap-y-8">
+        {rings.map((r) => (
+          <div key={r.label} className="w-[128px]">
+            <Ring value={r.value} label={r.label} sub={r.sub} />
+          </div>
+        ))}
       </section>
 
       {dockerSt?.available && <ContainerGrid containers={containers} />}

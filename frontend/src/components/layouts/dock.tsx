@@ -31,9 +31,11 @@ const TOP_ITEMS: SidebarItem[] = SIDEBAR_GROUPS.flatMap((g) => g.items);
 
 function dockClass(active?: boolean) {
   return cn(
-    'group relative flex size-11 items-center justify-center rounded-xl text-muted-foreground',
-    'transition-all duration-150 hover:-translate-y-0.5 hover:bg-muted hover:text-foreground',
-    active && 'bg-muted text-foreground',
+    'group relative flex size-12 items-center justify-center rounded-2xl text-muted-foreground',
+    'transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent hover:text-foreground',
+    // 选中态用 foreground/10 而不是 muted：muted 在浅色下只比底色深一点点，
+    // 配上实心图标才压得住，否则"当前在哪一页"要靠那个小圆点才看得出来。
+    active && 'bg-foreground/10 text-foreground',
   );
 }
 
@@ -113,7 +115,7 @@ export function Dock() {
       <nav
         aria-label={t('app.name')}
         className={cn(
-          'pointer-events-auto flex items-center gap-1 rounded-2xl border border-border/70 p-2',
+          'pointer-events-auto flex items-center gap-1 rounded-[26px] border border-border/70 p-2',
           // 85% 而不是 70%：内容滚到 Dock 后面时，70% 的透出会跟浮起来的图标
           // 抢注意力，看着像没对齐而不是"浮在上面"。
           'bg-background/85 shadow-lg shadow-black/20 backdrop-blur-xl',
@@ -133,7 +135,7 @@ export function Dock() {
                     className={dockClass(active)}
                   >
                     <DockGlyph label={t(item.labelKey)} active={active}>
-                      <Icon />
+                      <Icon className="size-5" />
                     </DockGlyph>
                   </button>
                 </DropdownMenuTrigger>
@@ -165,7 +167,7 @@ export function Dock() {
               className={dockClass(active)}
             >
               <DockGlyph label={t(item.labelKey)} active={active}>
-                <Icon />
+                <Icon className="size-5" />
               </DockGlyph>
             </NavLink>
           );
@@ -174,17 +176,17 @@ export function Dock() {
         <span className="mx-1 h-8 w-px shrink-0 bg-border" />
 
         <DockAction label={t('nav.switch_lang')} onClick={toggleLang}>
-          <NavLangIcon />
+          <NavLangIcon className="size-5" />
         </DockAction>
         <DockAction label={t(themeLabelKey(theme))} onClick={() => setTheme(nextTheme(theme))}>
-          <ThemeIcon />
+          <ThemeIcon className="size-5" />
         </DockAction>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" aria-label={user?.username || 'Admin'} className={dockClass()}>
               <DockGlyph label={user?.username || 'Admin'}>
-                <NavUserIcon />
+                <NavUserIcon className="size-5" />
               </DockGlyph>
             </button>
           </DropdownMenuTrigger>
