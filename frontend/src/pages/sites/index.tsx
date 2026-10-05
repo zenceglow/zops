@@ -138,8 +138,11 @@ export default function SitesPage() {
         </CardContent>
       </Card>
 
-      {/* modal={false}: Select inside Dialog — avoid nested portal / scroll lock */}
-      <Dialog open={s.showAdd} onOpenChange={s.setShowAdd} modal={false}>
+      {/* 这里原本是 modal={false}（怕 Select 的浮层和 Dialog 打架）。但非模态的
+          Radix Dialog 压根不渲染蒙层，对话框就和页面糊在一起、看不出是浮在上面的。
+          Select 点在 Dialog 里的场景 ui/dialog 已经专门处理过（点浮层不会误关），
+          所以回到默认的模态即可。 */}
+      <Dialog open={s.showAdd} onOpenChange={s.setShowAdd}>
         <DialogContent
           className="sm:max-w-md"
           onInteractOutside={(e) => e.preventDefault()}
