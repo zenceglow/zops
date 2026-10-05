@@ -9,7 +9,7 @@
     "automation": "Automation",
     "workers": "Workers",
     "resources": "Resources",
-    "monitor": "Monitor",
+    "monitor": "Desktop",
     "sites": "Sites",
     "ssh": "SSH",
     "files": "Files",
@@ -279,5 +279,17 @@
     },
     "nav.agent": "Connect Codex",
     "ops.agent.manage": "Manage MCP tokens and skills"
+  },
+  "home": {
+    "morning": "Good morning",
+    "afternoon": "Good afternoon",
+    "evening": "Good evening",
+    "night": "Working late",
+    "name_sep": ", ",
+    "status_ok": "This server is happy",
+    "status_busy": "A little busy, still steady",
+    "status_critical": "Something is running hot",
+    "uptime_prefix": "up",
+    "more": "More details"
   }
 }

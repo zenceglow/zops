@@ -9,7 +9,7 @@
     "automation": "自动化",
     "workers": "工作负载",
     "resources": "资源管理",
-    "monitor": "监控",
+    "monitor": "桌面",
     "sites": "站点",
     "ssh": "SSH",
     "files": "文件",
@@ -279,5 +279,17 @@
     },
     "nav.agent": "接入 Codex",
     "ops.agent.manage": "管理 MCP 令牌与技能"
+  },
+  "home": {
+    "morning": "早上好",
+    "afternoon": "下午好",
+    "evening": "晚上好",
+    "night": "夜深了",
+    "name_sep": "，",
+    "status_ok": "这台服务器一切正常",
+    "status_busy": "有点忙，但还稳",
+    "status_critical": "有资源告急，值得看一眼",
+    "uptime_prefix": "已运行",
+    "more": "更多详情"
   }
 }
