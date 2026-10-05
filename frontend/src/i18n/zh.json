@@ -686,5 +686,16 @@
     "hint_discord": "Discord 频道 → 编辑频道 → 整合 → Webhook → 新建，复制 Webhook URL。",
     "hint_telegram": "找 @BotFather 建机器人拿到 token，把 chat_id 拼在地址后面：…/bot<token>/sendMessage?chat_id=<id>。",
     "hint_generic": "会把 {event, title, text, host} 以 JSON POST 过去，接自家服务用。"
+  },
+  "update": {
+    "title": "有新版本 {{version}}",
+    "desc": "当前 {{current}}，最新 {{latest}}。升级不会动数据：账号、令牌、审计、访问流水都会保留，升级前还会自动备份数据库。",
+    "howto": "在服务器上跑这一行就行：",
+    "safe": "升级会自动识别版本、备份数据、重启服务。",
+    "copy": "复制",
+    "copied": "已复制",
+    "skip": "这个版本不再提醒",
+    "releases": "看更新日志",
+    "got_it": "知道了"
   }
 }

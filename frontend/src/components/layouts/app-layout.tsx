@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import { Dock } from './dock';
 import { MenuBar } from './menu-bar';
+import { UpdateNotice } from '../update-notice';
 import useAuthorizeStore from '../../stores/authorize.store';
 
 /**
@@ -38,6 +39,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="mx-auto w-full max-w-6xl px-5 pb-32 pt-11 sm:px-8">{children}</main>
       <MenuBar />
       <Dock />
+      {/* 有新版本就弹一次（同一个版本只弹一次）。挂在外壳上，哪一页都能收到。 */}
+      <UpdateNotice />
     </div>
   );
 }

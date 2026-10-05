@@ -2,7 +2,7 @@
 #
 # ZOPS — one-line installer
 #
-#   curl -fsSL https://cdn.senapixel.com/app/ops/install.sh | bash
+#   curl -fsSL https://cdn.zenceglow.com/app/ops/install.sh | bash
 #
 # Interactive: language → port → domain → username → password. Every step can be
 # left to the default; a run of plain Enter gives you a working panel.
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-BIN_URL="${OPS_BIN_URL:-https://cdn.senapixel.com/app/ops/zenceglow-ops-amd64}"
+BIN_URL="${OPS_BIN_URL:-https://cdn.zenceglow.com/app/ops/zenceglow-ops-amd64}"
 BIN_PATH="/usr/local/bin/zenceglow-ops"
 DATA_DIR="${OPS_DATA_DIR:-/var/lib/zenceglow-ops}"
 UNIT_PATH="/etc/systemd/system/zenceglow-ops.service"

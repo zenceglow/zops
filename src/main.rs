@@ -22,6 +22,7 @@ use service::{
     deploy::DeployService,
     gateway::GatewayService, logs::LogService, member::MemberService,
     notify::NotifyService,
+    selfupdate::SelfUpdateService,
     setup::SetupService, watch::Watcher,
     system::SystemService,
     token::TokenService,
@@ -159,6 +160,11 @@ async fn async_main() {
         logs: Arc::new(LogService::new(db.clone())),
         members: Arc::new(MemberService::new(db.clone())),
         notify: Arc::new(NotifyService::new(db.clone())),
+        selfupdate: Arc::new(SelfUpdateService::new(
+            db.clone(),
+            cfg.update_url.clone(),
+            cfg.install_url.clone(),
+        )),
         automation: Arc::new(AutomationService::new(db.clone())),
         tokens: Arc::new(TokenService::new(db.clone())),
     });
@@ -169,6 +175,8 @@ async fn async_main() {
         state.system.clone(),
         state.containers.clone(),
     );
+    // 也在 build_router 之前取出来：state 随后就被交出去了。
+    let update_worker = state.selfupdate.clone();
     tokio::spawn(watcher.run());
 
     let router = http::build_router(state);
@@ -198,6 +206,18 @@ async fn async_main() {
         loop {
             let _ = analytics_worker.ingest().await;
             tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+        }
+    });
+
+    // 查面板自己有没有新版本。
+    //
+    // 开机 30 秒后先查一次（别和别的一起挤在启动那几秒），之后每 6 小时一次。
+    // 拉的是 CDN 上的 latest.json —— 发布脚本会跟着二进制一起传。
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        loop {
+            let _ = update_worker.check().await;
+            tokio::time::sleep(crate::service::selfupdate::CHECK_INTERVAL).await;
         }
     });
 

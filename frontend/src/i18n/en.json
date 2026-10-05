@@ -686,5 +686,16 @@
     "hint_discord": "Discord channel → Edit channel → Integrations → Webhooks → New, copy the URL.",
     "hint_telegram": "Create a bot with @BotFather, then append the chat id: …/bot<token>/sendMessage?chat_id=<id>.",
     "hint_generic": "POSTs {event, title, text, host} as JSON — for your own service."
+  },
+  "update": {
+    "title": "Version {{version}} is out",
+    "desc": "You are on {{current}}, latest is {{latest}}. Upgrading keeps your data — accounts, tokens, audit and traffic history all stay, and the database is backed up first.",
+    "howto": "Run this on the server:",
+    "safe": "The installer detects the version, backs up the database and restarts the service.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "skip": "Don't remind me about this version",
+    "releases": "Release notes",
+    "got_it": "Got it"
   }
 }

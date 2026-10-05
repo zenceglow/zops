@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本地交叉编译 Linux amd64 → 上传到 R2 (senapixel)
+# 本地交叉编译 Linux amd64 → 上传到 R2 (zenceglow)
 #
 # 用法:
 #   ./deploy.sh
@@ -8,16 +8,20 @@
 #   export CLOUDFLARE_API_TOKEN="cfat_..."
 #   export CLOUDFLARE_ACCOUNT_ID="d29e6f9ac661174f715491f9c3d070c7"
 #
-# R2 路径: senapixel/app/ops/{zenceglow-ops-amd64,install.sh}
-# CDN 地址: https://cdn.senapixel.com/app/ops/…
+# R2 路径: zenceglow/app/ops/{zenceglow-ops-amd64,install.sh,latest.json}
+# CDN 地址: https://cdn.zenceglow.com/app/ops/…
 
 set -euo pipefail
 cd "$(dirname "$0")"
 
 TARGET="${TARGET:-x86_64-unknown-linux-gnu}"
-BUCKET="senapixel"
+BUCKET="zenceglow"
 R2_PATH="app/ops/zenceglow-ops-amd64"
 INSTALL_PATH="app/ops/install.sh"
+MANIFEST_PATH="app/ops/latest.json"
+# 版本清单是个临时文件：写在临时目录里，别把构建目录搞脏。
+TMP_MANIFEST="$(mktemp -t zops-latest).json"
+trap 'rm -f "$TMP_MANIFEST"' EXIT
 
 # ---- 检查必要命令 ----
 need_cmd() {
@@ -97,9 +101,28 @@ npx wrangler r2 object put "${BUCKET}/${INSTALL_PATH}" \
   --cache-control "public, max-age=300" \
   --remote
 
+# 版本清单：面板后台会定期拉它，比自己新就在界面上弹一次。
+# 版本号从 Cargo.toml 读 —— 它是唯一的真相，别让人再手抄一遍。
+VER="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+NOTES="$(git log -1 --pretty=%s 2>/dev/null || echo '')"
+cat > "$TMP_MANIFEST" <<JSON
+{
+  "version": "$VER",
+  "notes": "$NOTES",
+  "published_at": "$(date '+%Y-%m-%d %H:%M')",
+  "url": "https://cdn.zenceglow.com/${R2_PATH}"
+}
+JSON
+npx wrangler r2 object put "${BUCKET}/${MANIFEST_PATH}" \
+  --file "$TMP_MANIFEST" \
+  --content-type "application/json; charset=utf-8" \
+  --cache-control "public, max-age=300" \
+  --remote
+
 echo ""
 echo "========================================="
 echo " ✅ 发布完成"
-echo " CDN: https://cdn.senapixel.com/${R2_PATH}"
-echo "      https://cdn.senapixel.com/${INSTALL_PATH}"
+echo " CDN: https://cdn.zenceglow.com/${R2_PATH}"
+echo "      https://cdn.zenceglow.com/${INSTALL_PATH}"
+echo "      https://cdn.zenceglow.com/${MANIFEST_PATH}"
 echo "========================================="

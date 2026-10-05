@@ -49,6 +49,24 @@ async fn panel(Extension(_user): Extension<AuthUser>) -> Json<ApiResponse<serde_
     })))
 }
 
+/// 有没有新版本。
+///
+/// 只要求登录，不要额外权限：这只是"厂里出新的了"，任何能进面板的人都该看得到。
+/// 返回值来自后台任务的缓存 —— 顺手发现缓存过期就催一次，但不在这里等它，
+/// 免得磁盘上没网时把页面拖死。
+async fn release(
+    State(state): State<Arc<AppState>>,
+    Extension(_user): Extension<AuthUser>,
+) -> Json<ApiResponse<crate::service::selfupdate::UpdateStatus>> {
+    if state.selfupdate.is_stale() {
+        let worker = state.selfupdate.clone();
+        tokio::spawn(async move {
+            let _ = worker.check().await;
+        });
+    }
+    Json(ApiResponse::ok(state.selfupdate.status()))
+}
+
 async fn overview(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
@@ -117,6 +135,7 @@ async fn set_timezone(
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/panel", get(panel))
+        .route("/release", get(release))
         .route("/ports", get(ports))
         .route("/overview", get(overview))
         .route("/updates", get(updates))

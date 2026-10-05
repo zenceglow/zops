@@ -9,6 +9,10 @@ pub struct Config {
     pub deploy_dir: PathBuf,
     /// 界面默认语言。安装脚本写进来的 `OPS_DEFAULT_LANG`；空串 = 跟随浏览器。
     pub default_lang: String,
+    /// 版本清单地址。发布时 deploy.sh 会把 `latest.json` 传到同一个 CDN 目录。
+    pub update_url: String,
+    /// 一行安装脚本的地址，弹更新时给用户复制。
+    pub install_url: String,
 }
 
 impl Config {
@@ -41,12 +45,21 @@ impl Config {
             _ => String::new(),
         };
 
+        let cdn = std::env::var("OPS_CDN_BASE")
+            .unwrap_or_else(|_| "https://cdn.zenceglow.com/app/ops".to_string());
+        let update_url = std::env::var("OPS_UPDATE_URL")
+            .unwrap_or_else(|_| format!("{cdn}/latest.json"));
+        let install_url = std::env::var("OPS_INSTALL_URL")
+            .unwrap_or_else(|_| format!("{cdn}/install.sh"));
+
         Self {
             port,
             data_dir,
             caddyfile_path,
             deploy_dir,
             default_lang,
+            update_url,
+            install_url,
         }
     }
 

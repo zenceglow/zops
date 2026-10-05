@@ -8,7 +8,8 @@ use crate::service::{
     deploy::DeployService,
     files::FilesService,
     gateway::GatewayService, logs::LogService, member::MemberService,
-    notify::NotifyService, setup::SetupService,
+    notify::NotifyService,
+    selfupdate::SelfUpdateService, setup::SetupService,
     system::SystemService,
     token::TokenService,
 };
@@ -27,6 +28,7 @@ pub struct AppState {
     pub logs: Arc<LogService>,
     pub members: Arc<MemberService>,
     pub notify: Arc<NotifyService>,
+    pub selfupdate: Arc<SelfUpdateService>,
     pub automation: Arc<AutomationService>,
     /// Agent access tokens (MCP / skills). Verified by `handlers::mcp`.
     pub tokens: Arc<TokenService>,

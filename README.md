@@ -23,7 +23,7 @@ Server operations panel — system monitoring, Docker service management, and lo
 ## 安装到服务器（一行）
 
 ```bash
-curl -fsSL https://cdn.senapixel.com/app/ops/install.sh | bash
+curl -fsSL https://cdn.zenceglow.com/app/ops/install.sh | bash
 ```
 
 交互四步，每步都可以选随机（一路回车即可）：
