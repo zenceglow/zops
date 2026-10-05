@@ -50,6 +50,9 @@ pub const NAV_NOTIFY: &str = "nav.notify";
 pub const OPS_AGENT_MANAGE: &str = "ops.agent.manage";
 /// 配置通知渠道（飞书 / 钉钉 / 企业微信等）。webhook 地址本身就是凭据。
 pub const OPS_NOTIFY_MANAGE: &str = "ops.notify.manage";
+/// 部署服务：往部署目录写文件并跑 compose。比"启停容器"还重一档 ——
+/// 它会新增服务、占端口、落文件，所以单独一个权限。
+pub const OPS_DEPLOY: &str = "ops.deploy";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PermissionDef {
@@ -174,6 +177,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
         },
         PermissionDef {
             id: OPS_NOTIFY_MANAGE,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_DEPLOY,
             group: "ops",
         },
     ]

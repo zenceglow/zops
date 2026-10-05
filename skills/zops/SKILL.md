@@ -36,12 +36,15 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 | `ops_log_source_list` | 已登记的日志文件路径 | read |
 | `ops_log_tail` | 读某个日志文件末尾若干行 | read |
 | `ops_notify_channel_list` | 已配置的通知渠道及订阅的事件 | read |
+| `ops_deploy_list` | 这台机器上部署过哪些服务 | read |
+| `ops_deploy_plan` | 部署体检（端口 / 重启 / 日志 / 时区 / 网络 / 凭据） | read |
 | `ops_container_start` / `_stop` / `_restart` | 启停容器 | **write** |
 | `ops_gateway_reload` | 重载 Caddy | **write** |
 | `ops_caddyfile_put` | 整体替换 Caddyfile（不自动重载） | **write** |
 | `ops_automation_task_list` / `_run` | 列定时任务 / 立刻执行 | **write** |
 | `ops_member_list` | 面板成员与权限 | **write** |
 | `ops_notify_send` | 往订阅了该事件的渠道推一条通知 | **write** |
+| `ops_deploy_apply` | 写部署目录并 `docker compose up -d --build` | **write** |
 
 ## 破坏性操作
 
@@ -78,6 +81,14 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 配置**：这台机器上端口区间、网络、日志、反代都有既定习惯，先 `ops_port_list`
 挑一个空端口，照那份文档里的模板生成 compose，起来之后验证、接网关、最后
 `ops_notify_send` 通知一声。
+
+两条硬规矩：
+
+1. **所有操作都经过 ZOPS。** 不要 SSH、不要在服务器上直接敲 docker。工具不够用
+   就停下来告诉用户缺什么。
+2. **能自己解决的不问用户。** 缺 restart、日志轮转、时区、网络这些，按既有风格
+   自己补上；只有会导致生产事故、或者只有用户能决定的事才停下来问，并且要带上
+   "可以忽略"这个选项。
 
 ## 不要做的事
 

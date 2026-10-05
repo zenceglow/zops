@@ -23,7 +23,8 @@ use crate::domain::auth::{AuthUser, Claims};
 use crate::domain::mcp::{self, Request as RpcRequest};
 use crate::domain::permission::{
     OPS_AUTOMATION_MANAGE, OPS_GATEWAY_CONTROL, OPS_GATEWAY_READ, OPS_GATEWAY_WRITE, OPS_LOG_READ,
-    OPS_MEMBER_MANAGE, OPS_NOTIFY_MANAGE, OPS_SERVICE_CONTROL, OPS_SERVICE_LOG, OPS_SERVICE_READ,
+    OPS_DEPLOY, OPS_MEMBER_MANAGE, OPS_NOTIFY_MANAGE, OPS_SERVICE_CONTROL, OPS_SERVICE_LOG,
+    OPS_SERVICE_READ,
     OPS_SYSTEM_READ,
 };
 use crate::domain::token::TOKEN_PREFIX;
@@ -134,6 +135,9 @@ enum ToolId {
     PortList,
     NotifyChannels,
     NotifySend,
+    DeployPlan,
+    DeployApply,
+    DeployList,
 }
 
 struct ToolDef {
@@ -167,6 +171,31 @@ fn tool_level(t: &ToolDef) -> &'static str {
 
 fn empty_schema() -> Value {
     json!({ "type": "object", "properties": {}, "additionalProperties": false })
+}
+
+fn deploy_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "description": "服务名，同时是目录名和容器名，只能用 a-z 0-9 - _" },
+            "compose": { "type": "string", "description": "完整的 docker-compose.yml 内容" },
+            "files": {
+                "type": "array",
+                "description": "一起写进部署目录的文件（Dockerfile、configs 等）。路径必须是相对路径。",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string" },
+                        "content": { "type": "string" }
+                    },
+                    "required": ["path", "content"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["name", "compose"],
+        "additionalProperties": false
+    })
 }
 
 fn container_schema() -> Value {
@@ -386,6 +415,27 @@ fn tool_catalog() -> Vec<ToolDef> {
             },
             id: ToolId::NotifySend,
         },
+        ToolDef {
+            name: "ops_deploy_list",
+            description: "这台机器上已部署过哪些服务（部署目录 + 是否在运行）。部署前先看一眼，别重名。",
+            permission: OPS_SYSTEM_READ,
+            schema: empty_schema,
+            id: ToolId::DeployList,
+        },
+        ToolDef {
+            name: "ops_deploy_plan",
+            description: "部署体检：端口是否被占、有没有重启策略/日志轮转/时区/网络、有没有明文凭据。只读，不落任何文件。apply 之前必须先跑这个。",
+            permission: OPS_SYSTEM_READ,
+            schema: deploy_schema,
+            id: ToolId::DeployPlan,
+        },
+        ToolDef {
+            name: "ops_deploy_apply",
+            description: "把 compose 和附带文件写到部署目录并执行 docker compose up -d --build。会新增服务、占端口、落文件 —— 执行前要让用户确认。体检有 block 项时会被拒绝。",
+            permission: OPS_DEPLOY,
+            schema: deploy_schema,
+            id: ToolId::DeployApply,
+        },
     ]
 }
 
@@ -406,6 +456,13 @@ fn opt_usize(args: &Value, key: &str, default: usize) -> usize {
         .map(|v| v as usize)
         .filter(|v| *v > 0)
         .unwrap_or(default)
+}
+
+/// deploy 系列工具的入参。compose 是一段文本，走 serde 反序列化最省事，
+/// 也能让 `files` 缺省时自动为空。
+fn deploy_input(args: &Value) -> Result<crate::service::deploy::DeployInput, AppError> {
+    serde_json::from_value(args.clone())
+        .map_err(|e| AppError::bad_request(format!("参数不对: {e}")))
 }
 
 // ─────────────────────────── tool dispatch ───────────────────────────
@@ -529,6 +586,15 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
             let text = require_str(args, "text").map_err(AppError::bad_request)?;
             let (sent, ok) = state.notify.broadcast(&event, &title, &text).await;
             Ok(json!({ "sent": sent, "delivered": ok }))
+        }
+        ToolId::DeployList => Ok(json!({ "services": state.deploy.list() })),
+        ToolId::DeployPlan => {
+            let input = deploy_input(args)?;
+            Ok(serde_json::to_value(state.deploy.plan(&input)?).unwrap_or(Value::Null))
+        }
+        ToolId::DeployApply => {
+            let input = deploy_input(args)?;
+            Ok(serde_json::to_value(state.deploy.apply(input).await?).unwrap_or(Value::Null))
         }
         }
     }

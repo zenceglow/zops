@@ -5,6 +5,7 @@ pub mod auth;
 pub mod automation;
 pub mod audit;
 pub mod caddyfile;
+pub mod deploy;
 pub mod files;
 pub mod container;
 pub mod gateway;

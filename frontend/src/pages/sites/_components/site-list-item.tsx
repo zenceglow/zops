@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ExternalLink, FileText, Globe, Server } from 'lucide-react';
+import { ChevronDown, ExternalLink } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
+import { SiteGlyph } from '../../../components/site-glyph';
 import type { SiteEntry } from '../_api';
 import { summarizeSite, type SiteFeature } from '../_lib/site-summary';
 import { DirectiveRow } from './directive-row';
-
-const KIND_ICON = { proxy: Server, static: FileText, other: Globe } as const;
 
 /**
  * 站点列表里的一行 = 一个入口。
@@ -19,7 +18,6 @@ export function SiteListItem({ site }: { site: SiteEntry }) {
   const { t } = useTranslation();
   const [showDetail, setShowDetail] = useState(false);
   const info = summarizeSite(site);
-  const Icon = KIND_ICON[info.kind];
 
   return (
     <div className="rounded-2xl border border-border/60 px-4 py-3.5 transition-colors hover:border-border">
@@ -30,7 +28,7 @@ export function SiteListItem({ site }: { site: SiteEntry }) {
             info.kind === 'proxy' ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400' : 'bg-muted text-muted-foreground',
           )}
         >
-          <Icon className="size-4" />
+          <SiteGlyph addr={site.addr} kind={info.kind} size={18} />
         </span>
 
         <div className="min-w-0 flex-1">

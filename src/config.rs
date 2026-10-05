@@ -5,6 +5,8 @@ pub struct Config {
     pub port: u16,
     pub data_dir: PathBuf,
     pub caddyfile_path: String,
+    /// 服务的部署根目录。每个服务一个子目录。
+    pub deploy_dir: PathBuf,
 }
 
 impl Config {
@@ -21,10 +23,15 @@ impl Config {
         let caddyfile_path = std::env::var("CADDYFILE_PATH")
             .unwrap_or_else(|_| "/etc/caddy/Caddyfile".into());
 
+        let deploy_dir = std::env::var("OPS_DEPLOY_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/opt/docker-apps"));
+
         Self {
             port,
             data_dir,
             caddyfile_path,
+            deploy_dir,
         }
     }
 

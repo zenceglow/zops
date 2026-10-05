@@ -15,7 +15,7 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::http::handlers::{
-    analytics, audit, auth, automation, caddyfile, files, gateway, logs, member, permission,
+    analytics, audit, auth, automation, caddyfile, deploy, files, gateway, logs, member, permission,
     notify, service, setup, ssh, system, mcp, token as token_handler,
 };
 use crate::http::middleware::{audit::audit_middleware, auth::auth_middleware};
@@ -39,6 +39,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/token", token_handler::routes())
         .nest("/audit", audit::routes())
         .nest("/analytics", analytics::routes())
+        .nest("/deploy", deploy::routes())
         .nest("/notify", notify::routes())
         .nest("/agent", mcp::catalog_routes())
         // 顺序要紧：后加的层在外层、先执行。审计要看到 AuthUser，所以必须套在

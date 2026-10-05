@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowRight, FileText, Globe, Server } from 'lucide-react';
+import { ArrowRight, Globe } from 'lucide-react';
+import { SiteGlyph } from '../../../components/site-glyph';
 import { Skeleton } from '../../../components/ui/skeleton';
 import type { GatewayStatus, SiteEntry } from '../../sites/_api';
 import { summarizeSite } from '../../sites/_lib/site-summary';
@@ -75,13 +76,14 @@ export function GatewayEntry({
 function SiteEntryItem({ site }: { site: SiteEntry }) {
   const { t } = useTranslation();
   const info = summarizeSite(site);
-  const Icon = info.kind === 'static' ? FileText : Server;
   const url = siteUrl(site.addr);
 
   const body = (
     <>
       <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400">
-        <Icon className="size-6" />
+        {/* 代理是地球，静态文件去取它自己的 favicon —— 一排域名全是同一个图标，
+            等于没给信息。 */}
+        <SiteGlyph addr={site.addr} kind={info.kind} size={28} />
       </span>
       <div className="min-w-0 flex-1 text-left">
         <p className="truncate font-mono text-sm">{site.addr}</p>
