@@ -21,56 +21,45 @@ export function NetworkWidget() {
   return (
     <Link
       to="/system/network"
-      className="group flex h-[188px] w-full flex-col justify-between sm:w-[400px]"
+      className="group flex w-full flex-col gap-4 sm:w-[400px]"
     >
-      {/* 走势紧挨在 chevron 左边同一行：它表达的是"此刻在怎么变"，
-          和标题同级，而不是压在底部当配图。 */}
-      <div className="flex items-center gap-3">
-        <span className="shrink-0 text-xs font-medium text-muted-foreground">
-          {t('monitor.network')}
-        </span>
-        <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
-          <span className="relative flex size-1.5">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-            <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-          </span>
-          {t('net.realtime')}
-        </span>
+      {/* Row：左列上下行竖排，右侧走势占满剩余宽度 */}
+      <div className="flex items-center gap-5">
+        <div className="flex shrink-0 flex-col gap-2">
+          <div className="flex items-baseline gap-2 whitespace-nowrap">
+            <span className="w-8 text-[10px] text-muted-foreground">↑ {t('net.up')}</span>
+            <span className="text-base font-semibold leading-none tabular-nums">
+              {net ? formatRate(net.txRate) : '—'}
+            </span>
+          </div>
+          <div className="flex items-baseline gap-2 whitespace-nowrap">
+            <span className="w-8 text-[10px] text-muted-foreground">↓ {t('net.down')}</span>
+            <span className="text-base font-semibold leading-none tabular-nums">
+              {net ? formatRate(net.rxRate) : '—'}
+            </span>
+          </div>
+        </div>
         <NetworkSparkline
           history={net?.history ?? []}
-          height={40}
+          height={56}
           className="min-w-0 flex-1"
         />
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </div>
 
-      <div className="flex items-end justify-between gap-4">
-        <div className="flex shrink-0 items-end gap-6">
-          <div className="whitespace-nowrap">
-            <div className="text-base font-semibold leading-none tabular-nums">
-              {net ? formatRate(net.rxRate) : '—'}
-            </div>
-            <div className="mt-1 text-[10px] text-muted-foreground">↓ {t('net.down')}</div>
-          </div>
-          <div className="whitespace-nowrap">
-            <div className="text-base font-semibold leading-none tabular-nums">
-              {net ? formatRate(net.txRate) : '—'}
-            </div>
-            <div className="mt-1 text-[10px] text-muted-foreground">↑ {t('net.up')}</div>
-          </div>
-        </div>
-        <div className="min-w-0 text-right text-[10px] leading-relaxed text-muted-foreground">
-          {net && (
-            <>
-              <div className="whitespace-nowrap">
-                {net.ifaces.length} {t('net.iface')}
-              </div>
-              <div className="whitespace-nowrap tabular-nums">
-                {t('net.total')} ↓{formatBytes(net.rxTotal)} ↑{formatBytes(net.txTotal)}
-              </div>
-            </>
-          )}
-        </div>
+      {/* Row：网卡数量 · 累计流量 · chevron */}
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        {net && (
+          <>
+            <span className="whitespace-nowrap">
+              {net.ifaces.length} {t('net.iface')}
+            </span>
+            <span className="opacity-40">·</span>
+            <span className="whitespace-nowrap tabular-nums">
+              {t('net.total')} ↓{formatBytes(net.rxTotal)} ↑{formatBytes(net.txTotal)}
+            </span>
+          </>
+        )}
+        <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </div>
     </Link>
   );
