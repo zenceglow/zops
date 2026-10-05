@@ -1,17 +1,19 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ExternalLink } from 'lucide-react';
-import { SiCaddy } from 'react-icons/si';
+import { ArrowRight, FileText, Globe, Server } from 'lucide-react';
 import { Skeleton } from '../../../components/ui/skeleton';
 import type { GatewayStatus, SiteEntry } from '../../sites/_api';
+import { summarizeSite } from '../../sites/_lib/site-summary';
 import { siteUrl } from '../../../lib/site-url';
 import { cn } from '../../../lib/utils';
+import { SectionTitle } from './section-title';
 
 /**
- * 首页的站点入口。
+ * 站点入口区块。
  *
- * 刻意跟容器那排不一样：那是"机器上跑着什么"，这是"外面的人从哪儿进来"。所以给它
- * 卡片壳、品牌色图标和明确的箭头 —— 一排图标里混着它的话，看不出这是个门。
+ * 整块跟"应用与服务"用同一套骨架：标题 + 一行一行的条目，每条都是"图标 + 域名 +
+ * 指向哪儿 + 开了什么"。原来那版是横跨整屏的一条大卡片，域名挤成小 chip —— 跟下面
+ * 那排容器是两种语言，读起来像两个页面拼的。
  */
 export function GatewayEntry({
   status,
@@ -24,17 +26,15 @@ export function GatewayEntry({
 }) {
   const { t } = useTranslation();
 
-  // 状态没回来时占住同样的位置：直接 return null 的话，卡片会在数据到达的瞬间冒
-  // 出来，把下面的统计环整体往下顶一格 —— 比"先看到骨架"更难受。
   if (!status && !settled) {
     return (
-      <section className="flex flex-wrap items-center gap-x-5 gap-y-4 rounded-2xl border border-border/70 px-5 py-4">
-        <Skeleton className="size-12 shrink-0 rounded-2xl" />
-        <div className="min-w-0 flex-1 space-y-2">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-6 w-72 max-w-full rounded-lg" />
+      <section>
+        <Skeleton className="h-5 w-24" />
+        <div className="mt-6 grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 w-full rounded-2xl" />
+          ))}
         </div>
-        <Skeleton className="h-8 w-24 shrink-0 rounded-xl" />
       </section>
     );
   }
@@ -42,69 +42,73 @@ export function GatewayEntry({
   if (!status) return null;
 
   const running = status.running;
-  const domains = sites.map((s) => s.addr).filter(Boolean);
-  const shown = domains.slice(0, 4);
-  const rest = domains.length - shown.length;
 
   return (
-    <section className="flex flex-wrap items-center gap-x-5 gap-y-4 rounded-2xl border border-border/70 bg-muted/20 px-5 py-4 transition-colors hover:border-border">
-      <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[#1F88C0]/12 text-[#1F88C0]">
-        <SiCaddy className="size-6" />
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2">
-          <span className="text-sm font-medium">{t('entry.title')}</span>
-          <span
-            className={cn('size-1.5 rounded-full', running ? 'bg-emerald-500' : 'bg-red-500')}
-          />
-          <span className="text-xs text-muted-foreground">
-            {running ? t('entry.running') : status.installed ? t('entry.stopped') : t('entry.not_installed')}
-          </span>
-        </p>
-
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {shown.length === 0 ? (
-            <span className="text-xs text-muted-foreground">{t('entry.no_sites')}</span>
-          ) : (
-            shown.map((addr) => {
-              const url = siteUrl(addr);
-              const label = (
-                <>
-                  {addr}
-                  {url && <ExternalLink className="size-3 opacity-50" />}
-                </>
-              );
-              const cls =
-                'inline-flex max-w-[240px] items-center gap-1.5 truncate rounded-lg bg-background px-2 py-1 font-mono text-xs text-foreground/90 ring-1 ring-border/60';
-              return url ? (
-                <a
-                  key={addr}
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={cn(cls, 'transition-colors hover:text-foreground hover:ring-foreground/30')}
-                >
-                  {label}
-                </a>
-              ) : (
-                <span key={addr} className={cls}>
-                  {label}
-                </span>
-              );
-            })
-          )}
-          {rest > 0 && <span className="text-xs text-muted-foreground">+{rest}</span>}
-        </div>
+    <section>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <SectionTitle icon={Globe} title={t('entry.title')} />
+        <span className={cn('size-1.5 rounded-full', running ? 'bg-emerald-500' : 'bg-red-500')} />
+        <span className="text-xs text-muted-foreground">
+          {running ? t('entry.running') : status.installed ? t('entry.stopped') : t('entry.not_installed')}
+        </span>
+        <Link
+          to="/sites"
+          className="group ml-auto inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {status.installed ? t('entry.manage') : t('entry.enable')}
+          <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+        </Link>
       </div>
 
-      <Link
-        to="/sites"
-        className="group ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-      >
-        {status.installed ? t('entry.manage') : t('entry.enable')}
-        <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-      </Link>
+      <div className="mt-6 grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+        {sites.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t('entry.no_sites')}</p>
+        ) : (
+          sites.map((site) => <SiteEntryItem key={site.addr} site={site} />)
+        )}
+      </div>
     </section>
+  );
+}
+
+/** 一条入口，解剖结构跟容器那条对齐：图标 + 名字 + 两行说明。 */
+function SiteEntryItem({ site }: { site: SiteEntry }) {
+  const { t } = useTranslation();
+  const info = summarizeSite(site);
+  const Icon = info.kind === 'static' ? FileText : Server;
+  const url = siteUrl(site.addr);
+
+  const body = (
+    <>
+      <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400">
+        <Icon className="size-6" />
+      </span>
+      <div className="min-w-0 flex-1 text-left">
+        <p className="truncate font-mono text-sm">{site.addr}</p>
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {info.kind === 'other'
+            ? t('sites.kind_other')
+            : `${t(`sites.kind_${info.kind}`)}${info.target ? ` → ${info.target}` : ''}`}
+        </p>
+        {info.features.length > 0 && (
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
+            {info.features.map((f) => t(`sites.feature_${f}`)).join(' · ')}
+          </p>
+        )}
+      </div>
+    </>
+  );
+
+  const cls = 'flex min-w-0 items-center gap-3.5 rounded-2xl transition-colors hover:bg-muted/30';
+  // 域名能直接打开就外链，否则（`:443`、通配）去站点管理页 —— 两种都只渲染一个
+  // 可点元素，不套娃。
+  return url ? (
+    <a href={url} target="_blank" rel="noreferrer" className={cls}>
+      {body}
+    </a>
+  ) : (
+    <Link to="/sites" className={cls}>
+      {body}
+    </Link>
   );
 }

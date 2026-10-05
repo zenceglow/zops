@@ -169,7 +169,14 @@
     "ports": "Ports",
     "created": "Created",
     "started": "Started",
-    "apps_services": "Apps & services"
+    "apps_services": "Apps & services",
+    "back_to_list": "Back to list",
+    "not_found": "Container not found",
+    "restart": "Restart",
+    "logs": "Logs",
+    "logs_auto": "refreshes every 5s",
+    "refresh": "Refresh",
+    "logs_empty": "No log output yet"
   },
   "system": {
     "title": "System",

@@ -1,10 +1,11 @@
-import type { LucideIcon } from 'lucide-react';
+import type { ComponentType } from 'react';
 
 export function SectionTitle({
   icon: Icon,
   title,
 }: {
-  icon: LucideIcon;
+  // 不限死 lucide：品牌图标（react-icons）也要能用。
+  icon: ComponentType<{ className?: string }>;
   title: string;
 }) {
   return (

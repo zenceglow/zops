@@ -1,4 +1,5 @@
 import { useEffect, useState, type ComponentType, type CSSProperties } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Database, Globe, Package, Server, Terminal } from 'lucide-react';
 import {
@@ -227,8 +228,9 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
     // 横过来的卡片：图标在左、信息在右。之前是竖排的窄格子，五行小字叠在一个
     // 128px 宽的列里，既挤又跟右边的空白对不上。容器名太长（zenceglow-trend-mysql
     // 这种）排面上不显示，收进 tooltip。
-    <div
-      className="flex min-w-0 items-center gap-3.5"
+    <Link
+      to={`/docker/containers/${c.id}`}
+      className="group/tile flex min-w-0 items-center gap-3.5 rounded-2xl transition-colors hover:bg-muted/30"
       title={`${c.name}\n${c.image}\n${c.status}${startedAt ? `\n${t('docker.started')}: ${formatExact(startedAt)}` : ''}`}
     >
       {/* 品牌变量挂在最外层：光晕和色块是同级的兄弟节点，变量放在色块上光晕就取
@@ -291,7 +293,7 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
           </p>
         )}
       </div>
-    </div>
+    </Link>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import type { ContainerInfo } from '../_api';
 import type { SiteEntry } from '../../sites/_api';
 import { summarizeSite } from '../../sites/_lib/site-summary';
@@ -179,7 +180,10 @@ export function Topology({
 
         {/* 入口节点 */}
         {entryNodes.map((e, i) => (
-          <g key={e.key} transform={`translate(${ENTRY_X} ${entryY[i] - 15})`}>
+          // 点节点 = 去对应页：入口去站点管理，容器去它的详情页（能看日志）。
+          // 拓扑是用来"顺着链路查问题"的，查到哪一段能直接跳过去才有用。
+          <Link key={e.key} to="/sites" className="cursor-pointer">
+          <g transform={`translate(${ENTRY_X} ${entryY[i] - 15})`} className="hover:opacity-80">
             <rect width="230" height="30" rx="9" className="fill-muted/40 stroke-border" strokeWidth="1" />
             <circle cx="13" cy="15" r="3" className={e.port ? 'fill-sky-500' : 'fill-muted-foreground'} />
             <text x="24" y="13" className="fill-foreground text-[11px] font-medium">
@@ -189,13 +193,15 @@ export function Topology({
               {e.port ? `${t('topology.to_port')} ${e.port}` : e.sub.slice(0, 30)}
             </text>
           </g>
+          </Link>
         ))}
 
         {/* 容器节点 */}
         {containerNodes.map((c, i) => {
           const matched = links.some((l) => l.targetIndex === i);
           return (
-            <g key={c.key} transform={`translate(${CONTAINER_X} ${containerY[i] - 15})`}>
+            <Link key={c.key} to={`/docker/containers/${c.key}`} className="cursor-pointer">
+            <g transform={`translate(${CONTAINER_X} ${containerY[i] - 15})`} className="hover:opacity-80">
               <rect
                 width="190"
                 height="30"
@@ -211,6 +217,7 @@ export function Topology({
                 {c.sub}
               </text>
             </g>
+            </Link>
           );
         })}
       </svg>

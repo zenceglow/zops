@@ -169,7 +169,14 @@
     "ports": "端口",
     "created": "创建时间",
     "started": "启动",
-    "apps_services": "应用与服务"
+    "apps_services": "应用与服务",
+    "back_to_list": "返回列表",
+    "not_found": "找不到这个容器",
+    "restart": "重启",
+    "logs": "日志",
+    "logs_auto": "每 5 秒自动刷新",
+    "refresh": "刷新",
+    "logs_empty": "暂无日志输出"
   },
   "system": {
     "title": "系统",

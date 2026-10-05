@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { Container, Server } from 'lucide-react';
 import { PageHeader } from './_components/page-header';
 import { Badge } from '../../../components/ui/badge';
@@ -72,7 +73,14 @@ export default function Page() {
             <TableBody>
               {containers.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      to={`/docker/containers/${c.id}`}
+                      className="transition-colors hover:text-foreground/70"
+                    >
+                      {c.name}
+                    </Link>
+                  </TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground">
                     {c.image}
                   </TableCell>
