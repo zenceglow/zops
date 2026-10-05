@@ -16,6 +16,8 @@ use crate::shared::AppError;
 
 /// 一次最多读多少字节。积压很多时宁可分几轮，也不要把几十兆日志读进内存。
 const READ_CHUNK: u64 = 2 << 20;
+/// 第一次见到某个日志文件时，从尾部往前这么多字节开始读。
+const BOOTSTRAP_TAIL: u64 = 1 << 20;
 /// 一轮最多查多少个 IP 的归属地（ip-api 批量接口一次 100 个）。
 const GEO_PER_ROUND: i64 = 300;
 /// 访问流水保留天数。
@@ -101,7 +103,16 @@ impl AnalyticsService {
                 continue;
             };
             let size = meta.len();
-            let mut offset = self.db.ingest_cursor(&source).unwrap_or(None).unwrap_or(0) as u64;
+            let mut offset = match self.db.ingest_cursor(&source).unwrap_or(None) {
+                Some(o) => o as u64,
+                // 第一次见到这个文件，从**尾部**起读。
+                //
+                // 从头读会把整份历史日志灌进库里：真实的站点访问日志动辄几百兆，
+                // 那是几十万条记录 —— 大屏看的是"最近"，几天前的流水进库只是
+                // 白白占地方，还拖慢第一次统计。起点切在半行中间也没关系，那半行
+                // 解析不出来会被跳过。
+                None => size.saturating_sub(BOOTSTRAP_TAIL),
+            };
             // 文件比游标短 = 被轮转或截断了，从头读。宁可重读一遍，也不要从此
             // 一直卡在一个再也读不到的位置上。
             if offset > size {
