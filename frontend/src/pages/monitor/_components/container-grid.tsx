@@ -216,14 +216,16 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
   } as CSSProperties;
 
   return (
-    // 容器名太长（zenceglow-trend-mysql 这种），排面上一律不显示，收进 tooltip。
+    // 横过来的卡片：图标在左、信息在右。之前是竖排的窄格子，五行小字叠在一个
+    // 128px 宽的列里，既挤又跟右边的空白对不上。容器名太长（zenceglow-trend-mysql
+    // 这种）排面上不显示，收进 tooltip。
     <div
-      className="flex w-[128px] flex-col items-center text-center"
+      className="flex min-w-0 items-center gap-3.5"
       title={`${c.name}\n${c.image}\n${c.status}${startedAt ? `\n${t('docker.started')}: ${formatExact(startedAt)}` : ''}`}
     >
       {/* 品牌变量挂在最外层：光晕和色块是同级的兄弟节点，变量放在色块上光晕就取
           不到了（CSS 变量只向下继承，不横向继承）。 */}
-      <span className="relative" style={running ? brandStyle : undefined}>
+      <span className="relative shrink-0" style={running ? brandStyle : undefined}>
         {/* 运行中的呼吸光晕：静态图钉看不出死活，慢速涨落一眼就能分出哪些还活着。 */}
         {running && (
           <span
@@ -259,38 +261,26 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
           />
         )}
       </span>
-      <span
-        className={cn(
-          'mt-3 w-full truncate font-mono text-[11px]',
-          running ? 'text-foreground/85' : 'text-muted-foreground/60',
-        )}
-      >
-        {c.image}
-      </span>
-      <span
-        className={cn(
-          'mt-0.5 w-full truncate font-mono text-[11px]',
-          running ? 'text-muted-foreground' : 'text-muted-foreground/60',
-        )}
-      >
-        {ago(startedAt) || '—'}
-      </span>
-      {ports && (
-        <span className="mt-0.5 w-full truncate font-mono text-[11px] text-muted-foreground/70">
-          {ports}
-        </span>
-      )}
-      {/* 占用只有运行中的容器才有；停掉的直接不占这两行，别撑出一片空。 */}
-      {running && (
-        <>
-          <span className="mt-1 w-full truncate text-[10px] leading-4 text-muted-foreground/80 tabular-nums">
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            'truncate font-mono text-sm',
+            running ? 'text-foreground' : 'text-muted-foreground/70',
+          )}
+        >
+          {c.image}
+        </p>
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {[ago(startedAt), ports].filter(Boolean).join(' · ')}
+        </p>
+        {running && (
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80 tabular-nums">
             {t('monitor.cpu')} {c.cpu_percent === null ? '—' : formatCpu(c.cpu_percent)}
-          </span>
-          <span className="w-full truncate text-[10px] leading-4 text-muted-foreground/80 tabular-nums">
+            <span className="mx-1.5 opacity-40">·</span>
             {t('monitor.memory')} {c.mem_used === null ? '—' : compactBytes(c.mem_used)}
-          </span>
-        </>
-      )}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -310,7 +300,9 @@ export function ContainerGrid({ containers }: { containers: ContainerInfo[] }) {
     <section>
       {/* 不做多语言：用户点名要 "Servers" 这个词，中英环境下都保持原样。 */}
       <SectionTitle icon={Server} title="Servers" />
-      <div className="mt-6 flex flex-wrap gap-x-4 gap-y-6">
+      {/* 三列：再宽下去，每格里"图标 + 三行字"只占左边一半，右半边空着反而更散。
+          ~340px 刚好盛下最长的镜像名加一行占用，容器变多就自然往下续行。 */}
+      <div className="mt-6 grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
         {sorted.map((c) => (
           <ContainerTile key={c.id} c={c} now={now} />
         ))}

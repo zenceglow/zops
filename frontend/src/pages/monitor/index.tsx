@@ -88,7 +88,7 @@ export default function MonitorPage() {
       {/* 顶部一行：左边问候，右边网络。网络固定 188px 高，跟左列同排对齐。 */}
       <section className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
             {t(greetingKey(new Date().getHours()))}
             {user?.username ? `${t('home.name_sep')}${user.username}` : ''}
           </h1>
@@ -103,13 +103,11 @@ export default function MonitorPage() {
         <NetworkWidget />
       </section>
 
-      {/* 定宽列 + 左对齐：环变小之后，按均分整行的排法会让它们之间空出一大片，
-          看起来像没排完；贴着左边排开才像一排"仪表"。 */}
-      <section className="flex flex-wrap items-start gap-x-8 gap-y-8">
+      {/* 五个环均分整行：内容只有这么点，再挤在左边就只剩一大片空。等宽列让它们
+          像一排仪表铺开，右边缘也对齐了。 */}
+      <section className="grid grid-cols-2 justify-items-center gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
         {rings.map((r) => (
-          <div key={r.label} className="w-[128px]">
-            <Ring value={r.value} label={r.label} sub={r.sub} />
-          </div>
+          <Ring key={r.label} value={r.value} label={r.label} sub={r.sub} />
         ))}
       </section>
 
