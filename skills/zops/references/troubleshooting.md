@@ -27,14 +27,17 @@
 Caddy 反代到某个上游，上游挂了就是 502。
 
 1. `ops_gateway_status` —— 确认 Caddy 在跑（runtime=docker 时看容器状态）。
-2. `ops_caddyfile_get` —— 找到该域名的 `reverse_proxy` 目标（例如 `zenceglow-web:80`）。
-3. `ops_container_list` —— 看上游容器在不在、是不是 Exited。
-4. `ops_container_logs` —— 看上游为什么挂了。
-5. **确认后**启动/重启上游，再刷新页面验证。
+2. `ops_gateway_logs` —— Caddy 自己会写明是"dial tcp: connection refused"还是
+   在等上游超时，比只看 502 直接省掉一半猜测。（返回 `available: false` 时读 `hint`。）
+3. `ops_caddyfile_get` —— 找到该域名的 `reverse_proxy` 目标（例如 `zenceglow-web:80`）。
+4. `ops_container_list` —— 看上游容器在不在、是不是 Exited。
+5. `ops_container_logs` —— 看上游为什么挂了。
+6. **确认后**启动/重启上游，再刷新页面验证。
 
 ## 4. 证书签发失败
 
-1. `ops_container_logs`（容器选 `caddy`）—— 搜 `acme` / `challenge` / `obtain`。
+1. `ops_gateway_logs`（`tail` 开到 500）—— 搜 `acme` / `challenge` / `obtain`。
+   docker 模式下它等于 `ops_container_logs` 的 caddy 容器日志。
 2. 常见原因：80 端口被别的进程占用（ACME HTTP-01 需要 80）、DNS 没解析到本机、
    域名被墙/被限流（Let's Encrypt 有速率限制，反复失败会锁一段时间）。
 3. 确认 80 端口归属：`ops_container_list` 看端口映射有没有冲突。

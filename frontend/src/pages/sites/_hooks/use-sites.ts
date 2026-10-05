@@ -25,6 +25,8 @@ export function useSites() {
   const [versions, setVersions] = useState<CaddyfileVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [installing, setInstalling] = useState(false);
+  /** 启动/停止/重载正在进行。按钮点下去到状态回读之间会有空档，不能让人连点。 */
+  const [acting, setActing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [newDomain, setNewDomain] = useState('');
   const [newType, setNewType] = useState<'proxy' | 'static'>('proxy');
@@ -56,6 +58,7 @@ export function useSites() {
 
   const serverAction = useCallback(
     async (action: 'start' | 'stop' | 'reload') => {
+      setActing(true);
       try {
         await postServerAction(action);
         toast.success(t(`sites.${action}_success`));
@@ -63,6 +66,8 @@ export function useSites() {
       } catch (e) {
         // 带上后端原话：它知道是"配置文件不存在"还是"权限不够"，一句"操作失败"等于没说。
         toast.error(`${t('sites.action_fail')}：${e instanceof Error ? e.message : ''}`);
+      } finally {
+        setActing(false);
       }
     },
     [fetchAll, t],
@@ -147,6 +152,7 @@ export function useSites() {
     loadVersions,
     restoreVersion,
     installing,
+    acting,
     showAdd,
     setShowAdd,
     newDomain,

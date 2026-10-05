@@ -1,5 +1,5 @@
 import { del, get, post, put } from '../../../lib/api';
-import type { GatewayConfig, GatewayStatus } from './types';
+import type { GatewayConfig, GatewayLog, GatewayStatus } from './types';
 
 export async function fetchGatewayStatus() {
   const res = await get<GatewayStatus>('/gateway/status');
@@ -9,6 +9,12 @@ export async function fetchGatewayStatus() {
 
 export async function fetchGatewayConfig() {
   const res = await get<GatewayConfig>('/gateway/file');
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
+}
+
+export async function fetchGatewayLogs(tail = 300) {
+  const res = await get<GatewayLog>('/gateway/logs', { tail });
   if (!res.success || !res.data) throw new Error(res.message || 'Failed');
   return res.data;
 }
@@ -59,4 +65,4 @@ export async function removeContainer(id: string) {
   return del('/service', { id });
 }
 
-export type { GatewayConfig, GatewayStatus, Directive, SiteEntry } from './types';
+export type { GatewayConfig, GatewayLog, GatewayStatus, Directive, SiteEntry } from './types';

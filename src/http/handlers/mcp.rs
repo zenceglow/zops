@@ -121,6 +121,7 @@ enum ToolId {
     ContainerRestart,
     ContainerLogs,
     GatewayStatus,
+    GatewayLogs,
     GatewayReload,
     CaddyfileGet,
     CaddyfilePut,
@@ -249,6 +250,21 @@ fn tool_catalog() -> Vec<ToolDef> {
             permission: OPS_GATEWAY_READ,
             schema: empty_schema,
             id: ToolId::GatewayStatus,
+        },
+        ToolDef {
+            name: "ops_gateway_logs",
+            description: "读 Caddy 网关自己的日志（默认 300 行）。站点 502、证书签发失败时先看这里。",
+            permission: OPS_GATEWAY_READ,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "tail": { "type": "integer", "description": "返回多少行，默认 300，上限 5000" }
+                    },
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::GatewayLogs,
         },
         ToolDef {
             name: "ops_gateway_reload",
@@ -414,6 +430,10 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
         }
         ToolId::GatewayStatus => {
             Ok(serde_json::to_value(state.gateway.status()).unwrap_or(Value::Null))
+        }
+        ToolId::GatewayLogs => {
+            let tail = opt_usize(args, "tail", 300).min(5000);
+            Ok(serde_json::to_value(state.gateway.logs(tail)).unwrap_or(Value::Null))
         }
         ToolId::GatewayReload => {
             state.gateway.reload()?;

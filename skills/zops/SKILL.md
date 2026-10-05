@@ -30,6 +30,7 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 | `ops_container_status` | Docker 引擎可用性与版本 | read |
 | `ops_container_logs` | 容器最近日志（`tail` 默认 100） | read |
 | `ops_gateway_status` | Caddy 状态（runtime / 容器名 / 版本 / 配置文件） | read |
+| `ops_gateway_logs` | Caddy 自己的日志（`tail` 默认 300），502 / 证书问题的第一现场 | read |
 | `ops_caddyfile_get` | 读取 Caddyfile 原文 | read |
 | `ops_log_source_list` | 已登记的日志文件路径 | read |
 | `ops_log_tail` | 读某个日志文件末尾若干行 | read |
@@ -59,6 +60,8 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 - `ops_system_overview` 的内存含 buff/cache，判断"内存不够"要看 available 而不是 free。
 - `ops_gateway_status.runtime` 是 `docker` 时，Caddy 跑在容器里，
   `caddyfile_path` 是**宿主机**上的那份（容器内是 `/etc/caddy/Caddyfile`）。
+- `ops_gateway_logs` 返回 `available: false` 时不要当成"日志是空的"：它在告诉你
+  没找到 Caddy 的输出，具体原因和下一步写在 `hint` 里，照做就行。
 - `isError: true` 表示工具调用失败（通常是权限或参数），不是服务器故障。
 
 ## 排障剧本

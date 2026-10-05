@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::infrastructure::caddy::{process::GatewayStatusSnapshot, CaddyProcess};
+use crate::infrastructure::caddy::{
+    logs::GatewayLog, process::GatewayStatusSnapshot, CaddyProcess,
+};
 use crate::shared::AppError;
 
 #[derive(Serialize)]
@@ -15,6 +17,8 @@ pub struct GatewayStatus {
     pub version: String,
     pub pid: Option<i32>,
     pub bin_path: String,
+    /// Unix 毫秒；配置文件不存在时为 null。
+    pub config_modified: Option<u64>,
     pub caddyfile_path: String,
 }
 
@@ -28,6 +32,7 @@ impl From<GatewayStatusSnapshot> for GatewayStatus {
             version: s.version,
             pid: s.pid,
             bin_path: s.bin_path,
+            config_modified: s.config_modified,
             caddyfile_path: s.caddyfile_path,
         }
     }
@@ -44,6 +49,10 @@ impl GatewayService {
 
     pub fn status(&self) -> GatewayStatus {
         self.caddy.status().into()
+    }
+
+    pub fn logs(&self, tail: usize) -> GatewayLog {
+        self.caddy.logs(tail)
     }
 
     pub fn install(&self) -> Result<serde_json::Value, AppError> {

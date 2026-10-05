@@ -6,6 +6,7 @@ use crate::shared::AppError;
 use super::bin::{self, which_caddy};
 use super::docker::{self, DockerCaddy};
 use super::fmt;
+use super::logs::GatewayLog;
 
 pub struct CaddyProcess {
     pub caddyfile_path: String,
@@ -52,6 +53,7 @@ impl CaddyProcess {
     pub fn status(&self) -> GatewayStatusSnapshot {
         if let Some(d) = self.detect_docker() {
             let version = docker::version(&d.container).unwrap_or_else(|| d.image.clone());
+            let caddyfile_path = d.host_config.clone();
             return GatewayStatusSnapshot {
                 installed: true,
                 running: d.running,
@@ -60,7 +62,8 @@ impl CaddyProcess {
                 version,
                 pid: None,
                 bin_path: format!("docker:{}", d.container),
-                caddyfile_path: d.host_config,
+                config_modified: modified_ms(&caddyfile_path),
+                caddyfile_path,
             };
         }
 
@@ -84,8 +87,14 @@ impl CaddyProcess {
             version,
             pid,
             bin_path: bin,
+            config_modified: modified_ms(&self.caddyfile_path),
             caddyfile_path: self.caddyfile_path.clone(),
         }
+    }
+
+    /// Caddy 自己的输出。找不到时返回值里会说明为什么，见 `logs` 模块。
+    pub fn logs(&self, tail: usize) -> GatewayLog {
+        super::logs::tail(self, tail)
     }
 
     pub fn install(&self) -> Result<String, AppError> {
@@ -234,7 +243,17 @@ pub struct GatewayStatusSnapshot {
     pub version: String,
     pub pid: Option<i32>,
     pub bin_path: String,
+    /// 配置文件的最后修改时间（Unix 毫秒）。界面拿它回答"我改的那份到底生效了没"。
+    pub config_modified: Option<u64>,
     pub caddyfile_path: String,
+}
+
+fn modified_ms(path: &str) -> Option<u64> {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
 }
 
 fn systemctl(action: &str, service: &str) -> Result<(), AppError> {

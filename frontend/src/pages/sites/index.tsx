@@ -1,10 +1,8 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   Globe,
-  Play,
-  Square,
-  RotateCw,
   Save,
   Undo2,
   FileText,
@@ -14,8 +12,7 @@ import {
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Badge } from '../../components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent, CardTitle } from '../../components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -34,12 +31,15 @@ import {
 import { Skeleton } from '../../components/ui/skeleton';
 import { useSites } from './_hooks/use-sites';
 import { CaddyfileEditor } from './_components/caddyfile-editor';
+import { GatewayLogDialog } from './_components/gateway-log-dialog';
+import { GatewayStatusCard } from './_components/gateway-status-card';
 import { SiteListItem } from './_components/site-list-item';
 import { VersionHistoryDialog } from './_components/version-history-dialog';
 
 export default function SitesPage() {
   const { t } = useTranslation();
   const s = useSites();
+  const [showLogs, setShowLogs] = useState(false);
 
   if (!s.status) {
     return (
@@ -117,49 +117,14 @@ export default function SitesPage() {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="flex flex-wrap items-center gap-3 py-4">
-          <Badge variant={s.status.running ? 'default' : 'secondary'}>
-            {s.status.running ? t('sites.running') : t('sites.stopped')}
-          </Badge>
-          <span className="text-xs text-muted-foreground font-mono">
-            PID {s.status.pid ?? '-'}
-          </span>
-          <span className="text-xs text-muted-foreground">{s.status.version}</span>
-          <span className="text-xs text-muted-foreground truncate max-w-48 font-mono">
-            {s.status.caddyfile_path}
-          </span>
-          <div className="ml-auto flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={s.status.running}
-              onClick={() => s.serverAction('start')}
-            >
-              <Play />
-              {t('sites.start')}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!s.status.running}
-              onClick={() => s.serverAction('stop')}
-            >
-              <Square />
-              {t('sites.stop')}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!s.status.running}
-              onClick={() => s.serverAction('reload')}
-            >
-              <RotateCw />
-              {t('sites.reload')}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <GatewayStatusCard
+        status={s.status}
+        busy={s.acting}
+        onAction={s.serverAction}
+        onShowLogs={() => setShowLogs(true)}
+      />
+
+      <GatewayLogDialog open={showLogs} onOpenChange={setShowLogs} />
 
       {/* 这里原本是 modal={false}（怕 Select 的浮层和 Dialog 打架）。但非模态的
           Radix Dialog 压根不渲染蒙层，对话框就和页面糊在一起、看不出是浮在上面的。
