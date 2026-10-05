@@ -1,6 +1,6 @@
 import type { IconType } from 'react-icons';
 import {
-  HiChartBar,
+  HiHome,
   HiGlobeAlt,
   HiCommandLine,
   HiFolderOpen,
@@ -41,7 +41,9 @@ function navIcon(Icon: IconType) {
   };
 }
 
-export const NavMonitorIcon = navIcon(HiChartBar);
+// 首页那格是"桌面"，图标就用房子：柱状图在这个尺寸下会被读成信号格，
+// 而且它描述的是"监控"这个能力，不是"回首页"这个动作。
+export const NavHomeIcon = navIcon(HiHome);
 export const NavSitesIcon = navIcon(HiGlobeAlt);
 export const NavSshIcon = navIcon(HiCommandLine);
 export const NavFilesIcon = navIcon(HiFolderOpen);

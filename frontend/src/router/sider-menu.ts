@@ -5,7 +5,7 @@ import {
   NavFirewallIcon,
   NavImagesIcon,
   NavLogViewerIcon,
-  NavMonitorIcon,
+  NavHomeIcon,
   NavNetIcon,
   NavNetworksIcon,
   NavSettingsIcon,
@@ -26,7 +26,7 @@ import {
 } from '../lib/sidebar-config';
 
 const Icons = {
-  NavMonitorIcon,
+  NavHomeIcon,
   NavSitesIcon,
   NavSshIcon,
   NavFilesIcon,
@@ -50,7 +50,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
   {
     labelKey: 'nav.overview',
     items: [
-      { path: '/monitor', labelKey: 'nav.monitor', icon: Icons.NavMonitorIcon, perm: Perm.NAV_MONITOR },
+      { path: '/monitor', labelKey: 'nav.monitor', icon: Icons.NavHomeIcon, perm: Perm.NAV_MONITOR },
     ],
   },
   {
