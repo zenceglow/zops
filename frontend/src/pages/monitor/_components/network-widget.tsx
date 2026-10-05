@@ -21,36 +21,45 @@ export function NetworkWidget() {
   return (
     <Link
       to="/system/network"
-      className="group flex h-[188px] w-full flex-col justify-between sm:w-[380px]"
+      className="group flex h-[188px] w-full flex-col justify-between sm:w-[400px]"
     >
+      {/* 走势紧挨在 chevron 左边同一行：它表达的是"此刻在怎么变"，
+          和标题同级，而不是压在底部当配图。 */}
       <div className="flex items-center gap-3">
-        <span className="text-xs font-medium text-muted-foreground">{t('monitor.network')}</span>
-        <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+        <span className="shrink-0 text-xs font-medium text-muted-foreground">
+          {t('monitor.network')}
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
           <span className="relative flex size-1.5">
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60" />
             <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
           </span>
           {t('net.realtime')}
         </span>
-        <ChevronRight className="ml-auto size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        <NetworkSparkline
+          history={net?.history ?? []}
+          height={40}
+          className="min-w-0 flex-1"
+        />
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </div>
 
       <div className="flex items-end justify-between gap-4">
-        <div className="flex shrink-0 items-end gap-7">
+        <div className="flex shrink-0 items-end gap-6">
           <div className="whitespace-nowrap">
-            <div className="text-xl font-semibold leading-none tabular-nums">
+            <div className="text-base font-semibold leading-none tabular-nums">
               {net ? formatRate(net.rxRate) : '—'}
             </div>
-            <div className="mt-1.5 text-xs text-muted-foreground">↓ {t('net.down')}</div>
+            <div className="mt-1 text-[10px] text-muted-foreground">↓ {t('net.down')}</div>
           </div>
           <div className="whitespace-nowrap">
-            <div className="text-xl font-semibold leading-none tabular-nums">
+            <div className="text-base font-semibold leading-none tabular-nums">
               {net ? formatRate(net.txRate) : '—'}
             </div>
-            <div className="mt-1.5 text-xs text-muted-foreground">↑ {t('net.up')}</div>
+            <div className="mt-1 text-[10px] text-muted-foreground">↑ {t('net.up')}</div>
           </div>
         </div>
-        <div className="min-w-0 text-right text-[11px] leading-relaxed text-muted-foreground">
+        <div className="min-w-0 text-right text-[10px] leading-relaxed text-muted-foreground">
           {net && (
             <>
               <div className="whitespace-nowrap">
@@ -63,8 +72,6 @@ export function NetworkWidget() {
           )}
         </div>
       </div>
-
-      <NetworkSparkline history={net?.history ?? []} className="w-full" />
     </Link>
   );
 }

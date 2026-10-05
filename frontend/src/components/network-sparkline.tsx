@@ -1,7 +1,6 @@
 import { cn } from '../lib/utils';
 
 const W = 240;
-const H = 44;
 
 /**
  * 网络速率走势。
@@ -12,10 +11,13 @@ const H = 44;
 export function NetworkSparkline({
   history,
   className,
+  height = 44,
 }: {
   history: { rx: number; tx: number }[];
   className?: string;
+  height?: number;
 }) {
+  const H = height;
   const n = history.length;
   const ready = n >= 2;
   // 共用一个峰值：两条线各自归一化的话，谁大谁小就看不出来了。
