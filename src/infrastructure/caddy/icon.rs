@@ -5,18 +5,18 @@
 //!
 //! 由**服务端**去取，不是浏览器：面板常常通过 `http://IP:5200` 打开，站点的
 //! favicon 可能在 https 上，也可能是内网域名只有服务器能解析。
+//!
+//! 取图片这一步走 `curl` 而不是 hyper：真实的站点几乎都在 https 上，而 hyper 的
+//! 纯 HTTP 连接器不会 TLS 握手。为一个 favicon 引一套 rustls 不划算，curl 则
+//! 每台机器上都有，顺带把跳转、压缩、超时都处理了。
+//! （geoip 那边用 hyper 是因为它走 http，免费接口本身就是 http。）
 
 use std::collections::HashMap;
+use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use http_body_util::{BodyExt, Full};
-use hyper::body::Bytes;
-use hyper::{Request, StatusCode};
-use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
-
-const TIMEOUT: Duration = Duration::from_secs(6);
+const TIMEOUT_SECS: &str = "6";
 /// 图标不该有这么大。超过就是取错了东西（比如首页 HTML）。
 const MAX_BYTES: usize = 256 * 1024;
 /// 找到了缓存 6 小时，没找到缓存半小时 —— favicon 不会天天换，但也不该记一辈子。
@@ -170,35 +170,52 @@ async fn get_text(url: &str) -> Option<String> {
 }
 
 async fn get(url: &str, max: usize) -> Option<(String, Vec<u8>)> {
-    let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
-    let req = Request::builder()
-        .method("GET")
-        .uri(url)
-        .header("User-Agent", "ZOPS/1.0 (+site icon)")
-        .body(Full::new(Bytes::new()))
-        .ok()?;
-    let res = tokio::time::timeout(TIMEOUT, client.request(req))
-        .await
-        .ok()?
-        .ok()?;
-    if res.status() != StatusCode::OK {
-        return None;
-    }
-    let content_type = res
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
+    let marker = "\u{1}ZOPS\u{1}";
+    let out = tokio::task::spawn_blocking({
+        let url = url.to_string();
+        let marker = marker.to_string();
+        move || {
+            Command::new("curl")
+                .args([
+                    "-sSL", // 静默、跟随跳转
+                    "--compressed",
+                    "--max-time",
+                    TIMEOUT_SECS,
+                    "--max-filesize",
+                    &max.to_string(),
+                    "-A",
+                    "ZOPS/1.0 (+site icon)",
+                    // 结果码和类型跟在正文后面，用一个正文里不会出现的分隔符隔开。
+                    "-w",
+                    &format!("{marker}%{{http_code}}\t%{{content_type}}"),
+                    &url,
+                ])
+                .output()
+                .ok()
+        }
+    })
+    .await
+    .ok()??;
+
+    let sep = out.stdout.windows(marker.len()).rposition(|w| w == marker.as_bytes())?;
+    let meta = String::from_utf8_lossy(&out.stdout[sep + marker.len()..]);
+    let bytes = out.stdout[..sep].to_vec();
+    let mut parts = meta.trim().split('\t');
+    let code = parts.next().unwrap_or("");
+    let content_type = parts
+        .next()
         .unwrap_or("")
         .split(';')
         .next()
         .unwrap_or("")
         .trim()
         .to_lowercase();
-    let bytes = res.into_body().collect().await.ok()?.to_bytes();
-    if bytes.len() > max {
+
+    // curl 找不到命令、超时、超大小、非 200 —— 都当作"这个站点没有可用的图标"。
+    if code != "200" || bytes.is_empty() || bytes.len() > max {
         return None;
     }
-    Some((content_type, bytes.to_vec()))
+    Some((content_type, bytes))
 }
 
 /// 站点地址里能不能取出一个可访问的主机名。
