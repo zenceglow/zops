@@ -27,8 +27,8 @@ export function Ring({
   value,
   label,
   sub,
-  size = 148,
-  thickness = 14,
+  size = 128,
+  thickness = 12,
 }: {
   value: number;
   label: string;
@@ -73,7 +73,7 @@ export function Ring({
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-[2rem] font-semibold leading-none tabular-nums">
+          <span className="text-2xl font-semibold leading-none tabular-nums">
             {Math.round(pct)}
             <span className="ml-0.5 align-baseline text-sm font-normal text-muted-foreground">%</span>
           </span>

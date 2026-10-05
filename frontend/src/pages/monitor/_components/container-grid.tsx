@@ -60,12 +60,12 @@ function ContainerTile({ c }: { c: ContainerInfo }) {
     <div className="flex w-[132px] flex-col items-center text-center">
       <span
         className={cn(
-          'flex size-14 items-center justify-center rounded-2xl bg-muted/60 ring-1 ring-border/50',
+          'flex size-12 items-center justify-center rounded-2xl bg-muted/60 ring-1 ring-border/50',
           'transition-transform duration-150 hover:-translate-y-0.5',
           !running && 'opacity-50',
         )}
       >
-        <Icon className="size-6 text-foreground/80" />
+        <Icon className="size-5 text-foreground/80" />
       </span>
       <span className="mt-3 w-full truncate text-sm font-medium" title={c.name}>
         {c.name}
@@ -96,7 +96,7 @@ function ContainerTile({ c }: { c: ContainerInfo }) {
 export function ContainerGrid({ containers }: { containers: ContainerInfo[] }) {
   if (containers.length === 0) return null;
   return (
-    <section className="mx-auto flex max-w-4xl flex-wrap justify-center gap-x-4 gap-y-8">
+    <section className="mx-auto flex max-w-4xl flex-wrap justify-center gap-x-4 gap-y-6">
       {containers.map((c) => (
         <ContainerTile key={c.id} c={c} />
       ))}

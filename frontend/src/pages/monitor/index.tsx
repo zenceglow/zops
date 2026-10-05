@@ -30,11 +30,11 @@ export default function MonitorPage() {
 
   if (loading || !sys) {
     return (
-      <div className="space-y-12 pt-6 sm:pt-10">
+      <div className="space-y-8 pt-2">
         <Skeleton className="h-12 w-96 max-w-full" />
-        <div className="grid grid-cols-2 justify-items-center gap-y-10 sm:grid-cols-4">
+        <div className="grid grid-cols-2 justify-items-center gap-y-8 sm:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="size-[148px] rounded-full" />
+            <Skeleton key={i} className="size-[128px] rounded-full" />
           ))}
         </div>
         <Skeleton className="mx-auto h-40 w-full max-w-2xl rounded-2xl" />
@@ -52,9 +52,9 @@ export default function MonitorPage() {
   const status = worst >= 90 ? 'critical' : worst >= 75 ? 'busy' : 'ok';
 
   return (
-    <div className="space-y-9">
+    <div className="space-y-8">
       {/* 顶部一行：左边问候，右边网络。网络固定 188px 高，跟左列同排对齐。 */}
-      <section className="flex flex-col gap-8 pt-6 sm:flex-row sm:items-start sm:justify-between sm:pt-10">
+      <section className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
             {t(greetingKey(new Date().getHours()))}
@@ -71,7 +71,7 @@ export default function MonitorPage() {
         <NetworkWidget />
       </section>
 
-      <section className="grid grid-cols-2 justify-items-center gap-x-6 gap-y-10 sm:grid-cols-4">
+      <section className="grid grid-cols-2 justify-items-center gap-x-6 gap-y-8 sm:grid-cols-4">
         <Ring
           value={sys.cpu_usage}
           label={t('monitor.cpu')}
