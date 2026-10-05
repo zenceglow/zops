@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, Copy, KeyRound, Plus, Puzzle, Trash2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -12,8 +13,10 @@ import {
 } from '../../components/ui/select';
 import { toast } from '../../components/ui/sonner';
 import { cn } from '../../lib/utils';
+import { CapabilityGrid, type AgentTool } from './_components/capability-grid';
 import {
   createToken,
+  getAgentTools,
   getSkill,
   listTokens,
   revokeToken,
@@ -21,22 +24,7 @@ import {
   type ApiTokenInfo,
 } from './_api';
 
-/** 从 SKILL.md 的 frontmatter 里取名字和描述，正文不用整篇铺出来。 */
-function skillSummary(content: string) {
-  const fm = content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
-  const pick = (k: string) => fm.match(new RegExp(`^${k}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? '';
-  return { name: pick('name'), description: pick('description') };
-}
-
-function CopyBlock({
-  label,
-  value,
-  className,
-}: {
-  label?: string;
-  value: string;
-  className?: string;
-}) {
+function CopyBlock({ label, value }: { label?: string; value: string }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
     try {
@@ -48,7 +36,7 @@ function CopyBlock({
     }
   };
   return (
-    <div className={cn('relative', className)}>
+    <div className="relative">
       {label && <p className="mb-1.5 text-xs text-muted-foreground">{label}</p>}
       <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-3 pr-20 font-mono text-xs leading-relaxed">
         {value}
@@ -64,12 +52,14 @@ function CopyBlock({
 /**
  * MCP 接入。
  *
- * 这一页只回答三件事：用哪个令牌、把哪段配置粘给 agent、有什么技能可用。
- * 之前那版把令牌表单、三种命令行、SKILL.md 全文都摊在一屏上 —— 那是在演示
- * "我们支持多少种用法"，而不是让用户两分钟接完。技能正文收进折叠里，要看再看。
+ * 这一页只回答三件事：用哪个令牌、把哪段配置粘给 agent、agent 装上之后能帮你做
+ * 什么。最后那条用**图标清单**呈现 —— SKILL.md 是写给模型看的提示词，用户看不懂
+ * 也不该看懂；用户要的是"它能帮我干什么、哪些动作会动我的服务器"。
  */
 export default function McpPage() {
+  const { t } = useTranslation();
   const [tokens, setTokens] = useState<ApiTokenInfo[]>([]);
+  const [tools, setTools] = useState<AgentTool[]>([]);
   const [skill, setSkill] = useState('');
   const [scope, setScope] = useState('read');
   const [created, setCreated] = useState<ApiTokenCreated | null>(null);
@@ -85,12 +75,15 @@ export default function McpPage() {
   useEffect(() => {
     void refresh();
     void getSkill().then((r) => setSkill(r.content));
+    // 能力清单来自后端工具目录：跟 agent 实际拿到的工具是同一份，不会各说各话。
+    void getAgentTools()
+      .then(setTools)
+      .catch(() => setTools([]));
   }, [refresh]);
 
   const origin = window.location.origin;
   const mcpUrl = `${origin}/api/ops/mcp`;
   const token = created?.token ?? 'ops_在此粘贴你的令牌';
-  const [showToken, setShowToken] = useState(false);
 
   const config = {
     codex: `# ~/.codex/config.toml
@@ -122,7 +115,6 @@ curl -fsSL -H "Authorization: Bearer ${token}" \\
         return;
       }
       setCreated(res.data);
-      setShowToken(true);
       await refresh();
     } finally {
       setBusy(false);
@@ -139,8 +131,6 @@ curl -fsSL -H "Authorization: Bearer ${token}" \\
     toast.success(`已删除 ${label}`);
     await refresh();
   };
-
-  const summary = skillSummary(skill);
 
   return (
     <div className="space-y-6">
@@ -245,29 +235,27 @@ curl -fsSL -H "Authorization: Bearer ${token}" \\
         </CardContent>
       </Card>
 
-      {/* 3. 技能 */}
+      {/* 3. 能力清单 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Puzzle className="size-4" />
-            技能
+            {t('mcp.skill')}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="rounded-xl border border-border/60 px-4 py-3">
-            <p className="font-mono text-sm font-medium">{summary.name || 'zops'}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {summary.description || '（加载中…）'}
-            </p>
-          </div>
-          <CopyBlock label="装到 agent 的技能目录" value={skillCmd} />
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {t('mcp.skill_intro', { count: tools.length })}
+          </p>
+          {tools.length > 0 && <CapabilityGrid tools={tools} />}
+          <CopyBlock label={t('mcp.install_label')} value={skillCmd} />
           <button
             type="button"
             onClick={() => setShowSkill((v) => !v)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             <ChevronDown className={cn('size-3.5 transition-transform', showSkill && 'rotate-180')} />
-            {showSkill ? '收起技能原文' : '查看技能原文'}
+            {showSkill ? t('mcp.hide_source') : t('mcp.show_source')}
           </button>
           {showSkill && <CopyBlock value={skill || '（加载中…）'} />}
         </CardContent>

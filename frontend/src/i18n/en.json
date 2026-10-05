@@ -503,6 +503,25 @@
     "uninstall_desc": "Uninstalling isn't a single click — here are the exact steps to run on the server.",
     "uninstall_warn": "The last step deletes all panel data (database, trash, config). It cannot be undone.",
     "contact_title": "Contact us",
-    "contact_desc": "Reach us through either of these if you run into trouble."
+    "contact_desc": "Reach us through either of these if you run into trouble.",
+    "system_desc": "How the server behaves: memory, time, network, patches.",
+    "panel_desc": "Things about this panel: domain, contact, uninstall.",
+    "swap_desc": "Inspect and configure swap",
+    "timezone_row_desc": "Set the server timezone used by logs and scheduled tasks",
+    "network_desc": "Interfaces, live rates and totals",
+    "updates_desc": "Check and install security patches",
+    "tasks_desc": "Scheduled shell tasks",
+    "bind_row_desc": "Give the panel a domain so you can reach it over HTTPS",
+    "contact_row_desc": "Reach us if something goes wrong",
+    "source_desc": "The panel's source repository",
+    "uninstall_row_desc": "Remove the panel from this server"
+  },
+  "mcp": {
+    "skill": "What this agent can do",
+    "skill_intro": "With the skill pack installed, the agent can help with these {{count}} things (and always asks before changing anything).",
+    "install_label": "Install into the agent's skill directory",
+    "show_source": "Show the raw skill (the prompt the agent reads)",
+    "hide_source": "Hide the raw skill",
+    "write_badge": "changes the server"
   }
 }

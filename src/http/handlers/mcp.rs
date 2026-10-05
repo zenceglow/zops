@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use axum::{
     body::Bytes,
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, Extension, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -138,6 +138,26 @@ struct ToolDef {
     permission: &'static str,
     schema: fn() -> Value,
     id: ToolId,
+}
+
+/// 这个工具是"看"还是"改"。
+///
+/// 不能只看权限名结尾：`ops_container_logs` 用的是 `ops.service.log`、
+/// `ops_member_list` 用的是 `ops.member.manage`，按 `.read` 判断会把两个只读工具
+/// 标成可写。所以按工具本身的性质判断 —— 名字里带 list/get/status/info/logs/tail/overview
+/// 的就是只读。
+fn tool_level(t: &ToolDef) -> &'static str {
+    if t.permission.is_empty() {
+        return "read";
+    }
+    let readish = ["_list", "_get", "_status", "_info", "_logs", "_tail", "_overview"]
+        .iter()
+        .any(|s| t.name.ends_with(s));
+    if readish {
+        "read"
+    } else {
+        "write"
+    }
 }
 
 fn empty_schema() -> Value {
@@ -581,7 +601,7 @@ fn audit_tool_call(
     let Some(def) = tool_catalog().into_iter().find(|t| t.name == tool) else {
         return;
     };
-    if def.permission.ends_with(".read") {
+    if tool_level(&def) == "read" {
         return;
     }
 
@@ -661,6 +681,37 @@ async fn skill_raw(
         crate::domain::mcp::SKILL_CONTENT,
     )
         .into_response())
+}
+
+/// 工具目录的面板视角。
+///
+/// MCP 自己的 `tools/list` 要 agent 令牌，面板页面用不了；而"这个技能能让 agent
+/// 干什么"恰恰是用户最该看见的东西，所以单独开一个走面板 JWT 的只读接口。
+async fn tool_list(
+    State(_state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<crate::shared::ApiResponse<serde_json::Value>>, AppError> {
+    let tools: Vec<serde_json::Value> = tool_catalog()
+        .into_iter()
+        .filter(|t| t.permission.is_empty() || user.has(t.permission))
+        .map(|t| {
+            json!({
+                "name": t.name,
+                "description": t.description,
+                // read 只读、write 要写权限：界面上用不同颜色区分，用户一眼知道
+                // 哪些动作是 agent 能直接改服务器状态的。
+                "level": tool_level(&t),
+            })
+        })
+        .collect();
+    // 必须套统一外壳：前端取的是 `{success, data}`，裸对象会让页面拿不到数据
+    // —— /skill 就踩过一次同样的坑。
+    Ok(Json(crate::shared::ApiResponse::ok(json!({ "tools": tools }))))
+}
+
+/// 挂在面板 JWT 组里（见 http/mod.rs），由鉴权中间件负责认证。
+pub fn catalog_routes() -> Router<Arc<AppState>> {
+    Router::new().route("/tools", get(tool_list))
 }
 
 pub fn mcp_routes() -> Router<Arc<AppState>> {

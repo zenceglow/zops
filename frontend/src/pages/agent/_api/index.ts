@@ -20,6 +20,8 @@ export type SkillInfo = {
   content: string;
 };
 
+export type AgentTool = { name: string; description: string; level: 'read' | 'write' };
+
 export function listTokens() {
   return get<ApiTokenInfo[]>('/token/list');
 }
@@ -29,16 +31,24 @@ export function createToken(body: { name: string; scope: string }) {
 }
 
 export function revokeToken(id: string) {
-  return del<unknown>('/token', { id });
+  return del('/token', { id });
+}
+
+/** 工具目录。MCP 自己的 `tools/list` 要 agent 令牌，面板页面用不了。 */
+export async function getAgentTools() {
+  const res = await get<{ tools: AgentTool[] }>('/agent/tools');
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data.tools;
 }
 
 /**
- * Skill 接口在面板 JWT 组之外，但也接受面板 JWT。
+ * 技能原文。
  *
- * 注意它**不套 `{success, data}` 那层壳**，直接把文档摊平返回。之前按壳取值，
- * 于是 `r.success` 恒为 undefined，技能内容永远是空的、页面上一直显示"加载中"。
+ * 注意这个接口**不套 `{success, data}` 那层壳**，直接把文档摊平返回。按壳取值会
+ * 让 `success` 恒为 undefined，内容永远是空的。
  */
 export async function getSkill(): Promise<SkillInfo> {
   const res = (await get<SkillInfo>('/skill')) as unknown as SkillInfo;
   return { name: res?.name ?? '', filename: res?.filename ?? '', content: res?.content ?? '' };
 }
+

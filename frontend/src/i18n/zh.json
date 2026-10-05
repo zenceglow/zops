@@ -503,6 +503,25 @@
     "uninstall_desc": "卸载不是一键的事，下面是完整步骤，请复制到服务器上执行。",
     "uninstall_warn": "最后一步会删掉面板的全部数据（数据库、回收站、配置），删掉就无法恢复。确认不再需要之后再执行。",
     "contact_title": "联系我们",
-    "contact_desc": "面板使用中遇到问题，可以通过下面任意方式找到我们。"
+    "contact_desc": "面板使用中遇到问题，可以通过下面任意方式找到我们。",
+    "system_desc": "服务器本身的行为：内存、时间、网络、补丁。",
+    "panel_desc": "这个面板自己的事：域名、联系方式、卸载。",
+    "swap_desc": "查看和配置虚拟内存（Swap）",
+    "timezone_row_desc": "设置服务器时区，日志和定时任务都按它走",
+    "network_desc": "网卡、实时速率与累计流量",
+    "updates_desc": "检查并安装系统安全补丁",
+    "tasks_desc": "定时执行的 shell 任务",
+    "bind_row_desc": "给面板加一个域名，走 HTTPS 访问",
+    "contact_row_desc": "遇到问题找我们",
+    "source_desc": "面板的源码仓库",
+    "uninstall_row_desc": "把面板从这台服务器上移除"
+  },
+  "mcp": {
+    "skill": "这个 Agent 能帮你做什么",
+    "skill_intro": "装上技能包后，它可以用下面 {{count}} 种能力帮你运维这台服务器（动作前会先征求你同意）。",
+    "install_label": "装到 agent 的技能目录",
+    "show_source": "查看技能原文（给 agent 读的提示词）",
+    "hide_source": "收起技能原文",
+    "write_badge": "会改动服务器"
   }
 }
