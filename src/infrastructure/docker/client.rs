@@ -6,6 +6,7 @@ use bollard::container::{
     InspectContainerOptions, ListContainersOptions, LogsOptions, RemoveContainerOptions,
     MemoryStatsStats, Stats, StatsOptions, StopContainerOptions,
 };
+use bollard::models::PortMap;
 use bollard::{Docker, API_DEFAULT_VERSION};
 use futures_util::future::join_all;
 use futures_util::StreamExt;
@@ -22,6 +23,68 @@ use crate::shared::AppError;
 /// 请求变成 500。
 fn short_id(id: &str) -> String {
     id.get(..12).unwrap_or(id).to_string()
+}
+
+/// 端口映射的线上格式：`宿主ip:宿主端口-容器端口`，多条用逗号分隔。
+///
+/// 只声明、没映射到宿主端口的写成 `0.0.0.0:0-容器端口`，前端会跳过宿主端口为 0
+/// 的那些。**改动这个格式要连前端 `shortPorts` 一起改**。
+fn format_port(host_ip: Option<&str>, host_port: u16, container_port: u16) -> String {
+    format!("{}:{}-{}", host_ip.unwrap_or("0.0.0.0"), host_port, container_port)
+}
+
+/// 从 inspect 里取端口映射。
+///
+/// 不用列表接口的 `Ports`：Docker 那边对老容器会**间歇性报错宿主端口** —— 本机
+/// 实测同一个容器连查四次，同一个字段在 3306 和 3307 之间跳（这两台端口分别属于
+/// 两个不同容器），而 inspect 四次都是稳定的。面板显示的"两个 mysql 都占 3307"
+/// 就是这么来的。
+fn ports_from_inspect(ports: &PortMap) -> String {
+    let mut rows: Vec<(u16, String)> = Vec::new();
+    for (key, bindings) in ports {
+        // key 形如 "3306/tcp"
+        let Some(container_port) = key
+            .split('/')
+            .next()
+            .and_then(|p| p.parse::<u16>().ok())
+        else {
+            continue;
+        };
+        match bindings {
+            Some(list) if !list.is_empty() => {
+                for b in list {
+                    let host_port = b
+                        .host_port
+                        .as_deref()
+                        .and_then(|p| p.parse::<u16>().ok())
+                        .unwrap_or(0);
+                    rows.push((
+                        container_port,
+                        format_port(b.host_ip.as_deref(), host_port, container_port),
+                    ));
+                }
+            }
+            // 没有绑定 = 只在容器网络里可达，宿主上连不到。
+            _ => rows.push((container_port, format_port(None, 0, container_port))),
+        }
+    }
+    // HashMap 的顺序是随机的，排一下，免得面板每次刷新端口顺序都在变。
+    rows.sort_by_key(|(port, _)| *port);
+    rows.into_iter().map(|(_, s)| s).collect::<Vec<_>>().join(", ")
+}
+
+/// inspect 拿不到时的退路：用列表接口给的那份（可能带上面说的错值）。
+fn ports_from_summary(c: &bollard::models::ContainerSummary) -> String {
+    c.ports
+        .as_ref()
+        .map(|ports| {
+            ports
+                .iter()
+                .map(|p| format_port(p.ip.as_deref(), p.public_port.unwrap_or(0), p.private_port))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default()
 }
 
 /// 一个容器的实时占用。取不到就是 None，调用方据此整块不显示。
@@ -281,15 +344,25 @@ impl DockerClient {
         let out = join_all(containers.into_iter().map(|c| {
             let docker = docker.clone();
             async move {
-                let raw_id = c.id.unwrap_or_default();
-                let state = c.state.unwrap_or_default();
+                let raw_id = c.id.clone().unwrap_or_default();
+                let state = c.state.clone().unwrap_or_default();
 
-                let started_at = docker
+                let inspect = docker
                     .inspect_container(&raw_id, None::<InspectContainerOptions>)
                     .await
-                    .ok()
-                    .and_then(|i| i.state.and_then(|s| s.started_at))
+                    .ok();
+                let started_at = inspect
+                    .as_ref()
+                    .and_then(|i| i.state.as_ref())
+                    .and_then(|s| s.started_at.clone())
                     .unwrap_or_default();
+                let ports = inspect
+                    .as_ref()
+                    .and_then(|i| i.network_settings.as_ref())
+                    .and_then(|n| n.ports.as_ref())
+                    .map(ports_from_inspect)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| ports_from_summary(&c));
                 let usage = self.container_usage(&docker, &raw_id, state == "running").await;
 
                 ContainerDto {
@@ -305,20 +378,7 @@ impl DockerClient {
                     image: c.image.unwrap_or_default(),
                     status: c.status.unwrap_or_default(),
                     state,
-                    ports: c
-                        .ports
-                        .unwrap_or_default()
-                        .iter()
-                        .map(|p| {
-                            format!(
-                                "{}:{}-{}",
-                                p.ip.as_deref().unwrap_or("0.0.0.0"),
-                                p.public_port.unwrap_or(0),
-                                p.private_port
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", "),
+                    ports,
                     started_at,
                     cpu_percent: usage.cpu_percent,
                     mem_used: usage.mem_used,
