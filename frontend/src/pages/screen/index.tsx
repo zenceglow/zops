@@ -6,12 +6,15 @@ import { BrandLogo } from '../../components/brand-logo';
 import { RollingNumber } from '../../components/rolling-number';
 import { cn } from '../../lib/utils';
 import { Globe } from './_components/globe';
+import { PressurePanel, type PressureMetric } from './_components/pressure';
 import {
   fetchEvents,
   fetchOverview,
+  fetchSystemOverview,
   type AccessEvent,
   type AnalyticsOverview,
   type HourPoint,
+  type SystemOverview,
 } from './_api';
 
 /** 实时流水轮询间隔。 */
@@ -51,6 +54,11 @@ function statusTone(status: number): string {
   return 'text-zinc-500';
 }
 
+/** 字节按十进制读起来更顺（GB 就是 GB，不是 GiB 那个绕一圈的数）。 */
+function gb(bytes: number): string {
+  return `${(bytes / (1 << 30)).toFixed(bytes >= 10 << 30 ? 0 : 1)} GB`;
+}
+
 /**
  * 数据大屏 —— 全屏，不套应用外壳。
  *
@@ -67,6 +75,9 @@ export default function ScreenPage() {
   const [hours, setHours] = useState<number>(24);
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [events, setEvents] = useState<AccessEvent[]>([]);
+  const [sys, setSys] = useState<SystemOverview | null>(null);
+  /** 没有 ops.system.read 的账号拿不到压力数据，那就不显示这块，别摆一个空壳。 */
+  const [sysDenied, setSysDenied] = useState(false);
   const [error, setError] = useState('');
   const [clock, setClock] = useState(() => new Date());
   const cursor = useRef(0);
@@ -94,16 +105,29 @@ export default function ScreenPage() {
     }
   }, []);
 
+  const loadSys = useCallback(async () => {
+    try {
+      const res = await fetchSystemOverview();
+      if (res.success && res.data) setSys(res.data);
+      else if (res.code === 403) setSysDenied(true);
+    } catch {
+      // 采不到就保持上一次的读数，大屏闪一下空白比数字旧两秒更难看。
+    }
+  }, []);
+
   useEffect(() => {
     void loadOverview();
     void loadEvents(true);
-  }, [loadOverview, loadEvents]);
+    void loadSys();
+  }, [loadOverview, loadEvents, loadSys]);
 
   useEffect(() => {
     let tick = 0;
     const id = setInterval(() => {
       if (hidden.current) return;
       void loadEvents(false);
+      // 压力是秒级变化的东西，和流水同频读；系统指标只是一次 sysinfo 读取，很便宜。
+      if (!sysDenied) void loadSys();
       if (++tick % OVERVIEW_EVERY === 0) void loadOverview();
     }, EVENT_POLL_MS);
     const onVisibility = () => {
@@ -116,7 +140,7 @@ export default function ScreenPage() {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [loadEvents, loadOverview]);
+  }, [loadEvents, loadOverview, loadSys, sysDenied]);
 
   useEffect(() => {
     const id = setInterval(() => setClock(new Date()), 1000);
@@ -134,6 +158,41 @@ export default function ScreenPage() {
 
   const bars = overview ? toBars(overview.hourly, hours) : [];
   const barMax = Math.max(1, ...bars);
+  // 磁盘只算 1GB 以上的分区：容器会挂一堆几百兆的 overlay，它们动辄 90% 往上，
+  // 混进来会让"磁盘告急"永远为真。
+  const disks = (sys?.disks ?? []).filter((d) => d.total >= 1 << 30);
+  const worstDisk = [...disks].sort((a, b) => b.percent - a.percent)[0];
+  const swapPct = sys && sys.swap_total > 0 ? (sys.swap_used / sys.swap_total) * 100 : 0;
+  const load1 = sys?.load_avg[0] ?? 0;
+  // 负载折成"占满几核"：8 核上 load=8 就是刚好跑满，比裸数字直观。
+  const loadPct = sys && sys.cpu_cores > 0 ? (load1 / sys.cpu_cores) * 100 : 0;
+  const pressureMetrics: PressureMetric[] = sys
+    ? [
+        { key: 'cpu', value: sys.cpu_usage, detail: `${sys.cpu_cores} ${t('screen.cores')}` },
+        {
+          key: 'memory',
+          value: sys.memory_percent,
+          detail: `${gb(sys.memory_used)} / ${gb(sys.memory_total)}`,
+        },
+        { key: 'disk', value: worstDisk?.percent ?? 0, detail: worstDisk?.mount },
+        {
+          key: 'swap',
+          value: swapPct,
+          detail:
+            sys.swap_total > 0
+              ? `${gb(sys.swap_used)} / ${gb(sys.swap_total)}`
+              : t('screen.swap_off'),
+        },
+        {
+          key: 'load',
+          value: loadPct,
+          detail: sys.load_avg
+            .slice(0, 3)
+            .map((n) => n.toFixed(2))
+            .join(' / '),
+        },
+      ]
+    : [];
   const pad = (n: number) => String(n).padStart(2, '0');
   const time = `${pad(clock.getHours())}:${pad(clock.getMinutes())}:${pad(clock.getSeconds())}`;
   const security = overview?.security;
@@ -241,29 +300,37 @@ export default function ScreenPage() {
           </div>
         </div>
 
-        {/* 中：地球 */}
-        <div className="relative min-h-[300px]">
-          <Globe
-            points={overview?.points ?? []}
-            self={overview?.self_location ?? null}
-            latest={events[0] ?? null}
-          />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-2 px-1 pb-1 text-[11px] text-zinc-500">
-            <span className="flex items-center gap-3">
-              <Legend className="bg-emerald-400" label={t('screen.legend_visitor')} />
-              <Legend className="bg-zinc-100" label={t('screen.legend_server')} square />
-              <Legend className="bg-sky-400" label={t('screen.legend_link')} />
-            </span>
-            <span className="text-right">
-              {overview?.self_location
-                ? t('screen.server_at', { place: overview.self_location.label })
-                : t('screen.server_unknown')}
-            </span>
+        {/* 中：地球 + 压力检测仪 */}
+        <div className="flex min-h-[300px] flex-col gap-3">
+          <div className="relative min-h-0 flex-1">
+            <Globe
+              points={overview?.points ?? []}
+              self={overview?.self_location ?? null}
+              latest={events[0] ?? null}
+            />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-2 px-1 text-[11px] text-zinc-500">
+              <span className="flex items-center gap-3">
+                <Legend className="bg-emerald-400" label={t('screen.legend_visitor')} />
+                <Legend className="bg-zinc-100" label={t('screen.legend_server')} square />
+                <Legend className="bg-sky-400" label={t('screen.legend_link')} />
+              </span>
+              <span className="text-right">
+                {overview?.self_location
+                  ? t('screen.server_at', { place: overview.self_location.label })
+                  : t('screen.server_unknown')}
+              </span>
+            </div>
+            {overview && overview.points.length === 0 && (
+              <p className="pointer-events-none absolute inset-x-0 top-1/2 text-center text-xs text-zinc-600">
+                {overview.geo.enabled ? t('screen.no_points') : t('screen.geo_off')}
+              </p>
+            )}
           </div>
-          {overview && overview.points.length === 0 && (
-            <p className="pointer-events-none absolute inset-x-0 top-1/2 text-center text-xs text-zinc-600">
-              {overview.geo.enabled ? t('screen.no_points') : t('screen.geo_off')}
-            </p>
+
+          {!sysDenied && pressureMetrics.length > 0 && (
+            <div className="shrink-0">
+              <PressurePanel metrics={pressureMetrics} processes={sys?.processes} />
+            </div>
           )}
         </div>
 

@@ -110,12 +110,29 @@
   animation: pop-in 0.22s ease-out both;
 }
 
+/* 压力检测仪：进红区的那几格呼吸。整体不动、只有告急的格子明暗涨落 ——
+   全部一起闪会变成噪音，反而看不出是哪一项在报警。 */
+@keyframes gauge-alarm {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.gauge-alarm {
+  animation: gauge-alarm 1.5s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .topology-edge,
   .animate-breathe,
   .animate-ping,
   .scan-sweep,
-  .bar-slide {
+  .bar-slide,
+  .gauge-alarm {
     animation: none;
   }
 }

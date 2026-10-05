@@ -61,6 +61,31 @@ export type AccessEvent = {
 
 export type EventsPage = { events: AccessEvent[]; cursor: number };
 
+/**
+ * 服务器压力要的那几个数。
+ *
+ * 只列用得上的字段，不复用首页那份类型：两页的口径不一样（首页还管补丁和网络），
+ * 跨页引一个"大而全"的类型，以后改动会互相绊住。
+ */
+export type SystemOverview = {
+  cpu_usage: number;
+  cpu_cores: number;
+  memory_total: number;
+  memory_used: number;
+  memory_percent: number;
+  swap_total: number;
+  swap_used: number;
+  disks: { mount: string; total: number; used: number; percent: number }[];
+  load_avg: number[];
+  processes: number;
+  uptime_secs: number;
+};
+
+/** 要 `ops.system.read`；没有这个权限的账号会拿到 403。 */
+export async function fetchSystemOverview() {
+  return get<SystemOverview>('/system/overview');
+}
+
 export async function fetchOverview(hours: number) {
   const res = await get<AnalyticsOverview>(`/analytics/overview?hours=${hours}`);
   if (!res.success || !res.data) throw new Error(res.message || 'Failed');

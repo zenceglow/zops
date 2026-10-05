@@ -609,7 +609,20 @@
     "server_unknown": "Server location unknown — no inbound lines",
     "no_points": "No geolocated traffic yet",
     "geo_off": "Geo lookup is off (GEOIP_DISABLED=1)",
-    "sec_note": "Blocked = requests rejected by the gateway rules (403). Scanners/tools = script or scanner user agents. Locations come from an IP database and shift with proxies and carrier NAT — treat them as a hint."
+    "sec_note": "Blocked = requests rejected by the gateway rules (403). Scanners/tools = script or scanner user agents. Locations come from an IP database and shift with proxies and carrier NAT — treat them as a hint.",
+    "pressure": "Server pressure",
+    "pressure_high": "critical",
+    "pressure_mid": "tight",
+    "pressure_low": "easy",
+    "pressure_bottleneck": "bottleneck: {{name}}",
+    "processes": "{{count}} processes",
+    "m_cpu": "CPU",
+    "m_memory": "Memory",
+    "m_disk": "Disk",
+    "m_swap": "Swap",
+    "m_load": "Load",
+    "cores": "cores",
+    "swap_off": "off"
   },
   "about": {
     "title": "About",

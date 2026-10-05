@@ -609,7 +609,20 @@
     "server_unknown": "本机位置未知，暂不画流入线",
     "no_points": "还没有可定位的访问",
     "geo_off": "归属地查询已关闭（GEOIP_DISABLED=1）",
-    "sec_note": "拦截 = 被网关规则拒绝的请求（403）；扫描 / 工具 = UA 为脚本或扫描器。归属地来自 IP 库，反代与运营商出口会让它偏移，只作参考。"
+    "sec_note": "拦截 = 被网关规则拒绝的请求（403）；扫描 / 工具 = UA 为脚本或扫描器。归属地来自 IP 库，反代与运营商出口会让它偏移，只作参考。",
+    "pressure": "服务器压力检测仪",
+    "pressure_high": "告急",
+    "pressure_mid": "偏紧",
+    "pressure_low": "从容",
+    "pressure_bottleneck": "瓶颈在{{name}}",
+    "processes": "{{count}} 进程",
+    "m_cpu": "CPU",
+    "m_memory": "内存",
+    "m_disk": "磁盘",
+    "m_swap": "Swap",
+    "m_load": "负载",
+    "cores": "核",
+    "swap_off": "未启用"
   },
   "about": {
     "title": "关于",
