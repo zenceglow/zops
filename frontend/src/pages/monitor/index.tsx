@@ -31,14 +31,40 @@ export default function MonitorPage() {
 
   if (loading || !sys) {
     return (
-      <div className="space-y-8 pt-2">
-        <Skeleton className="h-12 w-96 max-w-full" />
-        <div className="flex flex-wrap gap-x-8 gap-y-8">
+      // 骨架要照抄真实布局的骨架尺寸，否则数据一到、元素一换，整页会跳一下 ——
+      // 那比多等两百毫秒更让人以为是"加载出错又好了"。
+      <div className="space-y-8">
+        <section className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-4">
+            <Skeleton className="h-10 w-72 max-w-full" />
+            <Skeleton className="h-5 w-96 max-w-full" />
+          </div>
+          <div className="w-full space-y-3 sm:w-[400px]">
+            <Skeleton className="h-14 w-full rounded-xl" />
+            <Skeleton className="h-4 w-52 max-w-full" />
+          </div>
+        </section>
+
+        {/* 入口卡片自己会拉数据、自己出骨架，所以这里直接挂着就行。 */}
+        <GatewayEntry />
+
+        <section className="grid grid-cols-2 justify-items-center gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="size-[116px] rounded-full" />
+            <div key={i} className="flex flex-col items-center gap-5">
+              <Skeleton className="size-[116px] rounded-full" />
+              <Skeleton className="h-4 w-16" />
+            </div>
           ))}
-        </div>
-        <Skeleton className="mx-auto h-40 w-full max-w-2xl rounded-2xl" />
+        </section>
+
+        <section className="space-y-6">
+          <Skeleton className="h-5 w-24" />
+          <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-2xl" />
+            ))}
+          </div>
+        </section>
       </div>
     );
   }

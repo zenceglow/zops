@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ExternalLink } from 'lucide-react';
 import { SiCaddy } from 'react-icons/si';
+import { Skeleton } from '../../../components/ui/skeleton';
 import { fetchGatewayConfig, fetchGatewayStatus } from '../../sites/_api';
 import type { GatewayStatus, SiteEntry } from '../../sites/_api';
 import { cn } from '../../../lib/utils';
@@ -25,6 +26,9 @@ function siteUrl(addr: string): string | null {
 function useGatewayEntry() {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [sites, setSites] = useState<SiteEntry[]>([]);
+  // 请求结束（无论成败）后就不再显示骨架：否则网关没装/接口挂了会让首页永远挂着
+  // 一个加载中的占位，比"这块没有"更让人困惑。
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -34,6 +38,7 @@ function useGatewayEntry() {
         if (!alive) return;
         setStatus(st);
         setSites(cfg?.parsed.sites ?? []);
+        setSettled(true);
       },
     );
     return () => {
@@ -41,7 +46,7 @@ function useGatewayEntry() {
     };
   }, []);
 
-  return { status, sites };
+  return { status, sites, settled };
 }
 
 /**
@@ -52,9 +57,23 @@ function useGatewayEntry() {
  */
 export function GatewayEntry() {
   const { t } = useTranslation();
-  const { status, sites } = useGatewayEntry();
+  const { status, sites, settled } = useGatewayEntry();
 
-  // 状态还没回来就先不占位，免得先闪一个空卡片再填内容。
+  // 状态没回来时占住同样的位置：直接 return null 的话，卡片会在数据到达的瞬间冒
+  // 出来，把下面的统计环整体往下顶一格 —— 比"先看到骨架"更难受。
+  if (!status && !settled) {
+    return (
+      <section className="flex flex-wrap items-center gap-x-5 gap-y-4 rounded-2xl border border-border/70 px-5 py-4">
+        <Skeleton className="size-12 shrink-0 rounded-2xl" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-6 w-72 max-w-full rounded-lg" />
+        </div>
+        <Skeleton className="h-8 w-24 shrink-0 rounded-xl" />
+      </section>
+    );
+  }
+  // 拉不到状态（接口挂了）就整块不显示，别把骨架留在页面上。
   if (!status) return null;
 
   const running = status.running;
