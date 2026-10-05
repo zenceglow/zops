@@ -28,6 +28,25 @@ export async function saveGatewayConfig(raw: string) {
   if (!res.success) throw new Error(res.message || 'Failed');
 }
 
+export interface CaddyfileVersion {
+  id: number;
+  author: string;
+  note: string;
+  created_at: string;
+  size: number;
+}
+
+export async function fetchCaddyfileVersions() {
+  const res = await get<CaddyfileVersion[]>('/gateway/versions');
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
+}
+
+export async function restoreCaddyfileVersion(id: number) {
+  const res = await post(`/gateway/versions/${id}/restore`);
+  if (!res.success) throw new Error(res.message || 'Failed');
+}
+
 export async function startContainer(id: string) {
   return post('/service/start', { id });
 }

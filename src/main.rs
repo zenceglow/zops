@@ -52,7 +52,7 @@ async fn async_main() {
         system: Arc::new(SystemService::new(sys)),
         containers: Arc::new(ContainerService::new(docker)),
         gateway: Arc::new(GatewayService::new(caddy.clone())),
-        caddyfile: Arc::new(CaddyfileService::new(caddy)),
+        caddyfile: Arc::new(CaddyfileService::new(caddy, db.clone())),
         logs: Arc::new(LogService::new(db.clone())),
         members: Arc::new(MemberService::new(db.clone())),
         automation: Arc::new(AutomationService::new(db.clone())),

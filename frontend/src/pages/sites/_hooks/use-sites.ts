@@ -3,9 +3,12 @@ import { useTranslation } from 'react-i18next';
 import {
   fetchGatewayConfig,
   fetchGatewayStatus,
+  fetchCaddyfileVersions,
   installGateway,
+  restoreCaddyfileVersion,
   saveGatewayConfig,
   serverAction as postServerAction,
+  type CaddyfileVersion,
   type GatewayConfig,
   type GatewayStatus,
 } from '../_api';
@@ -16,7 +19,10 @@ export function useSites() {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [config, setConfig] = useState<GatewayConfig | null>(null);
   const [rawEditor, setRawEditor] = useState('');
-  const [tab, setTab] = useState('visual');
+  /** list = 入口列表；editor = 直接改配置文件。 */
+  const [mode, setMode] = useState<'list' | 'editor'>('list');
+  const [versions, setVersions] = useState<CaddyfileVersion[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
   const [msg, setMsg] = useState('');
   const [installing, setInstalling] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -39,6 +45,14 @@ export function useSites() {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  const loadVersions = useCallback(() => {
+    setLoadingVersions(true);
+    fetchCaddyfileVersions()
+      .then(setVersions)
+      .catch(() => setVersions([]))
+      .finally(() => setLoadingVersions(false));
+  }, []);
 
   const serverAction = useCallback(
     async (action: 'start' | 'stop' | 'reload') => {
@@ -76,6 +90,23 @@ export function useSites() {
     }
   }, [rawEditor, fetchAll, t]);
 
+  const restoreVersion = useCallback(
+    async (id: number) => {
+      try {
+        await restoreCaddyfileVersion(id);
+        const fresh = await fetchGatewayConfig();
+        setConfig(fresh);
+        setRawEditor(fresh.raw);
+        setMsg(t('sites.restore_success'));
+        fetchAll();
+        loadVersions();
+      } catch (e) {
+        setMsg(`${t('sites.restore_fail')}: ${e instanceof Error ? e.message : ''}`);
+      }
+    },
+    [fetchAll, loadVersions, t],
+  );
+
   const handleAddSite = useCallback(async () => {
     if (!newDomain || !newTarget) return;
     const block = buildSiteBlock({
@@ -109,8 +140,12 @@ export function useSites() {
     config,
     rawEditor,
     setRawEditor,
-    tab,
-    setTab,
+    mode,
+    setMode,
+    versions,
+    loadingVersions,
+    loadVersions,
+    restoreVersion,
     msg,
     installing,
     showAdd,

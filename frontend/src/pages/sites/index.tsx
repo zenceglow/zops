@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import {
+  ArrowLeft,
   Globe,
   Play,
   Square,
@@ -7,7 +8,6 @@ import {
   Save,
   Undo2,
   FileText,
-  Eye,
   Download,
   Plus,
 } from 'lucide-react';
@@ -16,7 +16,6 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -34,8 +33,9 @@ import {
 } from '../../components/ui/select';
 import { Skeleton } from '../../components/ui/skeleton';
 import { useSites } from './_hooks/use-sites';
-import { DirectiveRow } from './_components/directive-row';
 import { CaddyfileEditor } from './_components/caddyfile-editor';
+import { SiteListItem } from './_components/site-list-item';
+import { VersionHistoryDialog } from './_components/version-history-dialog';
 
 export default function SitesPage() {
   const { t } = useTranslation();
@@ -87,10 +87,35 @@ export default function SitesPage() {
         <h1 className="text-2xl font-bold tracking-tight">{t('sites.title')}</h1>
         <div className="flex items-center gap-2">
           {s.msg && <Badge variant="secondary">{s.msg}</Badge>}
-          <Button size="sm" onClick={() => s.setShowAdd(true)}>
-            <Plus />
-            {t('sites.add_site')}
-          </Button>
+          {s.mode === 'list' ? (
+            <>
+              <Button size="sm" variant="outline" onClick={() => s.setMode('editor')}>
+                <FileText />
+                {t('sites.edit_config')}
+              </Button>
+              <Button size="sm" onClick={() => s.setShowAdd(true)}>
+                <Plus />
+                {t('sites.add_site')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <VersionHistoryDialog
+                versions={s.versions}
+                loading={s.loadingVersions}
+                onOpen={s.loadVersions}
+                onRestore={s.restoreVersion}
+              />
+              <Button size="sm" variant="outline" onClick={() => s.saveConfig()}>
+                <Save />
+                {t('sites.save_config')}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => s.setMode('list')}>
+                <ArrowLeft />
+                {t('sites.back_to_list')}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -211,77 +236,43 @@ export default function SitesPage() {
         </DialogContent>
       </Dialog>
 
-      <Tabs value={s.tab} onValueChange={s.setTab}>
-        <TabsList>
-          <TabsTrigger value="visual">
-            <Eye className="size-3.5" />
-            {t('sites.visual')}
-          </TabsTrigger>
-          <TabsTrigger value="editor">
-            <FileText className="size-3.5" />
-            {t('sites.editor')}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="visual" className="space-y-4 mt-4">
-          {s.config?.parsed.preamble && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
-                  {t('sites.global_config')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <pre className="text-sm whitespace-pre-wrap font-mono">
-                  {s.config.parsed.preamble}
-                </pre>
-              </CardContent>
-            </Card>
-          )}
+      {s.mode === 'list' ? (
+        <div className="space-y-3">
           {(!s.config || s.config.parsed.sites.length === 0) && (
             <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
+              <CardContent className="py-10 text-center text-muted-foreground">
                 <Globe className="size-8 mx-auto mb-3 opacity-40" />
-                {t('sites.no_sites')}
+                <p>{t('sites.no_sites')}</p>
+                <p className="mt-1 text-xs opacity-70">{t('sites.no_sites_hint')}</p>
               </CardContent>
             </Card>
           )}
           {s.config?.parsed.sites.map((site, i) => (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center gap-2 space-y-0 border-b py-3">
-                <span className="size-2 rounded-full bg-primary" />
-                <CardTitle className="font-mono text-sm">{site.addr}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 divide-y">
-                {site.directives.length === 0 && (
-                  <div className="px-4 py-3 text-xs text-muted-foreground">—</div>
-                )}
-                {site.directives.map((d, j) => (
-                  <DirectiveRow key={j} directive={d} />
-                ))}
-              </CardContent>
-            </Card>
+            <SiteListItem key={i} site={site} />
           ))}
-        </TabsContent>
-
-        <TabsContent value="editor" className="mt-4 space-y-3">
-          {s.config && (
-            <>
-              <CaddyfileEditor value={s.rawEditor} onChange={s.setRawEditor} />
-              <div className="flex gap-3">
-                <Button onClick={s.saveConfig}>
-                  <Save />
-                  {t('sites.save_config')}
-                </Button>
-                <Button variant="secondary" onClick={() => s.setRawEditor(s.config!.raw)}>
-                  <Undo2 />
-                  {t('sites.reset')}
-                </Button>
-              </div>
-            </>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {s.config?.parsed.preamble && (
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+                {t('sites.global_config')}
+              </p>
+              <pre className="overflow-x-auto rounded-xl border border-border/60 px-3 py-2.5 font-mono text-xs text-muted-foreground">
+                {s.config.parsed.preamble}
+              </pre>
+            </div>
           )}
-        </TabsContent>
-      </Tabs>
+          {s.config && <CaddyfileEditor value={s.rawEditor} onChange={s.setRawEditor} />}
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={() => s.setRawEditor(s.config?.raw ?? '')}>
+              <Undo2 />
+              {t('sites.reset')}
+            </Button>
+            <p className="text-xs text-muted-foreground">{t('sites.editor_hint')}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

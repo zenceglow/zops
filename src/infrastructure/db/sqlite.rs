@@ -11,6 +11,8 @@ use crate::domain::permission::ROLE_SUPER_ADMIN;
 const META_INITIALIZED: &str = "initialized";
 const META_SETUP_SECRET_HASH: &str = "setup_secret_hash";
 const META_JWT_SECRET: &str = "jwt_secret";
+/// 保留多少份 Caddyfile 历史。按一周改动几次估算，五十份够翻很久了。
+const CADDYFILE_HISTORY_KEEP: i64 = 50;
 
 #[derive(Debug, Clone)]
 pub struct UserRow {
@@ -37,6 +39,16 @@ pub struct ApiTokenRow {
 
 pub struct Database {
     conn: Mutex<Connection>,
+}
+
+/// 历史版本的元信息（不含正文）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CaddyfileVersionRow {
+    pub id: i64,
+    pub author: String,
+    pub note: String,
+    pub created_at: String,
+    pub size: i64,
 }
 
 impl Database {
@@ -116,6 +128,16 @@ impl Database {
                 permissions  TEXT NOT NULL DEFAULT '[]',
                 created_at   TEXT NOT NULL DEFAULT (datetime('now')),
                 last_used_at TEXT
+            );
+
+            -- 每次改接入网关配置前的快照。配置改坏了就没法回退，是这个页面最要命
+            -- 的地方，单独存一份原文比事后从日志里翻划算。
+            CREATE TABLE IF NOT EXISTS caddyfile_versions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                content    TEXT NOT NULL,
+                author     TEXT NOT NULL DEFAULT '',
+                note       TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
             ",
         )?;
@@ -478,6 +500,58 @@ impl Database {
         let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
         let n = conn.execute("DELETE FROM log_sources WHERE id = ?1", params![id])?;
         Ok(n > 0)
+    }
+
+    // ── Caddyfile 历史版本 ──
+
+    /// 存一份快照。老版本顺手清掉，免得一份几 KB 的配置攒成大表。
+    pub fn add_caddyfile_version(&self, content: &str, author: &str, note: &str) -> Result<i64> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO caddyfile_versions(content, author, note) VALUES(?1, ?2, ?3)",
+            params![content, author, note],
+        )?;
+        let id = conn.last_insert_rowid();
+        let _ = conn.execute(
+            "DELETE FROM caddyfile_versions WHERE id NOT IN
+             (SELECT id FROM caddyfile_versions ORDER BY id DESC LIMIT ?1)",
+            params![CADDYFILE_HISTORY_KEEP],
+        );
+        Ok(id)
+    }
+
+    /// 列表不带正文：正文可能几 KB，列表页不背着它。
+    pub fn list_caddyfile_versions(&self, limit: i64) -> Result<Vec<CaddyfileVersionRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, author, note, created_at, length(content)
+             FROM caddyfile_versions ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit], |row| {
+                Ok(CaddyfileVersionRow {
+                    id: row.get(0)?,
+                    author: row.get(1)?,
+                    note: row.get(2)?,
+                    created_at: row.get(3)?,
+                    size: row.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn get_caddyfile_version(&self, id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let row = conn
+            .query_row(
+                "SELECT content FROM caddyfile_versions WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(row)
     }
 
     // ── API Tokens ──
