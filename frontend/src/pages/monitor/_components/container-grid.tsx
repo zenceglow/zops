@@ -184,6 +184,22 @@ function useNow(intervalMs = 30_000) {
   return now;
 }
 
+/** CPU 百分比：个位数时留一位小数，否则整数就够读了。 */
+function formatCpu(pct: number): string {
+  return (pct >= 10 ? Math.round(pct) : pct.toFixed(1)) + '%';
+}
+
+/**
+ * 内存用紧凑单位（209M / 1.2G）。
+ *
+ * 通用的 formatBytes 会给"209.0 MB"，在这一列窄字里既占宽度又没多给精度。
+ */
+function compactBytes(b: number): string {
+  if (b >= 1 << 30) return (b / (1 << 30)).toFixed(1) + 'G';
+  if (b >= 1 << 20) return Math.round(b / (1 << 20)) + 'M';
+  return Math.round(b / 1024) + 'K';
+}
+
 function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
   const { t } = useTranslation();
   const { icon: Icon, color } = brandFor(c);
@@ -263,6 +279,17 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
         <span className="mt-0.5 w-full truncate font-mono text-[11px] text-muted-foreground/70">
           {ports}
         </span>
+      )}
+      {/* 占用只有运行中的容器才有；停掉的直接不占这两行，别撑出一片空。 */}
+      {running && (
+        <>
+          <span className="mt-1 w-full truncate text-[10px] leading-4 text-muted-foreground/80 tabular-nums">
+            {t('monitor.cpu')} {c.cpu_percent === null ? '—' : formatCpu(c.cpu_percent)}
+          </span>
+          <span className="w-full truncate text-[10px] leading-4 text-muted-foreground/80 tabular-nums">
+            {t('monitor.memory')} {c.mem_used === null ? '—' : compactBytes(c.mem_used)}
+          </span>
+        </>
       )}
     </div>
   );
