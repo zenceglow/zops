@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from '../../../components/ui/sonner';
 import { useTranslation } from 'react-i18next';
 import {
+  addSite as postAddSite,
+  deleteSite as postDeleteSite,
   fetchGatewayConfig,
   fetchGatewayStatus,
   fetchCaddyfileVersions,
@@ -120,14 +122,12 @@ export function useSites() {
       target: newTarget.trim(),
       template: newTemplate,
     });
-    // 基于编辑器里的内容拼（而不是服务端那份），否则会把用户还没保存的手改覆盖掉。
-    const updated = (rawEditor || config?.raw || '').replace(/\n*$/, '') + '\n\n' + block + '\n';
 
     try {
-      // 以前这里只往编辑器的缓冲区里追加文本、不落盘：点在「可视化管理」下加站点，
-      // 什么都不会发生（列表不变、文件也没写），得再切到「配置文件」手动保存一次。
-      await saveGatewayConfig(updated);
-      // 存完取回服务端格式化后的版本，本地拼的缩进和真实文件才对得上。
+      // 交给后端：它会先查重（同名站点 Caddy 会拒绝加载**整份**配置），
+      // 再包上 ZOPS 标记、校验、落盘。以前这里是前端拼字符串直接覆盖整个
+      // 文件 —— 拼错了没人拦，写进去就是全站下线。
+      await postAddSite(newDomain.trim(), block);
       const fresh = await fetchGatewayConfig();
       setConfig(fresh);
       setRawEditor(fresh.raw);
@@ -139,6 +139,22 @@ export function useSites() {
       toast.error(`${t('sites.save_fail')}: ${e instanceof Error ? e.message : ''}`);
     }
   }, [newDomain, newType, newTarget, newTemplate, rawEditor, config, fetchAll, t]);
+
+  /** 删掉一个站点。只动它自己那一段（后端按标记/行范围切）。 */
+  const removeSite = useCallback(
+    async (addr: string) => {
+      try {
+        await postDeleteSite(addr);
+        const fresh = await fetchGatewayConfig();
+        setConfig(fresh);
+        setRawEditor(fresh.raw);
+        toast.success(t('sites.deleted', { addr }));
+      } catch (e) {
+        toast.error(`${t('sites.delete_fail')}: ${e instanceof Error ? e.message : ''}`);
+      }
+    },
+    [t],
+  );
 
   return {
     status,
@@ -167,5 +183,6 @@ export function useSites() {
     handleInstall,
     saveConfig,
     handleAddSite,
+    removeSite,
   };
 }

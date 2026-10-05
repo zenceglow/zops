@@ -40,6 +40,8 @@ export default function SitesPage() {
   const { t } = useTranslation();
   const s = useSites();
   const [showLogs, setShowLogs] = useState(false);
+  /** 等着确认删除的那个域名。 */
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   if (!s.status) {
     return (
@@ -126,6 +128,31 @@ export default function SitesPage() {
 
       <GatewayLogDialog open={showLogs} onOpenChange={setShowLogs} />
 
+      {/* 删站点是不可逆的（虽然能从历史版本回滚），先问一句。 */}
+      <Dialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('sites.delete_title', { addr: deleting ?? '' })}</DialogTitle>
+            <DialogDescription>{t('sites.delete_desc')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              {t('sites.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                const addr = deleting;
+                setDeleting(null);
+                if (addr) void s.removeSite(addr);
+              }}
+            >
+              {t('sites.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 这里原本是 modal={false}（怕 Select 的浮层和 Dialog 打架）。但非模态的
           Radix Dialog 压根不渲染蒙层，对话框就和页面糊在一起、看不出是浮在上面的。
           Select 点在 Dialog 里的场景 ui/dialog 已经专门处理过（点浮层不会误关），
@@ -211,7 +238,7 @@ export default function SitesPage() {
             </Card>
           )}
           {s.config?.parsed.sites.map((site, i) => (
-            <SiteListItem key={i} site={site} />
+            <SiteListItem key={i} site={site} onDelete={setDeleting} />
           ))}
         </div>
       ) : (

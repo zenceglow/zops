@@ -175,7 +175,12 @@
     "logs_empty": "No log output yet",
     "logs_unavailable": "Logs unavailable",
     "logs_fail": "Failed to read logs",
-    "close": "Close"
+    "close": "Close",
+    "delete": "Delete",
+    "deleted": "Deleted {{addr}}",
+    "delete_fail": "Delete failed",
+    "delete_title": "Delete {{addr}}?",
+    "delete_desc": "Only this one site block is removed (blocks added here carry ZOPS markers, so the boundary is exact) — other sites are untouched. Reload the gateway afterwards; you can roll back from version history if needed."
   },
   "docker": {
     "title": "Docker",

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ExternalLink } from 'lucide-react';
+import { ChevronDown, ExternalLink, Trash2 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
 import { SiteGlyph } from '../../../components/site-glyph';
@@ -14,7 +14,13 @@ import { DirectiveRow } from './directive-row';
  * 第一行回答"这个域名是什么、指向哪儿"，第二行是它开了哪些能力，指令树折叠在
  * "详情"里给需要的人看 —— 默认摊开成配置树，非技术用户根本读不出来这是个入口。
  */
-export function SiteListItem({ site }: { site: SiteEntry }) {
+export function SiteListItem({
+  site,
+  onDelete,
+}: {
+  site: SiteEntry;
+  onDelete: (addr: string) => void;
+}) {
   const { t } = useTranslation();
   const [showDetail, setShowDetail] = useState(false);
   const info = summarizeSite(site);
@@ -54,6 +60,16 @@ export function SiteListItem({ site }: { site: SiteEntry }) {
         <Button variant="ghost" size="sm" onClick={() => setShowDetail((v) => !v)}>
           {t('sites.detail')}
           <ChevronDown className={cn('size-3.5 transition-transform', showDetail && 'rotate-180')} />
+        </Button>
+        {/* 删除只动这一段：面板添加的块带 ZOPS 标记，边界是明确的 */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-destructive"
+          onClick={() => onDelete(site.addr)}
+          title={t('sites.delete')}
+        >
+          <Trash2 />
         </Button>
       </div>
 

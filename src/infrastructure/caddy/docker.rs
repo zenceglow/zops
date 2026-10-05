@@ -181,6 +181,61 @@ pub fn fmt(container: &str, raw: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// 让容器里的 Caddy 校验一份配置。
+///
+/// 和 `fmt` 一样走 stdin：容器里的路径和宿主机不一样，写临时文件还得先
+/// `docker cp` 进去，多一步就多一个出错的地方。`--adapter caddyfile` 不能少，
+/// 否则它会把输入当 JSON 解析，报一句让人误会的 "not valid JSON"。
+pub fn validate(container: &str, raw: &str) -> Result<(), String> {
+    use std::io::Write;
+
+    let mut child = Command::new("docker")
+        .args([
+            "exec",
+            "-i",
+            container,
+            "caddy",
+            "validate",
+            "--config",
+            "-",
+            "--adapter",
+            "caddyfile",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("docker exec 启动失败: {e}"))?;
+
+    {
+        let stdin = child.stdin.as_mut().ok_or("无法写入 caddy validate stdin")?;
+        stdin
+            .write_all(raw.as_bytes())
+            .map_err(|e| format!("写入 stdin 失败: {e}"))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("caddy validate 执行失败: {e}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let msg = stderr
+        .lines()
+        .rev()
+        .find_map(|l| {
+            let v: serde_json::Value = serde_json::from_str(l).ok()?;
+            (v.get("level")?.as_str()? == "error").then(|| v.get("msg")?.as_str().map(String::from))?
+        })
+        .unwrap_or_else(|| stderr.trim().to_string());
+    Err(if msg.is_empty() {
+        "Caddyfile 校验不通过".into()
+    } else {
+        msg
+    })
+}
+
 /// Create the standard layout + container. Only used when nothing is fronting
 /// the host yet; requires 80/443 to be free.
 pub fn install_default() -> Result<String, String> {

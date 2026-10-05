@@ -231,6 +231,25 @@ impl CaddyProcess {
             None => Ok(raw),
         }
     }
+
+    /// 真正的校验：让 Caddy 自己解析一遍配置。
+    ///
+    /// 和 `format_caddyfile` 的区别很关键 —— **`caddy fmt` 只做格式，不做校验**：
+    /// 把 `reverse_proxy` 敲成 `reverse_prox`，fmt 照样排版得整整齐齐。这种错误
+    /// 写进文件之后，下次 Caddy 重启就再也起不来，全站一起下线。
+    /// `caddy validate` 会真的去 adapt 一遍，认不出的指令直接报错。
+    ///
+    /// 没有 Caddy 可问（既不在容器里也没装二进制）时跳过校验：不能因为查不了
+    /// 就拒绝保存。
+    pub async fn validate_caddyfile(&self, raw: &str) -> Result<(), String> {
+        if let Some(d) = self.detect_docker() {
+            return docker::validate(&d.container, raw);
+        }
+        match self.cached_bin() {
+            Some(bin) => fmt::validate_caddyfile(&bin, raw).await,
+            None => Ok(()),
+        }
+    }
 }
 
 pub struct GatewayStatusSnapshot {

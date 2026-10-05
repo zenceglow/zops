@@ -175,7 +175,12 @@
     "logs_empty": "暂无日志输出",
     "logs_unavailable": "拿不到日志",
     "logs_fail": "日志读取失败",
-    "close": "关闭"
+    "close": "关闭",
+    "delete": "删除",
+    "deleted": "已删除 {{addr}}",
+    "delete_fail": "删除失败",
+    "delete_title": "删除 {{addr}}？",
+    "delete_desc": "只会删掉这一个站点块（面板加的块带 ZOPS 标记，边界是明确的），其它站点不受影响。删完记得重载网关；改错了可以从「历史版本」回滚。"
   },
   "docker": {
     "title": "Docker",

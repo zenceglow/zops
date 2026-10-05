@@ -34,6 +34,23 @@ export async function saveGatewayConfig(raw: string) {
   if (!res.success) throw new Error(res.message || 'Failed');
 }
 
+/**
+ * 加一个站点。
+ *
+ * 走后端而不是自己拼文本：查重、包标记（`# ZOPS:BEGIN/END`）、校验、落盘都在
+ * 一个地方做，前端不用碰 Caddyfile 的文本边界。
+ */
+export async function addSite(addr: string, block: string) {
+  const res = await post('/gateway/sites', { addr, block });
+  if (!res.success) throw new Error(res.message || 'Failed');
+}
+
+/** 删一个站点。同样由后端按标记切那一段，不靠字符串匹配。 */
+export async function deleteSite(addr: string) {
+  const res = await del('/gateway/sites', { addr });
+  if (!res.success) throw new Error(res.message || 'Failed');
+}
+
 export interface CaddyfileVersion {
   id: number;
   author: string;

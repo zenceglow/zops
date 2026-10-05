@@ -55,7 +55,7 @@ impl GatewayLog {
 ///
 /// Caddy 的 console 格式会往日志里写 `\x1b[34m` 这种转义 —— 在终端里是颜色，在
 /// 网页上就是一串乱码。终端面板不做完整的 ANSI 渲染，直接去掉最干净。
-fn strip_ansi(line: &str) -> String {
+pub(super) fn strip_ansi(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();
     while let Some(c) = chars.next() {

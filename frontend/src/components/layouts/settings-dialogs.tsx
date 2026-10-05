@@ -101,19 +101,23 @@ export function SettingsDialogs({
     }
   };
 
-  /** 给面板自己加一条反向代理 + 域名：读写 Caddyfile 用的还是站点那套接口。 */
+  /**
+   * 给面板自己加一条反向代理 + 域名。
+   *
+   * 走 `/gateway/sites` 而不是自己拼文本：同一个域名已经绑过、或者配置里有别的
+   * 错，都会在**写入之前**被拦下来。以前这里是直接把新块拼到原文后面 PUT 整个
+   * 文件，拼错了没人拦 —— 那份坏配置会在下次 Caddy 重启时让**所有**站点一起
+   * 下线（一份 Caddyfile 是一个整体，Caddy 不给"只坏一个站点"的余地）。
+   */
   const bindDomain = async () => {
     const d = domain.trim();
     if (!d) return;
     setBusy(true);
     try {
-      const cur = await get<{ raw: string }>('/gateway/file');
-      if (!cur.success || !cur.data) throw new Error(cur.message || '读不到 Caddyfile');
       const port = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
-      const block = `${d} {\n\treverse_proxy localhost:${port}\n}\n`;
-      const next = cur.data.raw.replace(/\n*$/, '') + '\n\n' + block;
-      const saved = await put('/gateway/file', { raw: next });
-      if (!saved.success) throw new Error(saved.message || '写入失败');
+      const block = `${d} {\n\treverse_proxy localhost:${port}\n}`;
+      const added = await post('/gateway/sites', { addr: d, block });
+      if (!added.success) throw new Error(added.message || '写入失败');
       await post('/gateway/reload');
       toast.success(t('settings.domain_bound', { domain: d }));
       setDomain('');
