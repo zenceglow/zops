@@ -592,7 +592,6 @@
     "col_uri": "URI",
     "col_status": "状态",
     "refresh": "刷新",
-    "subtitle": "Caddy 访问日志实时统计",
     "live_badge": "实况",
     "close": "关闭（Esc）",
     "blocked": "拦截攻击",

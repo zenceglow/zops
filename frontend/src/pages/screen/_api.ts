@@ -68,6 +68,7 @@ export type EventsPage = { events: AccessEvent[]; cursor: number };
  * 跨页引一个"大而全"的类型，以后改动会互相绊住。
  */
 export type SystemOverview = {
+  hostname: string;
   cpu_usage: number;
   cpu_cores: number;
   memory_total: number;

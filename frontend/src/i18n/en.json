@@ -592,7 +592,6 @@
     "col_uri": "URI",
     "col_status": "Code",
     "refresh": "Refresh",
-    "subtitle": "Live Caddy access-log analytics",
     "live_badge": "LIVE",
     "close": "Close (Esc)",
     "blocked": "Blocked",

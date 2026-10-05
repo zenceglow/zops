@@ -218,11 +218,17 @@ export default function ScreenPage() {
 
       <header className="relative z-10 flex items-center gap-3 px-6 py-3">
         <BrandLogo className="size-7" />
-        <div>
+        {/* 标题只留品牌，再挂一个主机名。
+            "ZOPS · 数据大屏 / Caddy 访问日志实时统计" 那种写法是给自己壮胆的：
+            用户点进来的本来就是这一页，不需要再被介绍一遍；而"这台是哪台"
+            才是没有别处可看的信息。没有系统读权限时主机名就空着。 */}
+        <div className="flex items-baseline gap-2.5">
           <h1 className="text-base leading-none font-semibold tracking-wide">
-            ZOPS <span className="text-zinc-500">·</span> {t('screen.title')}
+            ZOPS
           </h1>
-          <p className="mt-1 text-[11px] text-zinc-500">{t('screen.subtitle')}</p>
+          {sys?.hostname && (
+            <span className="font-mono text-[11px] text-zinc-500">{sys.hostname}</span>
+          )}
         </div>
 
         <span className="ml-3 flex items-center gap-1.5 text-[11px] text-emerald-400">
