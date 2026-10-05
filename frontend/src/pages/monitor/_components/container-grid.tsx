@@ -220,14 +220,14 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
           className={cn(
             // 浅色主题用品牌色铺底，深色主题回落到反色块 —— 品牌图标本身细节密
             // （mysql 的海豚、redis 的字标），压在 muted 灰底上远看就是一团模糊。
-            'relative flex size-12 items-center justify-center rounded-2xl transition-transform duration-150 hover:-translate-y-0.5',
+            'relative flex size-14 items-center justify-center rounded-2xl transition-transform duration-150 hover:-translate-y-0.5',
             running
               ? 'bg-[var(--brand)] text-[var(--brand-fg)] dark:bg-foreground dark:text-background'
               : 'bg-muted text-muted-foreground/60',
           )}
         >
           {/* 品牌图标（mysql 的海豚、redis 的字标）细节比线性图标密，给大一号才认得出来。 */}
-          <Icon className="size-6" />
+          <Icon className="size-8" />
         </span>
         <span
           className={cn(
@@ -251,11 +251,6 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
       >
         {c.image}
       </span>
-      {ports && (
-        <span className="mt-0.5 w-full truncate font-mono text-[11px] text-muted-foreground/70">
-          {ports}
-        </span>
-      )}
       <span
         className={cn(
           'mt-0.5 w-full truncate font-mono text-[11px]',
@@ -264,6 +259,11 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
       >
         {ago(startedAt) || '—'}
       </span>
+      {ports && (
+        <span className="mt-0.5 w-full truncate font-mono text-[11px] text-muted-foreground/70">
+          {ports}
+        </span>
+      )}
     </div>
   );
 }
