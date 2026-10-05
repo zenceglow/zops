@@ -8,6 +8,9 @@ pub struct ContainerDto {
     pub status: String,
     pub state: String,
     pub ports: String,
+    /// 启动时刻（RFC3339）。列表接口只给 "Up 3 days" 这种相对时间，这里由
+    /// inspect 补齐；已停止且从未启动过的容器为空串。
+    pub started_at: String,
 }
 
 #[derive(Serialize)]

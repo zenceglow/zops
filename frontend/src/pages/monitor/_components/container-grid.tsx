@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next';
 import type { ComponentType } from 'react';
 import { Database, Globe, Package, Server, Terminal } from 'lucide-react';
 import {
@@ -89,61 +88,93 @@ function iconFor(c: ContainerInfo): Glyph {
 /**
  * 只取宿主端口。
  *
- * Docker 给的是 `0.0.0.0:80->80/tcp, [::]:80->80/tcp` 这种全量映射，直接铺在
- * 卡片上会长到折行；这里收敛成 `80 443`，点进 /docker/containers 能看完整的。
+ * 后端已经把 Docker 的 `0.0.0.0:80->80/tcp, [::]:80->80/tcp` 归一成
+ * `0.0.0.0:80-80, [::]:80-80`，所以这里只取中间那个宿主端口；v4/v6 两条记录
+ * 会归到同一个端口上，用 Set 去重。`public_port = 0` 表示"只声明、没映射到宿主"，
+ * 显示成 : 0 只会让人困惑，跳过。
+ *
+ * 没有可访问端口就返回空串，让调用方整行不渲染 —— 之前这里恒返回 "—"，因为
+ * 正则匹配的是 Docker 原始格式，跟后端格式对不上，于是每个容器下面都挂着一行
+ * 不知道是什么的横杠。
  */
 function shortPorts(ports: string): string {
-  if (!ports.trim()) return '—';
   const found = new Set<string>();
   for (const part of ports.split(',')) {
-    const mapped = part.match(/:(\d+)->/);
-    const exposed = part.match(/(\d+)\/(tcp|udp)/);
-    const port = mapped?.[1] ?? exposed?.[1];
-    if (port) found.add(port);
+    const host = part.match(/:(\d+)-/)?.[1];
+    if (host && host !== '0') found.add(host);
   }
-  return found.size > 0 ? Array.from(found).join(' ') : '—';
+  return found.size > 0 ? ': ' + Array.from(found).sort().join(' ') : '';
+}
+
+/**
+ * 启动时刻。
+ *
+ * Docker 给的是纳秒精度的 RFC3339，而 JS 的 Date 只认到毫秒 —— 多出来的位数在
+ * 部分引擎上会让解析失败，所以先裁到毫秒。已停止且从未启动过的容器会拿到
+ * 0001-01-01 这个零值，按"未知"处理而不是显示成公元 1 年。
+ */
+function formatStarted(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso.replace(/(\.\d{3})\d+/, '$1'));
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 1970) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  const year = d.getFullYear() === new Date().getFullYear() ? '' : `${d.getFullYear()}-`;
+  return `${year}${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function ContainerTile({ c }: { c: ContainerInfo }) {
-  const { t } = useTranslation();
   const Icon = iconFor(c);
   const running = c.state === 'running';
+  const ports = shortPorts(c.ports);
+  const started = formatStarted(c.started_at);
 
   return (
-    <div className="flex w-[132px] flex-col items-center text-center">
+    // 容器名太长（zenceglow-trend-mysql 这种），排面上一律不显示，收进 tooltip；
+    // 卡片上只留"是什么镜像、映射了什么端口、几点启动的"。
+    <div
+      className="flex w-[128px] flex-col items-center text-center"
+      title={`${c.name}\n${c.image}\n${c.status}`}
+    >
+      <span className="relative">
+        <span
+          className={cn(
+            // 反色块：深色主题下白底黑图标，浅色主题下黑底白图标。品牌图标本身
+            // 细节密（mysql 的海豚、redis 的字标），贴在 muted 灰底上远看就是一团
+            // 模糊；反色之后轮廓才立得住，一排容器也像一排应用图标。
+            'flex size-12 items-center justify-center rounded-2xl transition-transform duration-150 hover:-translate-y-0.5',
+            running ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground/60',
+          )}
+        >
+          {/* 品牌图标（mysql 的海豚、redis 的字标）细节比线性图标密，给大一号才认得出来。 */}
+          <Icon className="size-6" />
+        </span>
+        <span
+          className={cn(
+            'absolute -right-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-background',
+            running ? 'bg-emerald-500' : 'bg-red-500',
+          )}
+        />
+      </span>
       <span
         className={cn(
-          // 反色块：深色主题下白底黑图标，浅色主题下黑底白图标。品牌图标本身
-          // 细节密（mysql 的海豚、redis 的字标），贴在 muted 灰底上远看就是一团
-          // 模糊；反色之后轮廓才立得住，一排容器也像一排应用图标。
-          'flex size-12 items-center justify-center rounded-2xl bg-foreground text-background',
-          'transition-transform duration-150 hover:-translate-y-0.5',
-          !running && 'opacity-50',
+          'mt-3 w-full truncate font-mono text-[11px]',
+          running ? 'text-foreground/85' : 'text-muted-foreground/60',
         )}
-      >
-        {/* 品牌图标（mysql 的海豚、redis 的字标）细节比线性图标密，给大一号才认得出来。 */}
-        <Icon className="size-6" />
-      </span>
-      <span className="mt-3 w-full truncate text-sm font-medium" title={c.name}>
-        {c.name}
-      </span>
-      <span className="mt-1 w-full truncate font-mono text-[11px] text-muted-foreground">
-        {shortPorts(c.ports)}
-      </span>
-      <span
-        className={cn(
-          'mt-0.5 w-full truncate text-[11px]',
-          running ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
-        )}
-        title={c.status}
-      >
-        {c.status}
-      </span>
-      <span
-        className="mt-0.5 w-full truncate text-[10px] text-muted-foreground/70"
-        title={`${c.image}\n${t('docker.status')}: ${c.status}`}
       >
         {c.image}
+      </span>
+      {ports && (
+        <span className="mt-0.5 w-full truncate font-mono text-[11px] text-muted-foreground/70">
+          {ports}
+        </span>
+      )}
+      <span
+        className={cn(
+          'mt-0.5 w-full truncate font-mono text-[11px]',
+          running ? 'text-muted-foreground' : 'text-muted-foreground/60',
+        )}
+      >
+        {started || '—'}
       </span>
     </div>
   );

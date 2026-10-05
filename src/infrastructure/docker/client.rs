@@ -1,5 +1,6 @@
 use bollard::container::{
-    ListContainersOptions, LogsOptions, RemoveContainerOptions, StopContainerOptions,
+    InspectContainerOptions, ListContainersOptions, LogsOptions, RemoveContainerOptions,
+    StopContainerOptions,
 };
 use bollard::{Docker, API_DEFAULT_VERSION};
 use futures_util::StreamExt;
@@ -9,6 +10,14 @@ const DOCKER_TIMEOUT_SECS: u64 = 30;
 
 use crate::domain::container::ContainerDto;
 use crate::shared::AppError;
+
+/// Docker 的完整 id 是 64 位，面板上只用到前 12 位（docker CLI 的惯例）。
+///
+/// 用 get 而不是 `[..12]`：那样在 id 缺失或异常短时会直接 panic，把一个列表
+/// 请求变成 500。
+fn short_id(id: &str) -> String {
+    id.get(..12).unwrap_or(id).to_string()
+}
 
 pub struct DockerClient {
     docker: Option<Docker>,
@@ -136,10 +145,21 @@ impl DockerClient {
             .await
             .map_err(|_| AppError::internal("操作失败"))?;
 
-        Ok(containers
-            .into_iter()
-            .map(|c| ContainerDto {
-                id: c.id.unwrap_or_default()[..12].to_string(),
+        let mut out = Vec::with_capacity(containers.len());
+        for c in containers {
+            let raw_id = c.id.unwrap_or_default();
+            // 列表接口只给相对时间（"Up 3 days"），要显示"具体几点启动"必须逐个
+            // inspect。容器通常是个位数，这点额外往返比专门加一个聚合接口划算。
+            // 取不到就当未知，不影响列表本身。
+            let started_at = docker
+                .inspect_container(&raw_id, None::<InspectContainerOptions>)
+                .await
+                .ok()
+                .and_then(|i| i.state.and_then(|s| s.started_at))
+                .unwrap_or_default();
+
+            out.push(ContainerDto {
+                id: short_id(&raw_id),
                 name: c
                     .names
                     .unwrap_or_default()
@@ -165,8 +185,11 @@ impl DockerClient {
                     })
                     .collect::<Vec<_>>()
                     .join(", "),
-            })
-            .collect())
+                started_at,
+            });
+        }
+
+        Ok(out)
     }
 
     pub async fn start(&self, id: &str) -> Result<(), AppError> {

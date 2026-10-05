@@ -23,6 +23,8 @@ export interface ContainerInfo {
   status: string;
   state: string;
   ports: string;
+  /** 启动时刻（RFC3339）；从未启动过的容器为空串。 */
+  started_at: string;
 }
 
 export interface DockerStatus {
