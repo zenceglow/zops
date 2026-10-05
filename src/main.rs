@@ -46,10 +46,13 @@ async fn async_main() {
     let docker = Arc::new(DockerClient::connect());
     let caddy = Arc::new(CaddyProcess::new(cfg.caddyfile_path.clone()));
 
+    let system = Arc::new(SystemService::new(sys, db.clone()));
+    let updates_worker = system.clone();
+
     let state = Arc::new(AppState {
         auth: Arc::new(AuthService::new(db.clone(), jwt_secret)),
         setup: setup.clone(),
-        system: Arc::new(SystemService::new(sys)),
+        system,
         containers: Arc::new(ContainerService::new(docker)),
         gateway: Arc::new(GatewayService::new(caddy.clone())),
         caddyfile: Arc::new(CaddyfileService::new(caddy, db.clone())),
@@ -61,6 +64,20 @@ async fn async_main() {
 
     let router = http::build_router(state);
     let app = http::assets_router(router);
+
+    // 系统补丁定期自查。
+    //
+    // 放后台跑有两个原因：一是包管理器的元数据读取要几秒到几十秒，挂在启动路径上
+    // 会让面板开机慢一大截；二是"待修复补丁数"要进首页的运行评分，得有个不依赖
+    // 用户打开页面的刷新来源。开机先跑一次，之后每 6 小时一次 —— 安全更新不是
+    // 分钟级变化的东西。
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+        loop {
+            let _ = updates_worker.check_updates().await;
+            tokio::time::sleep(crate::infrastructure::system::updates::CHECK_INTERVAL).await;
+        }
+    });
 
     let addr = format!("0.0.0.0:{}", cfg.port);
     tracing::info!("Zenceglow Ops Panel listening on {addr}");

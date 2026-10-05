@@ -188,7 +188,23 @@
     "swap_total": "总计",
     "swap_used": "已用",
     "firewall_desc": "防火墙规则管理（基于 iptables/nftables）",
-    "updates_desc": "系统软件包更新管理"
+    "updates_desc": "系统软件包更新管理",
+    "recheck": "立即检查",
+    "checking": "检查中…",
+    "patch_security": "安全更新",
+    "patch_total": "待更新总数",
+    "patch_checked": "上次检查",
+    "patch_fix": "修复补丁",
+    "patch_none": "没有待修复的补丁。",
+    "patch_security_tag": "安全",
+    "patch_unsupported": "这台主机暂不支持补丁检查",
+    "patch_unsupported_hint": "只认有 /etc/os-release 的 Linux 发行版（Ubuntu / Debian / CentOS / Rocky / Fedora 等）。macOS 和容器里跑的开发环境都不在范围内。",
+    "patch_confirm_title": "修复补丁？",
+    "patch_confirm_desc": "会在主机上真实安装这些更新，可能需要重启相关服务。",
+    "patch_confirm_body": "将安装 {{count}} 个安全更新。过程中请勿关闭面板。",
+    "patch_confirm_yes": "确认修复",
+    "patching": "修复中…",
+    "patch_fail": "修复失败"
   },
   "ssh": {
     "title": "SSH",
@@ -362,7 +378,8 @@
     "metric_swap": "Swap",
     "metric_loadPct": "负载",
     "cleanup": "垃圾清理",
-    "patch": "漏洞修复"
+    "patch": "漏洞修复",
+    "metric_security": "安全补丁"
   },
   "net": {
     "realtime": "实时",

@@ -188,7 +188,23 @@
     "swap_total": "Total",
     "swap_used": "Used",
     "firewall_desc": "Firewall rule management (based on iptables/nftables)",
-    "updates_desc": "System package update management"
+    "updates_desc": "System package update management",
+    "recheck": "Check now",
+    "checking": "Checking…",
+    "patch_security": "Security updates",
+    "patch_total": "Total pending",
+    "patch_checked": "Last checked",
+    "patch_fix": "Apply patches",
+    "patch_none": "No pending patches.",
+    "patch_security_tag": "security",
+    "patch_unsupported": "Patch checking is not supported on this host",
+    "patch_unsupported_hint": "Works on Linux distros with /etc/os-release (Ubuntu / Debian / CentOS / Rocky / Fedora…). macOS and dev containers are out of scope.",
+    "patch_confirm_title": "Apply patches?",
+    "patch_confirm_desc": "This really installs updates on the host and may restart related services.",
+    "patch_confirm_body": "Installs {{count}} security updates. Keep the panel open until it finishes.",
+    "patch_confirm_yes": "Apply now",
+    "patching": "Applying…",
+    "patch_fail": "Patch failed"
   },
   "ssh": {
     "title": "SSH",
@@ -351,7 +367,7 @@
     "todo_empty": "Reserved — tell me what goes here.",
     "monitor": "Monitor",
     "score": "Server health",
-    "score_unit": "/ 100",
+    "score_unit": "/100",
     "score_good": "Good",
     "score_fair": "Fair",
     "score_poor": "Needs attention",
@@ -362,7 +378,8 @@
     "metric_swap": "Swap",
     "metric_loadPct": "Load",
     "cleanup": "Clean up",
-    "patch": "Patch"
+    "patch": "Patch",
+    "metric_security": "Security patches"
   },
   "net": {
     "realtime": "Live",

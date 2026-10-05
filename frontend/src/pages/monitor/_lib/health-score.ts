@@ -24,8 +24,11 @@ export function computeHealthScore(m: {
   memory: number;
   disk: number;
   swap: number;
+  /** 待修复的安全补丁数。 */
+  security?: number;
 }): HealthScore {
-  const rules: [keyof typeof m, number, number, number, number][] = [
+  type Metric = 'cpu' | 'loadPct' | 'memory' | 'disk' | 'swap';
+  const rules: [Metric, number, number, number, number][] = [
     // [指标, 严重阈值, 严重扣分, 警告阈值, 警告扣分]
     ['disk', 90, 25, 80, 12],
     ['memory', 90, 15, 80, 8],
@@ -40,6 +43,13 @@ export function computeHealthScore(m: {
     if (value >= hardAt) deductions.push({ key, value, points: hard });
     else if (value >= softAt) deductions.push({ key, value, points: soft });
   }
+
+  // 补丁单独处理：它不是"占用"，是"风险"。攒着不修本身就是扣分项，而且积得越多
+  // 扣得越狠 —— 这也是"定期检查补丁"唯一对用户有意义的地方。
+  const security = m.security ?? 0;
+  if (security >= 10) deductions.push({ key: 'security', value: security, points: 15 });
+  else if (security >= 3) deductions.push({ key: 'security', value: security, points: 8 });
+  else if (security >= 1) deductions.push({ key: 'security', value: security, points: 4 });
 
   const score = Math.max(0, Math.round(100 - deductions.reduce((s, d) => s + d.points, 0)));
   const grade: HealthScore['grade'] = score >= 85 ? 'good' : score >= 70 ? 'fair' : 'poor';

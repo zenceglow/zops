@@ -17,6 +17,8 @@ pub const NAV_FILES: &str = "nav.files";
 
 /// Operation permissions.
 pub const OPS_SYSTEM_READ: &str = "ops.system.read";
+/// 装系统补丁。比"读"危险一档：会真的改动主机上的软件包，所以单独一个权限。
+pub const OPS_SYSTEM_WRITE: &str = "ops.system.write";
 pub const OPS_SERVICE_READ: &str = "ops.service.read";
 pub const OPS_SERVICE_CONTROL: &str = "ops.service.control";
 pub const OPS_SERVICE_LOG: &str = "ops.service.log";
@@ -88,6 +90,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
         },
         PermissionDef {
             id: OPS_SYSTEM_READ,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_SYSTEM_WRITE,
             group: "ops",
         },
         PermissionDef {

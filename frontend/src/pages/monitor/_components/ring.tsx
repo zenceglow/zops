@@ -29,17 +29,28 @@ export function Ring({
   sub,
   size = 116,
   thickness = 11,
+  unit = '%',
+  tone: toneOverride,
 }: {
   value: number;
   label: string;
   sub?: string;
   size?: number;
   thickness?: number;
+  /** 圆环中间那个数后面跟的单位。评分用的是"分"而不是百分比。 */
+  unit?: string;
+  /**
+   * 强制指定档位色。
+   *
+   * 默认色阶是给"占用率"用的（越高越糟）；评分正好相反（越高越好），传进来的
+   * 值越高却越红，所以那种场景必须显式指定。
+   */
+  tone?: 'ok' | 'warn' | 'danger';
 }) {
   const pct = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
   const r = (size - thickness) / 2;
   const circumference = 2 * Math.PI * r;
-  const tone = ringTone(pct);
+  const tone = toneOverride ?? ringTone(pct);
 
   return (
     <div className="flex flex-col items-center gap-5">
@@ -75,7 +86,11 @@ export function Ring({
         <div className="absolute inset-0 flex items-center justify-center">
           <span className="text-xl font-semibold leading-none tabular-nums">
             {Math.round(pct)}
-            <span className="ml-0.5 align-baseline text-xs font-normal text-muted-foreground">%</span>
+            {unit && (
+              <span className="ml-0.5 align-baseline text-xs font-normal text-muted-foreground">
+                {unit}
+              </span>
+            )}
           </span>
         </div>
       </div>

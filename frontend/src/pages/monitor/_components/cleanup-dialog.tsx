@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Check, HardDrive, Layers, Network, Trash2 } from 'lucide-react';
+import { AlertTriangle, BrushCleaning, Check, HardDrive, Layers, Network } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import {
   Dialog,
@@ -107,7 +107,7 @@ export function CleanupDialog() {
           type="button"
           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/70 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground"
         >
-          <Trash2 className="size-3.5" />
+          <BrushCleaning className="size-3.5" />
           {t('home.cleanup')}
         </button>
       </DialogTrigger>
@@ -116,7 +116,7 @@ export function CleanupDialog() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2.5 text-lg">
             <span className="relative flex size-9 items-center justify-center overflow-hidden rounded-xl bg-muted">
-              <Trash2 className="size-4" />
+              <BrushCleaning className="size-4" />
               {(phase === 'scan' || phase === 'running') && (
                 <span
                   aria-hidden
@@ -254,7 +254,7 @@ export function CleanupDialog() {
 
           {phase === 'review' && (
             <Button onClick={() => setPhase('confirm')} disabled={chosenCount === 0 || !!error}>
-              <Trash2 />
+              <BrushCleaning />
               {t('cleanup.run')}
             </Button>
           )}
