@@ -204,7 +204,8 @@
     "patch_confirm_body": "Installs {{count}} security updates. Keep the panel open until it finishes.",
     "patch_confirm_yes": "Apply now",
     "patching": "Applying…",
-    "patch_fail": "Patch failed"
+    "patch_fail": "Patch failed",
+    "timezone": "Timezone"
   },
   "ssh": {
     "title": "SSH",
@@ -478,5 +479,30 @@
     "sections": "Sections",
     "my_actions": "My activity",
     "no_actions": "No activity yet — it shows up here once you do something."
+  },
+  "settings": {
+    "title": "Settings",
+    "system": "System",
+    "panel": "Panel",
+    "bind_domain": "Bind a domain",
+    "uninstall": "Uninstall",
+    "contact": "Contact us",
+    "source": "Source code",
+    "save": "Save",
+    "timezone_title": "Timezone",
+    "timezone_desc": "Currently {{current}}",
+    "timezone_label": "Timezone",
+    "timezone_saved": "Timezone set to {{zone}}",
+    "bind_title": "Bind a domain to the panel",
+    "bind_desc": "Add a domain that reverse-proxies to port {{port}} on this host.",
+    "bind_label": "Domain",
+    "bind_hint": "Appends a reverse_proxy block to the Caddyfile and reloads the gateway. The domain must already resolve to this host.",
+    "bind_confirm": "Bind and reload",
+    "domain_bound": "Bound {{domain}} and reloaded the gateway",
+    "uninstall_title": "Uninstall the panel",
+    "uninstall_desc": "Uninstalling isn't a single click — here are the exact steps to run on the server.",
+    "uninstall_warn": "The last step deletes all panel data (database, trash, config). It cannot be undone.",
+    "contact_title": "Contact us",
+    "contact_desc": "Reach us through either of these if you run into trouble."
   }
 }

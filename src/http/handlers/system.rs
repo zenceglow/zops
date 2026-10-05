@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::domain::auth::AuthUser;
 use crate::domain::permission::{OPS_SYSTEM_READ, OPS_SYSTEM_WRITE};
 use crate::domain::system::SystemOverview;
-use crate::infrastructure::system::UpdateReport;
+use crate::infrastructure::system::{TimezoneInfo, UpdateReport};
 use crate::http::middleware::auth::require_perm;
 use crate::http::AppState;
 use crate::shared::{ApiResponse, AppError};
@@ -57,10 +57,34 @@ async fn apply_updates(
     Ok(Json(ApiResponse::ok(serde_json::json!({ "output": output }))))
 }
 
+#[derive(Deserialize)]
+pub struct TimezoneBody {
+    zone: String,
+}
+
+async fn timezone(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<TimezoneInfo>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_READ)?;
+    Ok(Json(ApiResponse::ok(state.system.timezone())))
+}
+
+async fn set_timezone(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<TimezoneBody>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    let via = state.system.set_timezone(body.zone).await?;
+    Ok(Json(ApiResponse::ok(serde_json::json!({ "via": via }))))
+}
+
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/overview", get(overview))
         .route("/updates", get(updates))
         .route("/updates/check", post(check_updates))
         .route("/updates/apply", post(apply_updates))
+        .route("/timezone", get(timezone).post(set_timezone))
 }

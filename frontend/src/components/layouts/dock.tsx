@@ -6,9 +6,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { NavLangIcon, NavUserIcon } from '../icons/nav-icons';
+import { NavFirewallIcon, NavLangIcon, NavSettingsIcon, NavUserIcon } from '../icons/nav-icons';
 import { SIDEBAR_GROUPS } from '../../router/sider-menu';
 import { isParent, pathMatches, type SidebarItem } from '../../lib/sidebar-config';
+import { Perm } from '../../lib/permissions';
+import { SettingsDialogs } from './settings-dialogs';
+import { SettingsMenu, type SettingsDialog } from './settings-menu';
+import { useState } from 'react';
 import useUserStore from '../../stores/user.store';
 import { useThemeStore } from '../../stores/theme-store';
 import { nextTheme, themeIcon, themeLabelKey } from '../../stores/theme-prefs';
@@ -21,9 +25,36 @@ import { cn } from '../../lib/utils';
  * 这台机器的定位是"服务器桌面"，所以导航做成贴底的浮动 Dock —— 图标为主、
  * 悬停才出名字，页面中间整块留给内容本身。
  *
- * 条目直接复用 SIDEBAR_GROUPS，避免两处导航配置各写一遍、迟早走歪。
+ * 条目的**定义**（标签、图标、权限）仍取自 SIDEBAR_GROUPS，一处维护；但**摆哪几
+ * 个、什么顺序**由下面这张表说了算 —— 那套配置是"路由与权限的登记表"，里面有些
+ * 页面（定时任务、系统子页）不该占 Dock 的位置。两者本来就不是一回事。
  */
-const TOP_ITEMS: SidebarItem[] = SIDEBAR_GROUPS.flatMap((g) => g.items);
+const DOCK_ORDER = [
+  '/monitor',
+  '/ssh',
+  '/files',
+  '/logs',
+  '/agent',
+  '/sites',
+  '/docker',
+  '/members',
+];
+
+const ALL_ITEMS: SidebarItem[] = SIDEBAR_GROUPS.flatMap((g) => g.items);
+const byPath = (path: string) =>
+  ALL_ITEMS.find((i) =>
+    isParent(i) ? i.children.some((c) => c.path === path) : i.path === path,
+  );
+
+/** Dock 上按固定顺序排的项目；防火墙是单独拎出来的顶层入口。 */
+function dockItems(): SidebarItem[] {
+  const ordered = DOCK_ORDER.map(byPath).filter((i): i is SidebarItem => !!i);
+  // 防火墙原来在"系统"子菜单里，现在直接上 Dock —— 它是会被频繁点开的东西。
+  const firewall = ALL_ITEMS.flatMap((i) => (isParent(i) ? i.children : [i])).find(
+    (c) => c.path === '/system/firewall',
+  );
+  return firewall ? [...ordered, firewall] : ordered;
+}
 
 function dockClass(active?: boolean) {
   return cn(
@@ -89,8 +120,9 @@ export function Dock() {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   const ThemeIcon = themeIcon(theme);
+  const [dialog, setDialog] = useState<SettingsDialog | null>(null);
 
-  const visible = TOP_ITEMS.filter((i) => hasPermission(i.perm));
+  const visible = dockItems().filter((i) => hasPermission(i.perm));
   if (visible.length === 0) return null;
 
   const toggleLang = () => {
@@ -162,6 +194,18 @@ export function Dock() {
           );
         })}
 
+        <SettingsMenu
+          navSystem={hasPermission(Perm.NAV_SYSTEM)}
+          onDialog={setDialog}
+          trigger={
+            <button type="button" aria-label={t('settings.title')} className={dockClass(false)}>
+              <DockGlyph label={t('settings.title')}>
+                <NavSettingsIcon className="size-5" />
+              </DockGlyph>
+            </button>
+          }
+        />
+
         <span className="mx-1 h-8 w-px shrink-0 bg-border" />
 
         <DockAction label={t('nav.switch_lang')} onClick={toggleLang}>
@@ -179,6 +223,8 @@ export function Dock() {
           </DockGlyph>
         </NavLink>
       </nav>
+
+      <SettingsDialogs open={dialog} onOpenChange={setDialog} />
     </div>
   );
 }

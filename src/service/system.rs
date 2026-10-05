@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::domain::system::SystemOverview;
 use crate::infrastructure::db::Database;
-use crate::infrastructure::system::{updates, SysInfoProvider, UpdateReport};
+use crate::infrastructure::system::{timezone, updates, SysInfoProvider, TimezoneInfo, UpdateReport};
 use crate::shared::AppError;
 
 /// 缓存上一次补丁检查结果的键。
@@ -47,6 +47,18 @@ impl SystemService {
             let _ = self.db.set_config(UPDATES_KEY, &json);
         }
         Ok(report)
+    }
+
+    pub fn timezone(&self) -> TimezoneInfo {
+        timezone::info()
+    }
+
+    /// 设置服务器时区。会改主机上的 /etc/localtime，属于"写"级操作。
+    pub async fn set_timezone(&self, zone: String) -> Result<String, AppError> {
+        tokio::task::spawn_blocking(move || timezone::set(&zone))
+            .await
+            .map_err(|_| AppError::internal("时区任务异常"))?
+            .map_err(AppError::bad_request)
     }
 
     /// 修复指定的补丁包。动作本身有破坏性（装包、重启服务），所以由调用方负责确认。

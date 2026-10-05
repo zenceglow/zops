@@ -204,7 +204,8 @@
     "patch_confirm_body": "将安装 {{count}} 个安全更新。过程中请勿关闭面板。",
     "patch_confirm_yes": "确认修复",
     "patching": "修复中…",
-    "patch_fail": "修复失败"
+    "patch_fail": "修复失败",
+    "timezone": "时区"
   },
   "ssh": {
     "title": "SSH",
@@ -478,5 +479,30 @@
     "sections": "可访问的栏目",
     "my_actions": "我的操作记录",
     "no_actions": "还没有操作记录 —— 做点什么就会出现在这里。"
+  },
+  "settings": {
+    "title": "设置",
+    "system": "系统设置",
+    "panel": "面板设置",
+    "bind_domain": "绑定面板域名",
+    "uninstall": "卸载面板",
+    "contact": "联系我们",
+    "source": "开源仓库",
+    "save": "保存",
+    "timezone_title": "时区设置",
+    "timezone_desc": "当前：{{current}}",
+    "timezone_label": "时区",
+    "timezone_saved": "时区已设为 {{zone}}",
+    "bind_title": "绑定面板域名",
+    "bind_desc": "给这个面板加一个域名，反向代理到本机 {{port}} 端口。",
+    "bind_label": "域名",
+    "bind_hint": "会往 Caddyfile 追加一条 reverse_proxy 并重载网关；域名本身要先解析到这台机器。",
+    "bind_confirm": "绑定并重载",
+    "domain_bound": "已绑定 {{domain}} 并重载网关",
+    "uninstall_title": "卸载面板",
+    "uninstall_desc": "卸载不是一键的事，下面是完整步骤，请复制到服务器上执行。",
+    "uninstall_warn": "最后一步会删掉面板的全部数据（数据库、回收站、配置），删掉就无法恢复。确认不再需要之后再执行。",
+    "contact_title": "联系我们",
+    "contact_desc": "面板使用中遇到问题，可以通过下面任意方式找到我们。"
   }
 }
