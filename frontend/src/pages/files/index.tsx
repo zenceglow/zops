@@ -4,13 +4,16 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Check,
+  ClipboardCopy,
   File as FileIcon,
   FileText,
   Folder,
+  FolderOpen,
   HardDrive,
   Home,
   Link2,
-  Loader2,
+  ListChecks,
   Copy,
   ClipboardPaste,
   Scissors,
@@ -32,6 +35,8 @@ import { Input } from '../../components/ui/input';
 import { Skeleton } from '../../components/ui/skeleton';
 import { toast } from '../../components/ui/sonner';
 import { cn } from '../../lib/utils';
+import { copyText } from '../../lib/clipboard';
+import { RowMenu, type RowAction } from './_components/row-menu';
 import {
   copyPaths,
   emptyTrash,
@@ -64,6 +69,12 @@ const FAVORITES = [
   { path: '/opt', icon: FileText },
 ];
 
+/** 等着二次确认的那个动作。删除类操作没有后悔药（或只有一层），一律先问。 */
+type Pending =
+  | { kind: 'trash'; paths: string[] }
+  | { kind: 'purge'; ids: string[] }
+  | { kind: 'empty' };
+
 function human(bytes: number): string {
   if (bytes >= 1 << 30) return `${(bytes / (1 << 30)).toFixed(1)} GB`;
   if (bytes >= 1 << 20) return `${(bytes / (1 << 20)).toFixed(1)} MB`;
@@ -77,6 +88,20 @@ function iconFor(kind: string) {
   return FileIcon;
 }
 
+/** 选择模式里的复选框。只是显示，真正的点击处理在整行上。 */
+function SelectBox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      className={cn(
+        'flex size-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors',
+        checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+      )}
+    >
+      {checked && <Check className="size-3" />}
+    </span>
+  );
+}
+
 /**
  * 文件管理。
  *
@@ -84,8 +109,12 @@ function iconFor(kind: string) {
  * 右边列表（名称/大小/修改时间/权限）。点文件夹进去，点文件弹预览 —— 也就是
  * 访达里双击和空格键那两件事。
  *
- * 只读。改名、删除、上传这些没做：它们不可逆，得先想清楚确认和回滚长什么样，
- * 不能顺手挂个按钮了事。
+ * 操作分两档，别再混在一起：
+ * - **单个**：行尾的「⋯」下拉菜单。常驻一排按钮会把每行都弄得很吵，也让人看不出
+ *   自己点的是哪一行。
+ * - **批量**：先按「选择」进选择模式，才出现多选和批量按钮。这样不会出现"以为在
+ *   浏览，结果顺手删了一片"。
+ * 删除一律先二次确认：进回收站还能捞回来，彻底删除和清空回收站真的回不来。
  */
 export default function FilesPage() {
   const { t } = useTranslation();
@@ -103,14 +132,22 @@ export default function FilesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<{ paths: string[]; mode: 'copy' | 'cut' } | null>(null);
+  /** 选择模式。批量按钮只在这个模式下出现，见文件头的说明。 */
+  const [selectMode, setSelectMode] = useState(false);
 
   const [view, setView] = useState<'browse' | 'trash'>('browse');
   const [trash, setTrash] = useState<TrashItem[]>([]);
-  const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [pending, setPending] = useState<Pending | null>(null);
 
   // 前进/后退栈。用下标而不是两个数组，来回切换时才不会越走越乱。
   const [history, setHistory] = useState<string[]>([path]);
   const [cursor, setCursor] = useState(0);
+
+  const exitSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+    setAnchor(null);
+  }, []);
 
   const go = useCallback(
     (next: string) => {
@@ -121,6 +158,7 @@ export default function FilesPage() {
       setResults(null);
       setSelected(new Set());
       setAnchor(null);
+      setSelectMode(false);
       setView('browse');
       setHistory((h) => [...h.slice(0, cursor + 1), next]);
       setCursor((c) => c + 1);
@@ -187,6 +225,16 @@ export default function FilesPage() {
   const parent = listing?.parent ?? null;
   const crumbs = useMemo(() => (path === '~' ? ['~'] : path.split('/').filter(Boolean)), [path]);
 
+  // Esc 退出选择模式。选中一片之后想"算了"是很自然的动作，不该逼人去找按钮。
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitSelect();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectMode, exitSelect]);
+
   // ── 选择 ──
 
   /** 按住 Shift 选一段，按住 ⌘/Ctrl 逐个加，普通点击就是单选。 */
@@ -201,7 +249,8 @@ export default function FilesPage() {
           return next;
         }
       }
-      if (e.metaKey || e.ctrlKey) {
+      // 选择模式里点一下就是勾上/取消；普通模式里点一下是"选中这一个"。
+      if (selectMode || e.metaKey || e.ctrlKey) {
         if (next.has(entry.path)) next.delete(entry.path);
         else next.add(entry.path);
         setAnchor(entry.path);
@@ -212,8 +261,21 @@ export default function FilesPage() {
     });
   };
 
+  const clickTrashRow = (e: React.MouseEvent, item: TrashItem) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (selectMode || e.metaKey || e.ctrlKey) {
+        if (next.has(item.id)) next.delete(item.id);
+        else next.add(item.id);
+        return next;
+      }
+      return new Set([item.id]);
+    });
+  };
+
   /** 双击才算"打开"：单击是选中 —— 这是访达的规矩，也免得手一抖就跳进别的目录。 */
   const openRow = (entry: FileEntry) => {
+    if (selectMode) return;
     if (entry.kind === 'dir') go(entry.path);
     else void previewFile(entry.path).then(setPreview).catch((e) => toast.error(String(e.message)));
   };
@@ -222,20 +284,34 @@ export default function FilesPage() {
     () => rows.filter((r) => selected.has(r.path)).map((r) => r.path),
     [rows, selected],
   );
+  const selectedIds = useMemo(
+    () => trash.filter((item) => selected.has(item.id)).map((item) => item.id),
+    [trash, selected],
+  );
+  const selectedCount = view === 'trash' ? selectedIds.length : selectedPaths.length;
+  const allSelected =
+    view === 'trash'
+      ? trash.length > 0 && selectedIds.length === trash.length
+      : rows.length > 0 && selectedPaths.length === rows.length;
 
   // ── 操作 ──
 
-  const runTrash = async () => {
-    if (selectedPaths.length === 0) return;
-    try {
-      await trashPaths(selectedPaths);
-      toast.success(t('files.moved_to_trash', { count: selectedPaths.length }));
-      setSelected(new Set());
-      setAnchor(null);
-      await reload();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败');
-    }
+  const copyToClipboard = (paths: string[]) => {
+    if (paths.length === 0) return;
+    setClipboard({ paths, mode: 'copy' });
+    toast.success(t('files.copied_n', { count: paths.length }));
+  };
+
+  const cutToClipboard = (paths: string[]) => {
+    if (paths.length === 0) return;
+    setClipboard({ paths, mode: 'cut' });
+    toast.success(t('files.cut_n', { count: paths.length }));
+  };
+
+  /** 复制单个文件的绝对路径 —— 贴进终端或配置里都用得上。 */
+  const copyOnePath = async (target: string) => {
+    if (await copyText(target)) toast.success(t('files.path_copied'));
+    else toast.error(t('files.copy_failed'));
   };
 
   const paste = async () => {
@@ -252,21 +328,110 @@ export default function FilesPage() {
       if (clipboard.mode === 'cut') setClipboard(null);
       await reload();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '粘贴失败');
+      toast.error(e instanceof Error ? e.message : t('files.paste_failed'));
     }
   };
 
   const openTrash = async () => {
     setView('trash');
+    setSelectMode(false);
     setSelected(new Set());
+    setAnchor(null);
     setQuery('');
     setResults(null);
     try {
       setTrash(await listTrash());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '读取回收站失败');
+      toast.error(e instanceof Error ? e.message : t('files.trash_failed'));
     }
   };
+
+  const restore = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    try {
+      await restoreTrash(ids);
+      toast.success(t('files.restored_n', { count: ids.length }));
+      setSelected(new Set());
+      setTrash(await listTrash());
+      void reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('files.restore_failed'));
+    }
+  };
+
+  /**
+   * 执行那个等确认的动作。
+   *
+   * 所有"删"都从这里出去：确认框、toast、刷新只写一遍，也就不会出现某个入口
+   * 忘了确认这种漏网之鱼。
+   */
+  const runPending = async () => {
+    if (!pending) return;
+    try {
+      if (pending.kind === 'trash') {
+        await trashPaths(pending.paths);
+        toast.success(t('files.moved_to_trash', { count: pending.paths.length }));
+        setSelected(new Set());
+        setAnchor(null);
+        await reload();
+      } else if (pending.kind === 'purge') {
+        await purgeTrash(pending.ids);
+        toast.success(t('files.purged_n', { count: pending.ids.length }));
+        setSelected(new Set());
+        setTrash(await listTrash());
+      } else {
+        await emptyTrash();
+        setTrash([]);
+        setSelected(new Set());
+        toast.success(t('files.trash_emptied'));
+      }
+      setPending(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('files.action_failed'));
+    }
+  };
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelected(new Set());
+      return;
+    }
+    setSelected(
+      view === 'trash'
+        ? new Set(trash.map((item) => item.id))
+        : new Set(rows.map((r) => r.path)),
+    );
+  };
+
+  /** 一行能做什么。菜单和批量按钮共用同一份定义，不会两边对不上。 */
+  const entryActions = (entry: FileEntry): RowAction[] => [
+    {
+      label: t('files.open'),
+      icon: entry.kind === 'dir' ? FolderOpen : FileText,
+      onSelect: () => openRow(entry),
+    },
+    { label: t('files.copy_path'), icon: ClipboardCopy, separated: true, onSelect: () => void copyOnePath(entry.path) },
+    { label: t('files.copy'), icon: Copy, onSelect: () => copyToClipboard([entry.path]) },
+    { label: t('files.cut'), icon: Scissors, onSelect: () => cutToClipboard([entry.path]) },
+    {
+      label: t('files.delete'),
+      icon: Trash2,
+      variant: 'destructive',
+      separated: true,
+      onSelect: () => setPending({ kind: 'trash', paths: [entry.path] }),
+    },
+  ];
+
+  const trashActions = (item: TrashItem): RowAction[] => [
+    { label: t('files.restore'), icon: Undo2, onSelect: () => void restore([item.id]) },
+    {
+      label: t('files.purge'),
+      icon: Trash2,
+      variant: 'destructive',
+      separated: true,
+      onSelect: () => setPending({ kind: 'purge', ids: [item.id] }),
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -328,67 +493,90 @@ export default function FilesPage() {
         </div>
       </div>
 
-      {/* 操作栏：选中了东西才点亮。没选中时按钮是灰的，但位置一直在 ——
-          工具的位置老在变，用户就得每次重新找。 */}
+      {/* 操作栏。批量按钮只在选择模式里出现 —— 没进选择模式时这一栏只剩"粘贴"
+          和"选择"，位置固定，不会因为选中了东西就突然长出一排能删文件的按钮。 */}
       <div className="flex flex-wrap items-center gap-1.5">
         {view === 'browse' ? (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={selectedPaths.length === 0}
-              onClick={() => {
-                setClipboard({ paths: selectedPaths, mode: 'copy' });
-                toast.success(t('files.copied_n', { count: selectedPaths.length }));
-              }}
-            >
-              <Copy />
-              {t('files.copy')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={selectedPaths.length === 0}
-              onClick={() => {
-                setClipboard({ paths: selectedPaths, mode: 'cut' });
-                toast.success(t('files.cut_n', { count: selectedPaths.length }));
-              }}
-            >
-              <Scissors />
-              {t('files.cut')}
-            </Button>
-            <Button variant="ghost" size="sm" disabled={!clipboard} onClick={paste}>
-              <ClipboardPaste />
-              {t('files.paste')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={selectedPaths.length === 0}
-              className="text-destructive hover:text-destructive"
-              onClick={runTrash}
-            >
-              <Trash2 />
-              {t('files.delete')}
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={selected.size === 0}
-              onClick={async () => {
-                try {
-                  await restoreTrash([...selected]);
-                  toast.success(t('files.restored_n', { count: selected.size }));
+          selectMode ? (
+            <>
+              <Button variant="ghost" size="sm" onClick={toggleAll}>
+                <ListChecks />
+                {allSelected ? t('files.select_none') : t('files.select_all')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={selectedPaths.length === 0}
+                onClick={() => copyToClipboard(selectedPaths)}
+              >
+                <Copy />
+                {t('files.copy')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={selectedPaths.length === 0}
+                onClick={() => cutToClipboard(selectedPaths)}
+              >
+                <Scissors />
+                {t('files.cut')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={selectedPaths.length === 0}
+                className="text-destructive hover:text-destructive"
+                onClick={() => setPending({ kind: 'trash', paths: selectedPaths })}
+              >
+                <Trash2 />
+                {t('files.delete')}
+              </Button>
+              <span className="ml-1 text-xs text-muted-foreground">
+                {t('files.selected_n', { count: selectedCount })}
+              </span>
+              <Button size="sm" variant="secondary" className="ml-auto" onClick={exitSelect}>
+                {t('files.select_done')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" disabled={!clipboard} onClick={paste}>
+                <ClipboardPaste />
+                {t('files.paste')}
+              </Button>
+              <span className="ml-1 text-xs text-muted-foreground">
+                {clipboard
+                  ? clipboard.mode === 'cut'
+                    ? t('files.clip_cut', { count: clipboard.paths.length })
+                    : t('files.clip_copy', { count: clipboard.paths.length })
+                  : t('files.hint_row_menu')}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto"
+                onClick={() => {
+                  setSelectMode(true);
                   setSelected(new Set());
-                  setTrash(await listTrash());
-                  void reload();
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : '恢复失败');
-                }
-              }}
+                  setAnchor(null);
+                }}
+              >
+                <ListChecks />
+                {t('files.select')}
+              </Button>
+            </>
+          )
+        ) : selectMode ? (
+          <>
+            <Button variant="ghost" size="sm" onClick={toggleAll}>
+              <ListChecks />
+              {allSelected ? t('files.select_none') : t('files.select_all')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={selectedIds.length === 0}
+              onClick={() => void restore(selectedIds)}
             >
               <Undo2 />
               {t('files.restore')}
@@ -396,44 +584,42 @@ export default function FilesPage() {
             <Button
               variant="ghost"
               size="sm"
-              disabled={selected.size === 0}
+              disabled={selectedIds.length === 0}
               className="text-destructive hover:text-destructive"
-              onClick={async () => {
-                try {
-                  await purgeTrash([...selected]);
-                  toast.success(t('files.purged_n', { count: selected.size }));
-                  setSelected(new Set());
-                  setTrash(await listTrash());
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : '删除失败');
-                }
-              }}
+              onClick={() => setPending({ kind: 'purge', ids: selectedIds })}
             >
               <Trash2 />
               {t('files.purge')}
             </Button>
+            <span className="ml-1 text-xs text-muted-foreground">
+              {t('files.selected_n', { count: selectedCount })}
+            </span>
+            <Button size="sm" variant="secondary" className="ml-auto" onClick={exitSelect}>
+              {t('files.select_done')}
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="text-xs text-muted-foreground">{t('files.hint_row_menu')}</span>
             <Button
               variant="ghost"
               size="sm"
               disabled={trash.length === 0}
               className="ml-auto text-destructive hover:text-destructive"
-              onClick={() => setConfirmEmpty(true)}
+              onClick={() => setPending({ kind: 'empty' })}
             >
               {t('files.empty_trash')}
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={trash.length === 0}
+              onClick={() => setSelectMode(true)}
+            >
+              <ListChecks />
+              {t('files.select')}
+            </Button>
           </>
-        )}
-
-        {view === 'browse' && (
-          <span className="ml-1 text-xs text-muted-foreground">
-            {selectedPaths.length > 0
-              ? t('files.selected_n', { count: selectedPaths.length })
-              : clipboard
-                ? clipboard.mode === 'cut'
-                  ? t('files.clip_cut', { count: clipboard.paths.length })
-                  : t('files.clip_copy', { count: clipboard.paths.length })
-                : ''}
-          </span>
         )}
       </div>
 
@@ -500,6 +686,8 @@ export default function FilesPage() {
                 <span className="hidden w-24 text-right md:block">{t('files.col_mode')}</span>
               </>
             )}
+            {/* 给行尾的「⋯」留出固定宽度，否则鼠标移上去整行会跳一下。 */}
+            {!selectMode && <span className="w-7 shrink-0" />}
           </div>
 
           {view === 'trash' ? (
@@ -507,43 +695,44 @@ export default function FilesPage() {
               {trash.length === 0 ? (
                 <p className="px-4 py-10 text-center text-sm text-muted-foreground">{t('files.trash_empty')}</p>
               ) : (
-                trash.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={(e) => {
-                      setSelected((prev) => {
-                        const next = new Set(prev);
-                        if (e.metaKey || e.ctrlKey) {
-                          if (next.has(item.id)) next.delete(item.id);
-                          else next.add(item.id);
-                        } else {
-                          return new Set([item.id]);
+                trash.map((item) => {
+                  const Icon = iconFor(item.kind);
+                  const isSelected = selected.has(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => clickTrashRow(e, item)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          void restore([item.id]);
                         }
-                        return next;
-                      });
-                    }}
-                    className={cn(
-                      'flex w-full items-center gap-2 px-3.5 py-1.5 text-left transition-colors',
-                      selected.has(item.id) ? 'bg-primary/15' : 'hover:bg-muted/50',
-                    )}
-                  >
-                    {(() => {
-                      const Icon = iconFor(item.kind);
-                      return <Icon className="size-4 shrink-0 text-muted-foreground" />;
-                    })()}
-                    <span className="min-w-0 flex-1 truncate text-sm">{item.name}</span>
-                    <span className="hidden w-40 shrink-0 truncate text-right font-mono text-xs text-muted-foreground sm:block">
-                      {item.original_path}
-                    </span>
-                    <span className="hidden w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground sm:block">
-                      {item.kind === 'dir' ? '—' : human(item.size)}
-                    </span>
-                    <span className="w-32 shrink-0 text-right text-xs text-muted-foreground">
-                      {item.deleted_at}
-                    </span>
-                  </button>
-                ))
+                      }}
+                      className={cn(
+                        'flex w-full cursor-default items-center gap-2 px-3.5 py-1.5 text-left transition-colors',
+                        isSelected ? 'bg-primary/15' : 'hover:bg-muted/50',
+                      )}
+                    >
+                      {selectMode && <SelectBox checked={isSelected} />}
+                      <Icon className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate text-sm">{item.name}</span>
+                      <span className="hidden w-40 shrink-0 truncate text-right font-mono text-xs text-muted-foreground sm:block">
+                        {item.original_path}
+                      </span>
+                      <span className="hidden w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground sm:block">
+                        {item.kind === 'dir' ? '—' : human(item.size)}
+                      </span>
+                      <span className="w-32 shrink-0 text-right text-xs text-muted-foreground">
+                        {item.deleted_at}
+                      </span>
+                      {!selectMode && (
+                        <RowMenu actions={trashActions(item)} label={t('files.more_actions')} />
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           ) : loading ? (
@@ -564,16 +753,23 @@ export default function FilesPage() {
                 const Icon = iconFor(e.kind);
                 const isSelected = selected.has(e.path);
                 return (
-                  <button
+                  <div
                     key={e.path}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={(ev) => clickRow(ev, e)}
                     onDoubleClick={() => openRow(e)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === 'Enter') openRow(e);
+                      // 空格在访达里是"预览"，这里也留给预览；要勾选就用回车之外
+                      // 的方式 —— 选择模式下点行本身就是勾选。
+                    }}
                     className={cn(
-                      'flex w-full items-center gap-2 px-3.5 py-1.5 text-left transition-colors',
+                      'flex w-full cursor-default items-center gap-2 px-3.5 py-1.5 text-left transition-colors',
                       isSelected ? 'bg-primary/15' : 'hover:bg-muted/50',
                     )}
                   >
+                    {selectMode && <SelectBox checked={isSelected} />}
                     <Icon
                       className={cn(
                         'size-4 shrink-0',
@@ -592,7 +788,10 @@ export default function FilesPage() {
                     <span className="hidden w-24 shrink-0 text-right font-mono text-xs text-muted-foreground/80 md:block">
                       {e.mode}
                     </span>
-                  </button>
+                    {!selectMode && (
+                      <RowMenu actions={entryActions(e)} label={t('files.more_actions')} />
+                    )}
+                  </div>
                 );
               })}
               {results === null && listing?.truncated && (
@@ -603,32 +802,44 @@ export default function FilesPage() {
         </div>
       </div>
 
-      {/* 清空回收站：这是唯一一个没有后悔药的动作，所以单独确认。 */}
-      <Dialog open={confirmEmpty} onOpenChange={setConfirmEmpty}>
+      {/* 一个确认框管所有删除动作：进回收站还能捞回来，彻底删除和清空回收站真的
+          回不来 —— 文案分开写，别让"删"和"永久删"看起来一样。 */}
+      <Dialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('files.empty_confirm_title')}</DialogTitle>
-            <DialogDescription>{t('files.empty_confirm_desc', { count: trash.length })}</DialogDescription>
+            <DialogTitle>
+              {pending?.kind === 'trash'
+                ? t('files.trash_confirm_title')
+                : pending?.kind === 'purge'
+                  ? t('files.purge_confirm_title')
+                  : t('files.empty_confirm_title')}
+            </DialogTitle>
+            <DialogDescription>
+              {pending?.kind === 'trash'
+                ? t('files.trash_confirm_desc', { count: pending.paths.length })
+                : pending?.kind === 'purge'
+                  ? t('files.purge_confirm_desc', { count: pending.ids.length })
+                  : t('files.empty_confirm_desc', { count: trash.length })}
+            </DialogDescription>
+            {pending?.kind === 'trash' && pending.paths.length === 1 && (
+              <p className="truncate font-mono text-xs text-muted-foreground" title={pending.paths[0]}>
+                {pending.paths[0]}
+              </p>
+            )}
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setConfirmEmpty(false)}>
+            <Button variant="secondary" onClick={() => setPending(null)}>
               {t('sites.cancel')}
             </Button>
             <Button
               variant="destructive"
-              onClick={async () => {
-                try {
-                  await emptyTrash();
-                  setTrash([]);
-                  setSelected(new Set());
-                  setConfirmEmpty(false);
-                  toast.success(t('files.trash_emptied'));
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : '清空失败');
-                }
-              }}
+              onClick={() => void runPending()}
             >
-              {t('files.empty_trash')}
+              {pending?.kind === 'trash'
+                ? t('files.delete')
+                : pending?.kind === 'purge'
+                  ? t('files.purge')
+                  : t('files.empty_trash')}
             </Button>
           </DialogFooter>
         </DialogContent>
