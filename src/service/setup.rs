@@ -33,6 +33,7 @@ impl SetupService {
             initialized: self.db.is_initialized().map_err(AppError::from)?,
             port: self.port,
             default_lang: self.default_lang.clone(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         })
     }
 

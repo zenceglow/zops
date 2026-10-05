@@ -28,6 +28,13 @@ use service::{
 };
 
 fn main() {
+    // `--version` 要能在**没装、没跑、没有数据库**的情况下回答"我这一版是多少"：
+    // 安装脚本先下载新二进制，再问它一句，才好判断这次是升级还是全新安装。
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("ZOPS {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

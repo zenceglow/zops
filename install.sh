@@ -57,11 +57,34 @@ msg() {
     banner)    [ "$L" = zh ] && printf 'ZOPS 安装' || printf 'ZOPS installer' ;;
     tagline)   [ "$L" = zh ] && printf '服务器运维面板 · MCP + Codex 技能' || printf 'Server operations panel · MCP + Codex skills' ;;
 
-    step_lang) [ "$L" = zh ] && printf '1/5 界面语言' || printf '1/5 Language' ;;
-    step_port) [ "$L" = zh ] && printf '2/5 面板端口' || printf '2/5 Panel port' ;;
-    step_domain) [ "$L" = zh ] && printf '3/5 域名（可选）' || printf '3/5 Domain (optional)' ;;
-    step_user) [ "$L" = zh ] && printf '4/5 面板用户名' || printf '4/5 Username' ;;
-    step_pass) [ "$L" = zh ] && printf '5/5 面板密码' || printf '5/5 Password' ;;
+    step_lang) [ "$L" = zh ] && printf '1/6 界面语言' || printf '1/6 Language' ;;
+    step_detect) [ "$L" = zh ] && printf '2/6 检查现有安装' || printf '2/6 Existing installation' ;;
+    step_port) [ "$L" = zh ] && printf '3/6 面板端口' || printf '3/6 Panel port' ;;
+    step_domain) [ "$L" = zh ] && printf '4/6 域名（可选）' || printf '4/6 Domain (optional)' ;;
+    step_user) [ "$L" = zh ] && printf '5/6 面板用户名' || printf '5/6 Username' ;;
+    step_pass) [ "$L" = zh ] && printf '6/6 面板密码' || printf '6/6 Password' ;;
+
+    detect_none) [ "$L" = zh ] && printf '没有检测到已有的 ZOPS，将全新安装' || printf 'No existing ZOPS found — installing fresh' ;;
+    detect_found) [ "$L" = zh ] && printf '检测到已安装的 ZOPS %s' "$1" || printf 'Found an existing ZOPS %s' "$1" ;;
+    detect_nover) [ "$L" = zh ] && printf '（版本未知）' || printf '(version unknown)' ;;
+    d_data) [ "$L" = zh ] && printf '  数据目录  %s' "$1" || printf '  Data dir  %s' "$1" ;;
+    d_port) [ "$L" = zh ] && printf '  端口      %s' "$1" || printf '  Port      %s' "$1" ;;
+    d_domain) [ "$L" = zh ] && printf '  域名      %s' "$1" || printf '  Domain    %s' "$1" ;;
+    mode_upgrade) [ "$L" = zh ] && printf '将升级 %s → %s（数据保留，账号密码不动）' "$1" "$2" || printf 'Upgrading %s → %s (data and credentials are kept)' "$1" "$2" ;;
+    mode_same) [ "$L" = zh ] && printf '已经是最新的 %s，将重新安装一遍（数据保留）' "$1" || printf 'Already on %s — reinstalling over it (data kept)' "$1" ;;
+    mode_downgrade) [ "$L" = zh ] && printf '将降级 %s → %s。旧库比这版新，可能不兼容 —— 已经自动备份，但请留意。' "$1" "$2" || printf 'Downgrading %s → %s. The data was written by a newer build and may not be compatible — a backup has been taken.' "$1" "$2" ;;
+    mode_fresh) [ "$L" = zh ] && printf '将安装 %s' "$1" || printf 'Installing %s' "$1" ;;
+    confirm_proceed) [ "$L" = zh ] && printf '继续？' || printf 'Continue?' ;;
+    continue_now) [ "$L" = zh ] && printf '继续' || printf 'Continue' ;;
+    cancel) [ "$L" = zh ] && printf '取消' || printf 'Cancel' ;;
+    keep_creds) [ "$L" = zh ] && printf '（沿用原账号，本次未修改）' || printf '(unchanged — kept the existing account)' ;;
+    upgrade_keep) [ "$L" = zh ] && printf '沿用现有配置：端口、域名、账号都不动' || printf 'Keeping the existing port, domain and credentials' ;;
+    backup_run) [ "$L" = zh ] && printf '· 备份数据库…' || printf '· Backing up the database…' ;;
+    backup_ok) [ "$L" = zh ] && printf '已备份到 %s' "$1" || printf 'Backed up to %s' "$1" ;;
+    backup_fail) [ "$L" = zh ] && printf '备份失败（%s）—— 不影响继续，但这次没有安全网' "$1" || printf 'Backup failed (%s) — continuing without a safety net' "$1" ;;
+    migrate_found) [ "$L" = zh ] && printf '发现旧位置的数据 %s，已迁移到 %s' "$1" "$2" || printf 'Found data at the old location %s — migrated to %s' "$1" "$2" ;;
+    stop_old) [ "$L" = zh ] && printf '· 停止旧服务…' || printf '· Stopping the old service…' ;;
+    ver_record) [ "$L" = zh ] && printf '· 记录版本…' || printf '· Recording version…' ;;
 
     choose)    [ "$L" = zh ] && printf '选择' || printf 'Choice' ;;
     random)    [ "$L" = zh ] && printf '随机（推荐）' || printf 'Random (recommended)' ;;
@@ -137,9 +160,17 @@ msg() {
 # ────────────────────────────── 交互 ──────────────────────────────
 
 # 支持 `curl | bash`：stdin 是脚本本身，提示必须从终端读。
-if [ -t 0 ]; then TTY="/dev/stdin"; else TTY="/dev/tty"; fi
+# 支持 `curl | bash`：stdin 是脚本本身，提示得从终端读。终端读不到就当成
+# 非交互，一路走默认值 —— 不能因为读不了 tty 就把一行错误信息甩在屏幕上。
+if [ -t 0 ]; then
+  TTY="/dev/stdin"
+elif { : < /dev/tty; } 2>/dev/null; then
+  TTY="/dev/tty"
+else
+  TTY=""
+fi
 INTERACTIVE=1
-if [ ! -r "$TTY" ]; then INTERACTIVE=0; fi
+[ -n "$TTY" ] || INTERACTIVE=0
 
 ask() { # ask <提示> <默认值> -> $REPLY
   local prompt="$1" def="${2:-}"
@@ -209,12 +240,117 @@ rand_word() { # 随机用户名/密码，避免一眼看出是默认口令
 command -v systemctl >/dev/null 2>&1 || die "No systemd / 没有 systemd"
 command -v curl >/dev/null 2>&1 || die "curl is required / 缺少 curl"
 
+# ─────────────────────── 先把新版本拿下来 ───────────────────────
+#
+# 下载放在最前面，是因为"这次是升级还是全新安装"要拿新旧两个版本号比 —— 不知道
+# 新版本是多少就没法回答。反正装的时候本来也要下，早下晚下一样。
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+NEW_BIN="$TMP/zenceglow-ops"
+if [ -n "${OPS_BIN_FILE:-}" ]; then
+  cp "$OPS_BIN_FILE" "$NEW_BIN"
+else
+  curl -fsSL "$BIN_URL" -o "$NEW_BIN" || die "Download failed / 下载失败：$BIN_URL"
+fi
+chmod +x "$NEW_BIN"
+NEW_VER="$("$NEW_BIN" --version 2>/dev/null | awk '{print $2}')"
+[ -n "$NEW_VER" ] || NEW_VER="unknown"
+
+# ─────────────────────── 已有安装的检测 ───────────────────────
+#
+# 静默收集，等语言选完再汇报 —— 不然"检测到已安装"这句话得先说一遍双语。
+#
+# 判据是三个里任意一个：unit 文件、二进制、数据目录里的库。只留二进制也算
+# "装过"：上一次可能装到一半失败了，这次要能接上，而不是当成全新机器。
+
+CADDYFILE_DEFAULT="/etc/caddy/Caddyfile"
+if [ -f /opt/docker-apps/caddy/config/Caddyfile ]; then
+  CADDYFILE_DEFAULT="/opt/docker-apps/caddy/config/Caddyfile"
+fi
+
+EXISTING=0
+EXIST_VER=""
+EXIST_DATA=""
+EXIST_PORT=""
+EXIST_DOMAIN=""
+EXIST_LANG=""
+
+# 从 Caddyfile 里找出反代到这个端口的那一段，取它的域名。
+find_domain() {
+  local port="$1" addr=""
+  [ -f "$CADDYFILE_DEFAULT" ] || return 0
+  addr="$(awk -v needle="127.0.0.1:$port" '
+    /^[^[:space:]#]/ && /\{/ { cur=$1 }
+    index($0, needle) { print cur; exit }
+  ' "$CADDYFILE_DEFAULT")"
+  printf '%s' "$addr"
+}
+
+detect_existing() {
+  if [ -f "$UNIT_PATH" ] || [ -x "$BIN_PATH" ] || [ -f "$DATA_DIR/ops.db" ]; then
+    EXISTING=1
+  fi
+  [ "$EXISTING" = "1" ] || return 0
+
+  if [ -f "$UNIT_PATH" ]; then
+    EXIST_DATA="$(sed -n 's/^Environment=OPS_DATA_DIR=//p' "$UNIT_PATH" | head -1)"
+    EXIST_PORT="$(sed -n 's/^Environment=OPS_PORT=//p' "$UNIT_PATH" | head -1)"
+    EXIST_LANG="$(sed -n 's/^Environment=OPS_DEFAULT_LANG=//p' "$UNIT_PATH" | head -1)"
+  fi
+  # unit 里没写就按默认值走 —— 尤其是数据目录：**不能**因为读不到就换一个，
+  # 那等于把原来的库扔在原地。
+  [ -n "$EXIST_DATA" ] || EXIST_DATA="$DATA_DIR"
+
+  # 正在跑的面板最知道自己的版本（这个接口不用登录）。
+  if [ -n "$EXIST_PORT" ]; then
+    local s
+    s="$(curl -fsS --max-time 4 "http://127.0.0.1:$EXIST_PORT/api/ops/setup/status" 2>/dev/null || true)"
+    EXIST_VER="$(printf '%s' "$s" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+  fi
+  # 服务没在跑就问二进制自己。
+  if [ -z "$EXIST_VER" ] && [ -x "$BIN_PATH" ]; then
+    EXIST_VER="$("$BIN_PATH" --version 2>/dev/null | awk '{print $2}')"
+  fi
+  # 最后看安装时留下的版本文件。
+  if [ -z "$EXIST_VER" ] && [ -f "$EXIST_DATA/version" ]; then
+    EXIST_VER="$(head -1 "$EXIST_DATA/version" 2>/dev/null | tr -d '[:space:]')"
+  fi
+  if [ -n "$EXIST_PORT" ]; then
+    EXIST_DOMAIN="$(find_domain "$EXIST_PORT")"
+  fi
+}
+
+# 版本比大小。按点分段逐段比数字，够用了 —— 这是给自己看的升级判断，不是
+# 包管理器。预发布后缀（-rc1）不参与比较，按普通字符串看待。
+ver_gt() { # $1 > $2 -> 输出 1/0
+  awk -v a="$1" -v b="$2" 'BEGIN{
+    n=split(a,x,"."); m=split(b,y,".");
+    k=(n>m?n:m);
+    for(i=1;i<=k;i++){
+      xi=x[i]+0; yi=y[i]+0;
+      if(xi>yi){print 1; exit}
+      if(xi<yi){print 0; exit}
+    }
+    print 0;
+  }'
+}
+
+detect_existing
+
 # ─────────────────────────── 第 1 步：语言 ───────────────────────────
 
 # 这一步的提示本身得是双语的 —— 用户还没告诉我们说哪种话。
-title "1/5  Language / 界面语言"
+title "1/6  Language / 界面语言"
 if [ -z "$L" ]; then
-  choose "Choose a language / 选择语言：" "English (default)" "中文" 1
+  # 升级时默认沿用原来那版的语言 —— 装过中文的人按回车不该被切成英文。
+  lang_default=1
+  [ "$EXIST_LANG" = "zh" ] && lang_default=2
+  if [ "$lang_default" = "2" ]; then
+    choose "Choose a language / 选择语言：" "English" "中文（当前）" 2
+  else
+    choose "Choose a language / 选择语言：" "English (default)" "中文" 1
+  fi
   if [ "$REPLY" = "2" ]; then L="zh"; else L="en"; fi
 else
   [ "$L" = "zh" ] || L="en"
@@ -224,7 +360,56 @@ fi
 title "$(msg banner)"
 say "${DIM}$(msg tagline)${N}"
 
-# ─────────────────────────── 第 2 步：端口 ───────────────────────────
+# ─────────────────────── 第 2 步：检查现有安装 ───────────────────────
+
+title "$(msg step_detect)"
+
+MODE="fresh"
+if [ "$EXISTING" = "1" ]; then
+  if [ -n "$EXIST_VER" ]; then
+    ok "$(msg detect_found "$EXIST_VER")"
+  else
+    ok "$(msg detect_found "$(msg detect_nover)")"
+  fi
+  say "$(msg d_data "$EXIST_DATA")"
+  [ -n "$EXIST_PORT" ] && say "$(msg d_port "$EXIST_PORT")"
+  [ -n "$EXIST_DOMAIN" ] && say "$(msg d_domain "$EXIST_DOMAIN")"
+  say ""
+  if [ -n "$NEW_VER" ] && [ -n "$EXIST_VER" ] && [ "$NEW_VER" != "$EXIST_VER" ]; then
+    if [ "$(ver_gt "$NEW_VER" "$EXIST_VER")" = "1" ]; then
+      MODE="upgrade"; say "$(msg mode_upgrade "$EXIST_VER" "$NEW_VER")"
+    else
+      MODE="downgrade"; warn "$(msg mode_downgrade "$EXIST_VER" "$NEW_VER")"
+    fi
+  elif [ -n "$NEW_VER" ] && [ "$NEW_VER" = "$EXIST_VER" ]; then
+    MODE="same"; say "$(msg mode_same "$NEW_VER")"
+  else
+    MODE="upgrade"; say "$(msg mode_upgrade "${EXIST_VER:-?}" "${NEW_VER:-?}")"
+  fi
+  choose "$(msg confirm_proceed)" "$(msg continue_now)" "$(msg cancel)" 1
+  [ "$REPLY" = "2" ] && die "$(msg cancel)"
+else
+  say "$(msg detect_none)"
+  [ -n "$NEW_VER" ] && say "$(msg mode_fresh "$NEW_VER")"
+fi
+
+# 升级时不重问端口/域名/账号：这些都在 unit 和 Caddyfile 里，改了反而容易出事。
+# 数据目录更是**必须**沿用原来那个 —— 换成默认值等于让面板去看一个空库。
+DETECTED_MODE="$MODE"
+if [ "$MODE" != "fresh" ]; then
+  # 端口：优先用已装那台的，其次环境变量，最后回到面板惯用的 5200。
+  PORT="${EXIST_PORT:-${OPS_PORT:-5200}}"
+  DOMAIN="$EXIST_DOMAIN"
+  DATA_DIR="$EXIST_DATA"
+  ADMIN_USER=""; ADMIN_PASS=""; CREATED_ADMIN=0
+  say "$(msg upgrade_keep)"
+fi
+
+# ─────────────────────────── 第 3 步：端口 ───────────────────────────
+
+if [ "$DETECTED_MODE" != "fresh" ]; then
+  : # 升级：端口已经确定，跳过
+else
 
 title "$(msg step_port)"
 if [ -n "${OPS_PORT:-}" ]; then
@@ -245,7 +430,7 @@ else
   fi
 fi
 
-# ─────────────────────────── 第 3 步：域名 ───────────────────────────
+# ─────────────────────────── 第 4 步：域名 ───────────────────────────
 
 title "$(msg step_domain)"
 DOMAIN="${OPS_DOMAIN:-}"
@@ -260,7 +445,7 @@ elif [ -z "$DOMAIN" ]; then
 fi
 if [ -n "$DOMAIN" ]; then ok "$(msg domain_set "$DOMAIN" "$PORT")"; else ok "$(msg domain_skip)"; fi
 
-# ─────────────────────────── 第 4 步：用户名 ───────────────────────────
+# ─────────────────────────── 第 5 步：用户名 ───────────────────────────
 
 title "$(msg step_user)"
 ADMIN_USER="${OPS_USER:-}"
@@ -302,30 +487,68 @@ fi
 [ "${#ADMIN_PASS}" -ge 6 ] || die "$(msg pass_min)"
 ok "$(msg pass_set "${#ADMIN_PASS}")"
 
+fi # 全新安装的向导到此结束
+
 # ─────────────────────────── 安装 ───────────────────────────
 
 title "$(msg installing)"
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-
 say "$(msg dl_bin)"
-if [ -n "${OPS_BIN_FILE:-}" ]; then
-  cp "$OPS_BIN_FILE" "$TMP/zenceglow-ops"
-else
-  curl -fsSL "$BIN_URL" -o "$TMP/zenceglow-ops" || die "$(msg dl_fail "$BIN_URL")"
-fi
-chmod +x "$TMP/zenceglow-ops"
-install -m 0755 "$TMP/zenceglow-ops" "$BIN_PATH"
-ok "$(msg dl_ok "$BIN_PATH")"
+# 二进制在最前面已经下好了，这里只是把它放进系统里。
+
+# ── 保护数据 ──
+#
+# 这一段的每一句都是"不许丢东西"：升级会覆盖二进制和 unit，但数据目录只读不写，
+# 只在**升级前**额外做一份备份。库是用户的账号、令牌、审计、访问流水，丢了没处找。
 
 mkdir -p "$DATA_DIR"
 
-say "$(msg unit_write)"
-CADDYFILE_DEFAULT="/etc/caddy/Caddyfile"
-if [ -f /opt/docker-apps/caddy/config/Caddyfile ]; then
-  CADDYFILE_DEFAULT="/opt/docker-apps/caddy/config/Caddyfile"
+# 有些更早的部署是把数据放在工作目录的 data/ 下的（那时候 OPS_DATA_DIR 默认是
+# 相对路径）。新位置还没有库、而老位置有的话，搬过来 —— 不搬就等于"升级完数据
+# 全没了"。已经是新位置就不动。
+if [ ! -f "$DATA_DIR/ops.db" ]; then
+  for cand in /opt/zenceglow-ops/data /opt/docker-apps/zenceglow-ops/data \
+              /usr/local/zenceglow-ops/data /root/zenceglow-ops/data; do
+    if [ -f "$cand/ops.db" ]; then
+      cp -a "$cand/ops.db" "$DATA_DIR/ops.db"
+      [ -d "$cand/trash" ] && cp -a "$cand/trash" "$DATA_DIR/trash"
+      ok "$(msg migrate_found "$cand/ops.db" "$DATA_DIR/ops.db")"
+      break
+    fi
+  done
 fi
+
+if [ -f "$DATA_DIR/ops.db" ]; then
+  say "$(msg backup_run)"
+  # sqlite3 的 .backup 会带上 WAL 里还没落盘的部分，比直接 cp 可靠；
+  # 机器上没有 sqlite3 就退回拷贝（连着 -wal/-shm 一起）。
+  STAMP="$(date '+%Y%m%d-%H%M%S')"
+  BAK="$DATA_DIR/backups/ops.db.${EXIST_VER:-unknown}.$STAMP"
+  mkdir -p "$DATA_DIR/backups"
+  if command -v sqlite3 >/dev/null 2>&1 && sqlite3 "$DATA_DIR/ops.db" ".backup '$BAK'" 2>/dev/null; then
+    ok "$(msg backup_ok "$BAK")"
+  elif cp -f "$DATA_DIR/ops.db" "$BAK" 2>/dev/null; then
+    [ -f "$DATA_DIR/ops.db-wal" ] && cp -f "$DATA_DIR/ops.db-wal" "$BAK-wal"
+    ok "$(msg backup_ok "$BAK")"
+  else
+    warn "$(msg backup_fail "$BAK")"
+  fi
+  # 只留最近 5 份：备份是安全网，不是归档，堆满磁盘反而是另一种事故。
+  ls -1t "$DATA_DIR/backups"/ops.db.* 2>/dev/null | tail -n +6 | while IFS= read -r old; do
+    rm -f "$old" "$old-wal" 2>/dev/null || true
+  done
+fi
+
+# 覆盖正在运行的可执行文件在 Linux 上会 ETXTBSY，先停。
+if [ "$DETECTED_MODE" != "fresh" ] && systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+  say "$(msg stop_old)"
+  systemctl stop "$SERVICE" || true
+fi
+
+install -m 0755 "$NEW_BIN" "$BIN_PATH"
+ok "$(msg dl_ok "$BIN_PATH")"
+
+say "$(msg unit_write)"
 cat > "$UNIT_PATH" <<UNIT
 [Unit]
 Description=ZOPS Panel
@@ -349,6 +572,11 @@ UNIT
 systemctl daemon-reload
 systemctl enable "$SERVICE" >/dev/null 2>&1 || true
 ok "$(msg unit_ok "$UNIT_PATH")"
+
+# 把这一版记下来。下次安装时如果面板没在跑、二进制也读不出，还能靠它判断
+# "是升级还是全新安装"。
+say "$(msg ver_record)"
+printf '%s\n' "$NEW_VER" > "$DATA_DIR/version" 2>/dev/null || true
 
 say "$(msg svc_start)"
 systemctl restart "$SERVICE"
@@ -375,6 +603,12 @@ if [ "$INITIALIZED" = "1" ]; then
   ok "$(msg init_done)"
 else
   say "$(msg admin_make)"
+  # 升级模式下账号是空着的（沿用原来那个）。可库里要是没初始化过，就说明
+  # 根本没有账号 —— 这时生成一组随机的，结尾会打印出来。
+  if [ -z "$ADMIN_USER" ]; then
+    ADMIN_USER="ops-$(rand_word 6)"
+    ADMIN_PASS="$(rand_word 16)"
+  fi
   # 首启时把一次性密钥打到 stderr，从 journal 里取回来
   SECRET=""
   for _ in $(seq 1 20); do
@@ -468,7 +702,7 @@ ${B}=========================================${N}
 ${G}$(msg done)${N}
 ${B}=========================================${N}
 $(msg f_panel)$HOST
-$(msg f_user)$ADMIN_USER
+$(msg f_user)${ADMIN_USER:-$(msg keep_creds)}
 EOF
 
 if [ "$CREATED_ADMIN" = "1" ]; then
