@@ -35,6 +35,22 @@ async fn list(
     )))
 }
 
+/// 我自己干过什么。
+///
+/// 刻意不要求 `ops.audit.read`：那个权限是给管理员看**所有人**的日志用的。
+/// 一个人看自己的操作记录不该需要额外授权。
+async fn mine(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(q): Query<AuditQuery>,
+) -> Result<Json<ApiResponse<Vec<AuditRow>>>, AppError> {
+    Ok(Json(ApiResponse::ok(
+        state.audit.list_for(&user.username, q.limit.unwrap_or(100))?,
+    )))
+}
+
 pub fn routes() -> Router<Arc<AppState>> {
-    Router::new().route("/list", get(list))
+    Router::new()
+        .route("/list", get(list))
+        .route("/me", get(mine))
 }

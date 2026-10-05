@@ -469,5 +469,14 @@
     "done_desc": "本次清理已结束。",
     "done_body": "删除 {{count}} 项",
     "close": "完成"
+  },
+  "profile": {
+    "title": "个人中心",
+    "account": "账号",
+    "joined": "加入时间",
+    "permission_count": "权限项",
+    "sections": "可访问的栏目",
+    "my_actions": "我的操作记录",
+    "no_actions": "还没有操作记录 —— 做点什么就会出现在这里。"
   }
 }

@@ -80,11 +80,13 @@ impl AuthService {
     pub fn me(&self, uid: i64) -> Result<MeData, AppError> {
         let user = self.load_auth_user(uid)?;
         let permissions = user.effective_permissions();
+        let created_at = self.db.user_created_at(user.id).ok().flatten().unwrap_or_default();
         Ok(MeData {
             id: user.id,
             username: user.username,
             role: user.role,
             permissions,
+            created_at,
         })
     }
 

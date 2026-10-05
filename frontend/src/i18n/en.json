@@ -469,5 +469,14 @@
     "done_desc": "The cleanup has finished.",
     "done_body": "Removed {{count}} items",
     "close": "Done"
+  },
+  "profile": {
+    "title": "Profile",
+    "account": "Account",
+    "joined": "Joined",
+    "permission_count": "Permissions",
+    "sections": "Sections",
+    "my_actions": "My activity",
+    "no_actions": "No activity yet — it shows up here once you do something."
   }
 }

@@ -341,6 +341,19 @@ impl Database {
         .map_err(Into::into)
     }
 
+    /// 用户加入时间。个人中心要显示"你什么时候来的"。
+    pub fn user_created_at(&self, id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let row = conn
+            .query_row(
+                "SELECT created_at FROM users WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(row)
+    }
+
     pub fn find_user_by_id(&self, id: i64) -> Result<Option<UserRow>> {
         let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
         conn.query_row(
@@ -627,6 +640,35 @@ impl Database {
             params![AUDIT_KEEP],
         );
         Ok(())
+    }
+
+    /// 只看某个操作者自己的记录。个人中心用它 —— 不需要 audit.read 权限，
+    /// 因为看的只是自己干过的事。
+    pub fn list_audit_logs_for(&self, actor: &str, limit: i64) -> Result<Vec<AuditRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, at, actor, actor_kind, ip, method, path, status, summary, detail, duration_ms
+             FROM audit_logs WHERE actor = ?1 ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![actor, limit], |row| {
+                Ok(AuditRow {
+                    id: row.get(0)?,
+                    at: row.get(1)?,
+                    actor: row.get(2)?,
+                    actor_kind: row.get(3)?,
+                    ip: row.get(4)?,
+                    method: row.get(5)?,
+                    path: row.get(6)?,
+                    status: row.get(7)?,
+                    summary: row.get(8)?,
+                    detail: row.get(9)?,
+                    duration_ms: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     pub fn list_audit_logs(&self, limit: i64, kind: Option<&str>) -> Result<Vec<AuditRow>> {

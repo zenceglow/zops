@@ -21,6 +21,7 @@ export const APP_ROUTES: RouteDef[] = [
   { path: '/automation/tasks', lazy: page(() => import('../pages/automation/tasks')) },
   { path: '/agent', lazy: page(() => import('../pages/agent')) },
   { path: '/members', lazy: page(() => import('../pages/members')) },
+  { path: '/profile', lazy: page(() => import('../pages/profile')) },
   { path: '/docker/containers', lazy: page(() => import('../pages/docker/containers')) },
   { path: '/docker/containers/:id', lazy: page(() => import('../pages/docker/containers/detail')) },
   { path: '/docker/images', lazy: page(() => import('../pages/docker/images')) },

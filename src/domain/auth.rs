@@ -29,6 +29,8 @@ pub struct MeData {
     pub username: String,
     pub role: String,
     pub permissions: Vec<String>,
+    /// 加入时间。个人中心显示用。
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone)]

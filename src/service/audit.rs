@@ -61,6 +61,13 @@ impl AuditService {
         }
     }
 
+    /// 某个人自己的操作记录。
+    pub fn list_for(&self, actor: &str, limit: i64) -> Result<Vec<AuditRow>, AppError> {
+        self.db
+            .list_audit_logs_for(actor, limit.clamp(1, 500))
+            .map_err(|e| AppError::internal(e.to_string()))
+    }
+
     pub fn list(&self, limit: i64, kind: Option<&str>) -> Result<Vec<AuditRow>, AppError> {
         self.db
             .list_audit_logs(limit.clamp(1, 500), kind)

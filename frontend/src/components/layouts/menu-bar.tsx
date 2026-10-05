@@ -28,6 +28,8 @@ function useClock() {
 function useSectionLabel() {
   const { pathname } = useLocation();
   const { t } = useTranslation();
+  // 个人中心不在导航配置里（它不进 Dock），单独一条。
+  if (pathname === '/profile') return t('profile.title');
   for (const group of SIDEBAR_GROUPS) {
     for (const item of group.items) {
       if (isParent(item)) {

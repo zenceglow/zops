@@ -1,19 +1,15 @@
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LogOut } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { NavLangIcon, NavUserIcon } from '../icons/nav-icons';
 import { SIDEBAR_GROUPS } from '../../router/sider-menu';
 import { isParent, pathMatches, type SidebarItem } from '../../lib/sidebar-config';
 import useUserStore from '../../stores/user.store';
-import useAuthorizeStore from '../../stores/authorize.store';
 import { useThemeStore } from '../../stores/theme-store';
 import { nextTheme, themeIcon, themeLabelKey } from '../../stores/theme-prefs';
 import { cn } from '../../lib/utils';
@@ -88,7 +84,6 @@ function DockAction({
 export function Dock() {
   const { t, i18n } = useTranslation();
   const { pathname } = useLocation();
-  const navigate = useNavigate();
   const hasPermission = useUserStore((s) => s.hasPermission);
   const user = useUserStore((s) => s.user);
   const theme = useThemeStore((s) => s.theme);
@@ -97,12 +92,6 @@ export function Dock() {
 
   const visible = TOP_ITEMS.filter((i) => hasPermission(i.perm));
   if (visible.length === 0) return null;
-
-  const logout = () => {
-    useAuthorizeStore.getState().logout();
-    useUserStore.getState().clear();
-    navigate('/login', { replace: true });
-  };
 
   const toggleLang = () => {
     const next = i18n.language === 'zh' ? 'en' : 'zh';
@@ -182,28 +171,13 @@ export function Dock() {
           <ThemeIcon className="size-5" />
         </DockAction>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button type="button" aria-label={user?.username || 'Admin'} className={dockClass()}>
-              <DockGlyph label={user?.username || 'Admin'}>
-                <NavUserIcon className="size-5" />
-              </DockGlyph>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="end" className="mb-3 min-w-40">
-            <DropdownMenuLabel className="flex flex-col gap-0.5">
-              <span>{user?.username || 'Admin'}</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {user?.role === 'super_admin' ? t('members.role_super') : t('members.role_member')}
-              </span>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="gap-2 text-destructive">
-              <LogOut className="size-4" />
-              <span>{t('nav.logout')}</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* 个人=进个人中心，不再弹菜单。退出登录放在那一页里 —— 它本来就该
+            是"进来之后做的事"，而不是随时悬在头像上等着被误点。 */}
+        <NavLink to="/profile" aria-label={user?.username || 'Admin'} className={dockClass(pathname === '/profile')}>
+          <DockGlyph label={user?.username || 'Admin'} active={pathname === '/profile'}>
+            <NavUserIcon className="size-5" />
+          </DockGlyph>
+        </NavLink>
       </nav>
     </div>
   );
