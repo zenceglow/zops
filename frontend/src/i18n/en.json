@@ -123,7 +123,8 @@
     "image": "Image",
     "status": "Status",
     "ports": "Ports",
-    "created": "Created"
+    "created": "Created",
+    "started": "Started"
   },
   "system": {
     "title": "System",
@@ -299,5 +300,11 @@
     "total": "Total",
     "iface": "interfaces",
     "since_boot": "Totals since boot"
+  },
+  "ago": {
+    "just_now": "just now",
+    "minutes": "{{count}}m ago",
+    "hours": "{{count}}h ago",
+    "days": "{{count}}d ago"
   }
 }

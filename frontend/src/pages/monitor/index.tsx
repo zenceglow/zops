@@ -34,7 +34,7 @@ export default function MonitorPage() {
         <Skeleton className="h-12 w-96 max-w-full" />
         <div className="flex flex-wrap gap-x-8 gap-y-8">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="size-[104px] rounded-full" />
+            <Skeleton key={i} className="size-[116px] rounded-full" />
           ))}
         </div>
         <Skeleton className="mx-auto h-40 w-full max-w-2xl rounded-2xl" />

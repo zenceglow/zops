@@ -38,6 +38,22 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --radius: 0.625rem;
+
+  /* 容器图标的"呼吸"光晕：运行中的服务要有活气，但静态发光会变成噪音，
+     所以做成慢速的明暗涨落，扫一眼就能分出哪些还活着。 */
+  --animate-breathe: breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.08);
+  }
 }
 
 :root {

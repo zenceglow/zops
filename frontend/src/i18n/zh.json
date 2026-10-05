@@ -123,7 +123,8 @@
     "image": "镜像",
     "status": "状态",
     "ports": "端口",
-    "created": "创建时间"
+    "created": "创建时间",
+    "started": "启动"
   },
   "system": {
     "title": "系统",
@@ -299,5 +300,11 @@
     "total": "累计",
     "iface": "网卡",
     "since_boot": "累计值自开机起算"
+  },
+  "ago": {
+    "just_now": "刚刚",
+    "minutes": "{{count}} 分钟前",
+    "hours": "{{count}} 小时前",
+    "days": "{{count}} 天前"
   }
 }
