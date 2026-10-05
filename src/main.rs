@@ -35,6 +35,18 @@ fn main() {
         return;
     }
 
+    // 忘了管理员密码时的后门。
+    //
+    // 密码存的是 argon2 哈希，**恢复不了**，只能重设。所以给一个命令行入口：
+    // 能登进这台机器的人就能改 —— 这跟"能不能直接改数据库"是同一档权限，
+    // 而面板本身不该提供这个入口（那等于给出一条绕过登录的路）。
+    //
+    //   zenceglow-ops --list-users
+    //   zenceglow-ops --reset-password <用户名> <新密码>
+    if let Some(code) = cli_accounts() {
+        std::process::exit(code);
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -44,6 +56,73 @@ fn main() {
 
     let rt = tokio::runtime::Runtime::new().expect("创建 runtime 失败");
     rt.block_on(async_main());
+}
+
+/// 处理账号相关的命令行开关。返回 `Some(退出码)` 表示"这条命令已经处理完了"。
+fn cli_accounts() -> Option<i32> {
+    let args: Vec<String> = std::env::args().collect();
+    let list = args.iter().any(|a| a == "--list-users");
+    let reset_at = args.iter().position(|a| a == "--reset-password");
+    if !list && reset_at.is_none() {
+        return None;
+    }
+
+    let cfg = Config::from_env();
+    let db = match Database::open(&cfg.db_path()) {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("打不开数据库 {}：{e}", cfg.db_path().display());
+            return Some(1);
+        }
+    };
+
+    if list {
+        match db.list_members() {
+            Ok(members) if members.is_empty() => println!("还没有任何账号"),
+            Ok(members) => {
+                for m in members {
+                    println!("{}\t{}", m.username, m.role);
+                }
+            }
+            Err(e) => {
+                eprintln!("读取失败：{e}");
+                return Some(1);
+            }
+        }
+        return Some(0);
+    }
+
+    let at = reset_at.unwrap();
+    let (Some(username), Some(password)) = (args.get(at + 1), args.get(at + 2)) else {
+        eprintln!("用法：zenceglow-ops --reset-password <用户名> <新密码>");
+        eprintln!("      zenceglow-ops --list-users   # 先看看有哪些账号");
+        return Some(2);
+    };
+    if password.chars().count() < 6 {
+        eprintln!("密码至少 6 位");
+        return Some(2);
+    }
+
+    let user = match db.find_user_by_username(username.trim()) {
+        Ok(Some(u)) => u,
+        Ok(None) => {
+            eprintln!("没有这个账号：{username}（用 --list-users 看看有哪些）");
+            return Some(1);
+        }
+        Err(e) => {
+            eprintln!("查询失败：{e}");
+            return Some(1);
+        }
+    };
+    if let Err(e) = db.update_member_password(user.id, password) {
+        eprintln!("改密码失败：{e}");
+        return Some(1);
+    }
+    // 数据库路径一并打出来：这台机器上可能有好几个 ZOPS 的数据目录，
+    // 不写清楚改的是哪一份，人下次就找不着了。
+    println!("已重设 {username} 的密码（数据库：{}）", cfg.db_path().display());
+    println!("重新登录面板即可，已登录的会话不受影响。");
+    Some(0)
 }
 
 async fn async_main() {
