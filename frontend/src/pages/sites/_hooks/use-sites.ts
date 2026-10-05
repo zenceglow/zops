@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from '../../../components/ui/sonner';
 import { useTranslation } from 'react-i18next';
 import {
   fetchGatewayConfig,
@@ -23,7 +24,6 @@ export function useSites() {
   const [mode, setMode] = useState<'list' | 'editor'>('list');
   const [versions, setVersions] = useState<CaddyfileVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
-  const [msg, setMsg] = useState('');
   const [installing, setInstalling] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [newDomain, setNewDomain] = useState('');
@@ -58,10 +58,11 @@ export function useSites() {
     async (action: 'start' | 'stop' | 'reload') => {
       try {
         await postServerAction(action);
-        setMsg(t(`sites.${action}_success`));
+        toast.success(t(`sites.${action}_success`));
         setTimeout(() => fetchAll(), 500);
-      } catch {
-        setMsg(t('sites.action_fail'));
+      } catch (e) {
+        // 带上后端原话：它知道是"配置文件不存在"还是"权限不够"，一句"操作失败"等于没说。
+        toast.error(`${t('sites.action_fail')}：${e instanceof Error ? e.message : ''}`);
       }
     },
     [fetchAll, t],
@@ -69,13 +70,12 @@ export function useSites() {
 
   const handleInstall = useCallback(async () => {
     setInstalling(true);
-    setMsg(t('sites.install_doing'));
     try {
       await installGateway();
-      setMsg(t('sites.install_success'));
+      toast.success(t('sites.install_success'));
       fetchAll();
     } catch {
-      setMsg(t('sites.install_fail'));
+      toast.error(t('sites.install_fail'));
     }
     setInstalling(false);
   }, [fetchAll, t]);
@@ -83,10 +83,10 @@ export function useSites() {
   const saveConfig = useCallback(async () => {
     try {
       await saveGatewayConfig(rawEditor);
-      setMsg(t('sites.saved_reload'));
+      toast.success(t('sites.saved_reload'));
       fetchAll();
     } catch (e) {
-      setMsg(`${t('sites.save_fail')}: ${e instanceof Error ? e.message : ''}`);
+      toast.error(`${t('sites.save_fail')}: ${e instanceof Error ? e.message : ''}`);
     }
   }, [rawEditor, fetchAll, t]);
 
@@ -97,11 +97,11 @@ export function useSites() {
         const fresh = await fetchGatewayConfig();
         setConfig(fresh);
         setRawEditor(fresh.raw);
-        setMsg(t('sites.restore_success'));
+        toast.success(t('sites.restore_success'));
         fetchAll();
         loadVersions();
       } catch (e) {
-        setMsg(`${t('sites.restore_fail')}: ${e instanceof Error ? e.message : ''}`);
+        toast.error(`${t('sites.restore_fail')}: ${e instanceof Error ? e.message : ''}`);
       }
     },
     [fetchAll, loadVersions, t],
@@ -129,9 +129,9 @@ export function useSites() {
       setNewDomain('');
       setNewTarget('');
       setShowAdd(false);
-      setMsg(t('sites.saved_reload'));
+      toast.success(t('sites.saved_reload'));
     } catch (e) {
-      setMsg(`${t('sites.save_fail')}: ${e instanceof Error ? e.message : ''}`);
+      toast.error(`${t('sites.save_fail')}: ${e instanceof Error ? e.message : ''}`);
     }
   }, [newDomain, newType, newTarget, newTemplate, rawEditor, config, fetchAll, t]);
 
@@ -146,7 +146,6 @@ export function useSites() {
     loadingVersions,
     loadVersions,
     restoreVersion,
-    msg,
     installing,
     showAdd,
     setShowAdd,

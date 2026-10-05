@@ -74,7 +74,6 @@ export default function SitesPage() {
               )}
             </Button>
             <p className="text-xs text-muted-foreground">{t('sites.install_desc')}</p>
-            {s.msg && <Badge variant="secondary">{s.msg}</Badge>}
           </CardContent>
         </Card>
       </div>
@@ -86,7 +85,6 @@ export default function SitesPage() {
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">{t('sites.title')}</h1>
         <div className="flex items-center gap-2">
-          {s.msg && <Badge variant="secondary">{s.msg}</Badge>}
           {s.mode === 'list' ? (
             <>
               <Button size="sm" variant="outline" onClick={() => s.setMode('editor')}>

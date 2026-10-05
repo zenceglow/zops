@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::time::Duration;
 
 use crate::shared::AppError;
 
@@ -152,8 +153,18 @@ impl CaddyProcess {
                 .arg("--config")
                 .arg(&self.caddyfile_path)
                 .spawn()
-                .map(|_| ())
-                .map_err(|e| AppError::internal(e.to_string()))
+                .map_err(|e| AppError::internal(e.to_string()))?;
+
+            // 光 spawn 成功不等于起来了：配置文件不存在或语法有错时，caddy 会立刻
+            // 退出，而父进程拿到的仍然是"成功"。等一小会儿看进程还在不在 ——
+            // 界面上弹出"启动成功"、状态却还是"已停止"，比直接报错更让人不信任。
+            std::thread::sleep(Duration::from_millis(900));
+            if crate::infrastructure::caddy::bin::pid().is_none() {
+                return Err(AppError::internal(
+                    "Caddy 启动后立即退出，多半是配置文件不存在或有语法错误（面板日志里有它的输出）",
+                ));
+            }
+            Ok(())
         })
     }
 
