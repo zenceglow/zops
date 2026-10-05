@@ -3,6 +3,7 @@ import { Skeleton } from '../../components/ui/skeleton';
 import useUserStore from '../../stores/user.store';
 import { formatBytes, formatUptime, useMonitor } from './_hooks/use-monitor';
 import { ContainerGrid } from './_components/container-grid';
+import { GatewayEntry } from './_components/gateway-entry';
 import { NetworkWidget } from './_components/network-widget';
 import { Ring } from './_components/ring';
 
@@ -102,6 +103,9 @@ export default function MonitorPage() {
         </div>
         <NetworkWidget />
       </section>
+
+      {/* 站点入口放在最上面：它是"外面的人从哪儿进来"，比机器自己的负载更该先被看到。 */}
+      <GatewayEntry />
 
       {/* 五个环均分整行：内容只有这么点，再挤在左边就只剩一大片空。等宽列让它们
           像一排仪表铺开，右边缘也对齐了。 */}

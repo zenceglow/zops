@@ -309,5 +309,14 @@
     "minutes": "{{count}}m ago",
     "hours": "{{count}}h ago",
     "days": "{{count}}d ago"
+  },
+  "entry": {
+    "title": "Site entry",
+    "running": "Running",
+    "stopped": "Stopped",
+    "not_installed": "Gateway off",
+    "no_sites": "No sites configured",
+    "enable": "Enable",
+    "manage": "Manage sites"
   }
 }

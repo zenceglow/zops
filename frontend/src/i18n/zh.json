@@ -309,5 +309,14 @@
     "minutes": "{{count}} 分钟前",
     "hours": "{{count}} 小时前",
     "days": "{{count}} 天前"
+  },
+  "entry": {
+    "title": "站点入口",
+    "running": "运行中",
+    "stopped": "未运行",
+    "not_installed": "网关未启用",
+    "no_sites": "还没有配置站点",
+    "enable": "去启用",
+    "manage": "管理站点"
   }
 }
