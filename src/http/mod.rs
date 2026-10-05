@@ -15,8 +15,8 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::http::handlers::{
-    auth, automation, caddyfile, gateway, logs, member, permission, service, setup, ssh, system,
-    mcp, token as token_handler,
+    auth, automation, caddyfile, files, gateway, logs, member, permission, service, setup, ssh,
+    system, mcp, token as token_handler,
 };
 use crate::http::middleware::auth::auth_middleware;
 
@@ -30,6 +30,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/auth", auth::protected_routes())
         .nest("/system", system::routes())
         .nest("/service", service::routes())
+        .nest("/files", files::routes())
         .nest("/log", logs::protected_routes())
         .nest("/gateway", gateway::routes().merge(caddyfile::routes()))
         .nest("/member", member::routes())

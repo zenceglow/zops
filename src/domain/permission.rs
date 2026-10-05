@@ -26,6 +26,8 @@ pub const OPS_GATEWAY_READ: &str = "ops.gateway.read";
 pub const OPS_GATEWAY_CONTROL: &str = "ops.gateway.control";
 pub const OPS_GATEWAY_WRITE: &str = "ops.gateway.write";
 pub const OPS_LOG_READ: &str = "ops.log.read";
+/// 浏览文件系统。只读 —— 面板里能看日志、能开 SSH 终端，这一项不该更弱也不该更强。
+pub const OPS_FILES_READ: &str = "ops.files.read";
 pub const OPS_SSH_CONNECT: &str = "ops.ssh.connect";
 pub const OPS_MEMBER_MANAGE: &str = "ops.member.manage";
 pub const OPS_AUTOMATION_MANAGE: &str = "ops.automation.manage";
@@ -122,6 +124,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
         },
         PermissionDef {
             id: OPS_LOG_READ,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_FILES_READ,
             group: "ops",
         },
         PermissionDef {

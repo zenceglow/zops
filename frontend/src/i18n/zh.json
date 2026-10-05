@@ -228,7 +228,18 @@
   },
   "files": {
     "title": "文件",
-    "subtitle": "浏览与管理服务器文件系统"
+    "subtitle": "浏览与管理服务器文件系统",
+    "path_placeholder": "输入路径后回车，例如 /var/log",
+    "search_placeholder": "搜索当前目录…",
+    "search_result": "找到 {{count}} 项",
+    "search_empty": "没有匹配的文件",
+    "col_size": "大小",
+    "col_modified": "修改时间",
+    "col_mode": "权限",
+    "empty": "这个目录是空的",
+    "truncated": "条目过多，只显示前 2000 项 —— 用搜索找具体的文件",
+    "preview_truncated": "只显示开头 256 KB",
+    "preview_binary": "这是二进制文件，不预览内容"
   },
   "logs": {
     "title": "日志查看器",

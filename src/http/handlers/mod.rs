@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod automation;
 pub mod caddyfile;
+pub mod files;
 pub mod gateway;
 pub mod logs;
 pub mod mcp;
