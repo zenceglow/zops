@@ -485,7 +485,13 @@
     "desc": "外网 → 站点入口 → 容器，中间按端口匹配",
     "to_port": "指向",
     "empty": "还没有配置站点入口",
-    "go_configure": "去配置站点入口"
+    "go_configure": "去配置站点入口",
+    "backends": "{{count}} 个后端",
+    "host_process": "本机进程（不在容器里）",
+    "external": "外部服务",
+    "legend_container": "容器",
+    "legend_host": "本机进程",
+    "legend_external": "外部服务"
   },
   "cleanup": {
     "title": "垃圾清理",

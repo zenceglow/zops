@@ -36,7 +36,10 @@ export function SiteListItem({ site }: { site: SiteEntry }) {
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {info.kind === 'other'
               ? t('sites.kind_other')
-              : `${t(`sites.kind_${info.kind}`)}${info.target ? ` → ${info.target}` : ''}`}
+              : // 一个站点可以分流到多个后端，标出总数，别只写第一个
+                `${t(`sites.kind_${info.kind}`)}${info.target ? ` → ${info.target}` : ''}${
+                  info.targets.length > 1 ? ` +${info.targets.length - 1}` : ''
+                }`}
           </p>
         </div>
 

@@ -90,7 +90,10 @@ function SiteEntryItem({ site }: { site: SiteEntry }) {
         <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {info.kind === 'other'
             ? t('sites.kind_other')
-            : `${t(`sites.kind_${info.kind}`)}${info.target ? ` → ${info.target}` : ''}`}
+            : // 分流到多个后端时标一下，别让"→ 某一个"看起来像是全部
+              `${t(`sites.kind_${info.kind}`)}${info.target ? ` → ${info.target}` : ''}${
+                info.targets.length > 1 ? ` +${info.targets.length - 1}` : ''
+              }`}
         </p>
         {info.features.length > 0 && (
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">

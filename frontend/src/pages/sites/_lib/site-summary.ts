@@ -6,7 +6,15 @@ export type SiteFeature = 'header' | 'encode' | 'log' | 'tls' | 'blocked' | 'rou
 export type SiteSummary = {
   /** 这个入口把请求交给谁：反代到某个上游，或者直接发静态文件。 */
   kind: 'proxy' | 'static' | 'other';
+  /** 第一个目标。列表页那一行只写得下一个，用它。 */
   target: string;
+  /**
+   * **全部**代理目标。
+   *
+   * 一个站点可以按路径分流到好几个后端（`handle_path /api/* { reverse_proxy api:8080 }`
+   * 和 `reverse_proxy web:80` 并存），只看第一个就把半个链路丢了。
+   */
+  targets: string[];
   /** 站点开了哪些"能力"，用来看它是不是按规范配的。 */
   features: SiteFeature[];
   url: string | null;
@@ -41,6 +49,16 @@ function collectKeys(list: Directive[], into: Set<string>) {
   }
 }
 
+/** 递归收集所有 `reverse_proxy` 的目标，按出现顺序去重。 */
+function collectProxies(list: Directive[], into: string[]) {
+  for (const d of list) {
+    if (d.key === 'reverse_proxy' && d.args[0] && !into.includes(d.args[0])) {
+      into.push(d.args[0]);
+    }
+    collectProxies(d.sub, into);
+  }
+}
+
 export function summarizeSite(site: SiteEntry): SiteSummary {
   const keys = new Set<string>();
   collectKeys(site.directives, keys);
@@ -51,10 +69,12 @@ export function summarizeSite(site: SiteEntry): SiteSummary {
 
   let kind: SiteSummary['kind'] = 'other';
   let target = '';
+  const targets: string[] = [];
   if (proxy) {
     kind = 'proxy';
     // `reverse_proxy localhost:8081 { ... }` —— 目标就是第一个参数。
     target = proxy.args[0] ?? '';
+    collectProxies(site.directives, targets);
   } else if (isStatic) {
     kind = 'static';
     // `root * /var/www` —— 第一个参数是匹配符，路径在第二个。
@@ -80,5 +100,5 @@ export function summarizeSite(site: SiteEntry): SiteSummary {
   })(site.directives);
   if (blocked) features.push('blocked');
 
-  return { kind, target, features, url: siteUrl(site.addr) };
+  return { kind, target, targets, features, url: siteUrl(site.addr) };
 }

@@ -15,6 +15,31 @@ const CONTAINER_X = 790;
 
 type Node = { key: string; label: string; sub: string };
 
+/** 右边那一列里除了容器，还可能是"本机进程"或"外部服务"。 */
+type RightNode = Node & {
+  kind: 'container' | 'host' | 'external';
+  /** 容器节点能点进详情页。 */
+  to?: string;
+};
+
+/**
+ * 把 Caddy 里的上游地址拆成 host + port。
+ *
+ * `localhost:9082`、`api:8080`、`[::1]:80`、`example.com:443`、`unix//run/x.sock`
+ * 都可能出现。认不出来的原样留着，下面按"外部"处理 —— 宁可标成外部，
+ * 也不能假装它连到了某个容器上。
+ */
+function parseTarget(raw: string): { host: string; port: string | null; label: string } {
+  const value = raw.trim().replace(/^https?:\/\//i, '').split('/')[0];
+  const m =
+    value.match(/^\[([^\]]+)\](?::(\d+))?$/) ?? value.match(/^([^:]+?)(?::(\d+))?$/);
+  const host = m?.[1] ?? value;
+  const port = m?.[2] ?? null;
+  return { host, port, label: port ? `${host}:${port}` : host };
+}
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
 /**
  * 系统里开了"减少动态效果"就别转动画。
  *
@@ -55,21 +80,81 @@ export function Topology({
   const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
 
-  // —— 数据：入口 → 目标端口 → 容器 ——
-  const entryNodes: (Node & { port: string | null; url: string | null })[] = entries
+  // —— 数据：入口 → 它代理的每一个目标 → 容器 / 本机进程 / 外部服务 ——
+  const entryNodes: (Node & { targets: string[]; url: string | null })[] = entries
     .slice(0, 6)
     .map((s) => {
       const info = summarizeSite(s);
-      // `localhost:9082` / `127.0.0.1:9082` / 纯端口，都取冒号后面那段数字。
-      const port = info.target.match(/:(\d+)\s*$/)?.[1] ?? null;
-      return { key: s.addr, label: s.addr, sub: info.target || t('sites.kind_other'), port, url: info.url };
+      return {
+        key: s.addr,
+        label: s.addr,
+        sub: info.target || t('sites.kind_other'),
+        targets: info.targets,
+        url: info.url,
+      };
     });
 
-  const running = containers.filter((c) => c.state === 'running').slice(0, 8);
-  const containerNodes: (Node & { port: string | null })[] = running.map((c) => {
+  const running = containers.filter((c) => c.state === 'running').slice(0, 6);
+  const containerNodes: RightNode[] = running.map((c) => {
     const host = c.ports.match(/:(\d+)-\d+/)?.[1] ?? null;
-    return { key: c.id, label: c.image, sub: host ? `: ${host}` : '—', port: host };
+    return {
+      key: c.id,
+      label: c.image,
+      sub: host ? `: ${host}` : '—',
+      kind: 'container',
+      to: `/docker/containers/${c.id}`,
+    };
   });
+
+  // 端口 → 容器、容器名 → 容器，两张表用来把上游地址翻译成节点。
+  const byPort = new Map<string, number>();
+  const byName = new Map<string, number>();
+  running.forEach((c, i) => {
+    const port = c.ports.match(/:(\d+)-\d+/)?.[1];
+    if (port) byPort.set(port, i);
+    byName.set(c.name, i);
+  });
+
+  /**
+   * 一个上游地址落在哪儿。
+   *
+   * 三种结果，缺一种这张图就会骗人：
+   * - 找到同端口的容器（或名字对得上的容器）→ 容器节点；
+   * - `localhost:4000` 但没容器发布 4000 → **本机进程**（后端跑在 systemd 里
+   *   很常见），不画的话这条链路看起来是断的；
+   * - 域名 / 非回环 IP → **外部服务**，请求出了这台机器，图上就该有个出口。
+   */
+  const extras: RightNode[] = [];
+  const resolve = (raw: string): { kind: RightNode['kind']; index: number } => {
+    const { host, port, label } = parseTarget(raw);
+    const container = (port ? byPort.get(port) : undefined) ?? byName.get(host);
+    if (container !== undefined) return { kind: 'container', index: container };
+
+    const isLoopback = LOOPBACK.has(host);
+    const key = `${isLoopback ? 'host' : 'ext'}:${label}`;
+    let index = extras.findIndex((n) => n.key === key);
+    if (index < 0 && extras.length < 3) {
+      extras.push({
+        key,
+        label,
+        sub: isLoopback ? t('topology.host_process') : t('topology.external'),
+        kind: isLoopback ? 'host' : 'external',
+      });
+      index = extras.length - 1;
+    }
+    const kind: RightNode['kind'] = isLoopback ? 'host' : 'external';
+    return { kind, index: index < 0 ? -1 : containerNodes.length + index };
+  };
+
+  // 每个入口的每一条出边。一个站点分流到 N 个后端就有 N 条。
+  const edges = entryNodes.flatMap((e, ei) =>
+    e.targets.map((raw) => {
+      const { kind, index } = resolve(raw);
+      return { entryIndex: ei, kind, nodeIndex: index, key: `${e.key}->${raw}` };
+    }),
+  );
+
+  const rightNodes: RightNode[] = [...containerNodes, ...extras];
 
   const spread = (count: number) => {
     if (count <= 0) return [];
@@ -79,15 +164,7 @@ export function Topology({
     return Array.from({ length: count }, (_, i) => top + step * i);
   };
   const entryY = spread(entryNodes.length);
-  const containerY = spread(containerNodes.length);
-
-  // 端口匹配：入口指向哪个端口，就连到发布了那个端口的容器上。
-  const links = entryNodes.map((e) => {
-    const target = e.port
-      ? containerNodes.findIndex((c) => c.port === e.port)
-      : -1;
-    return { entry: e, targetIndex: target };
-  });
+  const containerY = spread(rightNodes.length);
 
   const curve = (x1: number, y1: number, x2: number, y2: number) => {
     const dx = (x2 - x1) * 0.45;
@@ -158,16 +235,24 @@ export function Topology({
           );
         })}
 
-        {/* 入口 → 容器（按端口匹配） */}
-        {links.map(({ entry, targetIndex }, i) => {
-          if (targetIndex < 0) return null;
-          const d = curve(ENTRY_X + 6, entryY[i], CONTAINER_X - 6, containerY[targetIndex]);
+        {/* 入口 → 后端。按目标的性质分色：容器绿、本机进程天蓝、外部琥珀。 */}
+        {edges.map((edge, i) => {
+          if (edge.nodeIndex < 0) return null;
+          const d = curve(ENTRY_X + 6, entryY[edge.entryIndex], CONTAINER_X - 6, containerY[edge.nodeIndex]);
+          const stroke =
+            edge.kind === 'container'
+              ? 'stroke-emerald-500/45'
+              : edge.kind === 'host'
+                ? 'stroke-sky-500/45'
+                : 'stroke-amber-500/50';
+          const dot =
+            edge.kind === 'container' ? 'fill-emerald-400' : edge.kind === 'host' ? 'fill-sky-400' : 'fill-amber-400';
           return (
-            <g key={`${entry.key}-link`}>
-              <path d={d} className="topology-edge fill-none stroke-emerald-500/45" strokeWidth="1.2" />
+            <g key={edge.key}>
+              <path d={d} className={`topology-edge fill-none ${stroke}`} strokeWidth="1.2" />
               {!reducedMotion && (
-                <circle r="2.4" className="fill-emerald-400">
-                  <animateMotion dur={`${3 + i * 0.4}s`} repeatCount="indefinite" path={d} />
+                <circle r="2.4" className={dot}>
+                  <animateMotion dur={`${3 + i * 0.35}s`} repeatCount="indefinite" path={d} />
                 </circle>
               )}
             </g>
@@ -181,39 +266,83 @@ export function Topology({
           <Link key={e.key} to="/sites" className="cursor-pointer">
           <g transform={`translate(${ENTRY_X} ${entryY[i] - 15})`} className="hover:opacity-80">
             <rect width="230" height="30" rx="9" className="fill-muted/40 stroke-border" strokeWidth="1" />
-            <circle cx="13" cy="15" r="3" className={e.port ? 'fill-sky-500' : 'fill-muted-foreground'} />
+            <circle
+              cx="13"
+              cy="15"
+              r="3"
+              className={e.targets.length > 0 ? 'fill-sky-500' : 'fill-muted-foreground'}
+            />
             <text x="24" y="13" className="fill-foreground text-[11px] font-medium">
               {e.label.length > 26 ? `${e.label.slice(0, 25)}…` : e.label}
             </text>
             <text x="24" y="24" className="fill-muted-foreground text-[9px]">
-              {e.port ? `${t('topology.to_port')} ${e.port}` : e.sub.slice(0, 30)}
+              {/* 一个入口分流到几个后端时，把端口都列出来（最多两个），
+                  多到列不下就报个数 —— 比只写第一个诚实。 */}
+              {e.targets.length === 0
+                ? e.sub.slice(0, 30)
+                : e.targets.length === 1
+                  ? `${t('topology.to_port')} ${e.targets[0]}`
+                  : e.targets.length <= 2
+                    ? `${t('topology.to_port')} ${e.targets.join(' / ')}`
+                    : t('topology.backends', { count: e.targets.length })}
             </text>
           </g>
           </Link>
         ))}
 
-        {/* 容器节点 */}
-        {containerNodes.map((c, i) => {
-          const matched = links.some((l) => l.targetIndex === i);
-          return (
-            <Link key={c.key} to={`/docker/containers/${c.key}`} className="cursor-pointer">
+        {/* 右列：容器 + 本机进程 + 外部服务 */}
+        {rightNodes.map((node, i) => {
+          const matched = edges.some((e) => e.nodeIndex === i);
+          const body = (
             <g transform={`translate(${CONTAINER_X} ${containerY[i] - 15})`} className="hover:opacity-80">
               <rect
                 width="190"
                 height="30"
                 rx="9"
-                className={cn('stroke-border', matched ? 'fill-emerald-500/8' : 'fill-muted/40')}
+                // 非容器节点画虚线：一眼能分出"这一跳不在这台机器的容器里"。
+                strokeDasharray={node.kind === 'container' ? undefined : '4 3'}
+                className={cn(
+                  'stroke-border',
+                  node.kind === 'container'
+                    ? matched
+                      ? 'fill-emerald-500/8'
+                      : 'fill-muted/40'
+                    : matched
+                      ? node.kind === 'host'
+                        ? 'fill-sky-500/8'
+                        : 'fill-amber-500/8'
+                      : 'fill-muted/30',
+                )}
                 strokeWidth="1"
               />
-              <circle cx="13" cy="15" r="3" className={matched ? 'fill-emerald-500' : 'fill-muted-foreground/50'} />
+              <circle
+                cx="13"
+                cy="15"
+                r="3"
+                className={cn(
+                  node.kind === 'container'
+                    ? matched
+                      ? 'fill-emerald-500'
+                      : 'fill-muted-foreground/50'
+                    : node.kind === 'host'
+                      ? 'fill-sky-500'
+                      : 'fill-amber-500',
+                )}
+              />
               <text x="24" y="13" className="fill-foreground text-[11px] font-medium">
-                {c.label.length > 20 ? `${c.label.slice(0, 19)}…` : c.label}
+                {node.label.length > 20 ? `${node.label.slice(0, 19)}…` : node.label}
               </text>
               <text x="24" y="24" className="fill-muted-foreground text-[9px]">
-                {c.sub}
+                {node.sub}
               </text>
             </g>
+          );
+          return node.to ? (
+            <Link key={node.key} to={node.to} className="cursor-pointer">
+              {body}
             </Link>
+          ) : (
+            <g key={node.key}>{body}</g>
           );
         })}
       </svg>

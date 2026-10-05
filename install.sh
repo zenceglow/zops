@@ -444,17 +444,24 @@ if [ -n "${OPS_PORT:-}" ]; then
   PORT="$OPS_PORT"; ok "$(msg port_env "$PORT")"
 else
   choose "$(msg port_q)" "$(msg random)" "$(msg manual)" 1
-  if [ "$REPLY" = "2" ]; then
-    ask "$(msg port_ask)" ""
-    PORT="$REPLY"
+  # 提示写的是"1) 随机 2) 手动"，但总有人直接把端口号打在这一行上。以前这种输入
+  # 既不是 1 也不是 2，就默默走了随机端口 —— 用户看到的和自己填的对不上，还以为
+  # 脚本没听见。约定：1/回车 = 第一个选项，2 = 第二个选项，其它非空输入 = 值本身。
+  RANDOM_PORT=0
+  case "$REPLY" in
+    2) ask "$(msg port_ask)" ""; PORT="$REPLY" ;;
+    1|"") RANDOM_PORT=1 ;;
+    *) PORT="$REPLY" ;;
+  esac
+  if [ "$RANDOM_PORT" = "1" ]; then
+    PORT="$(rand_port)"; ok "$(msg port_rand "$PORT")"
+  else
     case "$PORT" in
       ''|*[!0-9]*) die "$(msg port_nan)" ;;
     esac
     [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || die "$(msg port_rng)"
     port_in_use "$PORT" && die "$(msg port_busy "$PORT")"
     ok "$(msg port_set "$PORT")"
-  else
-    PORT="$(rand_port)"; ok "$(msg port_rand "$PORT")"
   fi
 fi
 
@@ -466,10 +473,13 @@ if [ "${OPS_SKIP_DOMAIN:-0}" = "1" ]; then
   DOMAIN=""
 elif [ -z "$DOMAIN" ]; then
   choose "$(msg domain_q)" "$(msg skip)" "$(msg manual)" 1
-  if [ "$REPLY" = "2" ]; then
-    ask "$(msg domain_ask)" ""
-    DOMAIN="$REPLY"
-  fi
+  # 同上：直接把域名打进来的，就当他选了"手动输入"。以前这会走"跳过"分支，
+  # 域名被静默丢掉，装完才发现没绑上。
+  case "$REPLY" in
+    1|"") DOMAIN="" ;;
+    2)     ask "$(msg domain_ask)" ""; DOMAIN="$REPLY" ;;
+    *)     DOMAIN="$REPLY" ;;
+  esac
 fi
 if [ -n "$DOMAIN" ]; then ok "$(msg domain_set "$DOMAIN" "$PORT")"; else ok "$(msg domain_skip)"; fi
 
@@ -480,12 +490,11 @@ ADMIN_USER="${OPS_USER:-}"
 CUSTOM_USER=0
 if [ -z "$ADMIN_USER" ]; then
   choose "$(msg user_q)" "$(msg random)" "$(msg manual)" 1
-  if [ "$REPLY" = "2" ]; then
-    ask "$(msg user_ask)" ""
-    ADMIN_USER="$REPLY"; CUSTOM_USER=1
-  else
-    ADMIN_USER="ops-$(rand_word 6)"
-  fi
+  case "$REPLY" in
+    2)     ask "$(msg user_ask)" ""; ADMIN_USER="$REPLY"; CUSTOM_USER=1 ;;
+    1|"") ADMIN_USER="ops-$(rand_word 6)" ;;
+    *)     ADMIN_USER="$REPLY"; CUSTOM_USER=1 ;;
+  esac
 fi
 [ -n "$ADMIN_USER" ] || die "$(msg user_empty)"
 ok "$(msg user_set "$ADMIN_USER")"
@@ -498,16 +507,19 @@ if [ -z "$ADMIN_PASS" ]; then
   # 上一步是「手动输入用户名」时才问密码；否则一并随机 —— 一路回车也能装完。
   if [ "$CUSTOM_USER" = "1" ] || [ "${OPS_ASK_PASSWORD:-0}" = "1" ]; then
     choose "$(msg pass_q)" "$(msg random)" "$(msg manual)" 1
-    if [ "$REPLY" = "2" ]; then
-      while :; do
-        ask "$(msg pass_ask)" ""
-        ADMIN_PASS="$REPLY"
-        [ "${#ADMIN_PASS}" -ge 6 ] && break
-        warn "$(msg pass_short)"
-      done
-    else
-      ADMIN_PASS="$(rand_word 16)"
-    fi
+    case "$REPLY" in
+      1|"") ADMIN_PASS="$(rand_word 16)" ;;
+      2)
+        while :; do
+          ask "$(msg pass_ask)" ""
+          ADMIN_PASS="$REPLY"
+          [ "${#ADMIN_PASS}" -ge 6 ] && break
+          warn "$(msg pass_short)"
+        done
+        ;;
+      # 直接把密码打进来的：太短下面那句统一的校验会拦住。
+      *) ADMIN_PASS="$REPLY" ;;
+    esac
   else
     ADMIN_PASS="$(rand_word 16)"
   fi

@@ -485,7 +485,13 @@
     "desc": "Internet → site entry → container, matched by port",
     "to_port": "to port",
     "empty": "No site entries yet",
-    "go_configure": "Configure a site entry"
+    "go_configure": "Configure a site entry",
+    "backends": "{{count}} backends",
+    "host_process": "host process (outside Docker)",
+    "external": "external service",
+    "legend_container": "container",
+    "legend_host": "host process",
+    "legend_external": "external"
   },
   "cleanup": {
     "title": "Clean up",

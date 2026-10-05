@@ -98,8 +98,9 @@ export function Globe({ points, self, latest }: Props) {
       const radius = Math.min(width, height) * 0.42;
       const cx = width / 2;
       const cy = height / 2;
-      // 略微俯视：正对着赤道的球看起来像贴在墙上的圆，抬一点才有立体感。
-      const tilt = -18 * DEG;
+      // 略微俯视：北极往观察者这边倒一点，看到的就是北半球（那是绝大多数站点
+      // 所在的地方）。正对着赤道的球看起来像贴在墙上的圆，抬一点才有立体感。
+      const tilt = 15 * DEG;
 
       const project = (v: Vec3) => {
         // 先绕 Y 轴自转，再绕 X 轴倾斜。
@@ -107,7 +108,12 @@ export function Globe({ points, self, latest }: Props) {
         const z1 = -v.x * Math.sin(spin) + v.z * Math.cos(spin);
         const y2 = v.y * Math.cos(tilt) - z1 * Math.sin(tilt);
         const z2 = v.y * Math.sin(tilt) + z1 * Math.cos(tilt);
-        return { x: cx + x1 * radius, y: cy - y2 * radius, z: z2 };
+        // `facing` 是"这一点在球的哪一侧"：+1 正对观察者，-1 在球背面。
+        //
+        // 这里以前直接拿 z2 当"深度"用，而且判定写的是"z 大于阈值就跳过" ——
+        // 于是被跳过的恰恰是**正对我们**的那半边，画出来的是球背面透过来的影像。
+        // 从外面看球的背面，左右是反的，所以整个地球看起来是镜像的。
+        return { x: cx + x1 * radius, y: cy - y2 * radius, facing: z2 };
       };
 
       ctx.clearRect(0, 0, width, height);
@@ -124,10 +130,12 @@ export function Globe({ points, self, latest }: Props) {
       // 1. 陆地点阵
       for (const v of landRef.current!) {
         const p = project(v);
-        if (p.z > 0.55) continue; // 背面的点在球心后面，画出来会透出来
-        const depth = (1 - p.z) / 2; // z=-1(正对) → 1，z=1(背面) → 0
-        ctx.fillStyle = `rgba(125, 211, 252, ${0.06 + depth * 0.5})`;
-        const size = 0.8 + depth * 0.9;
+        // 只画正对观察者的那半边；留 0.15 的余量，边缘不至于缺一圈。
+        if (p.facing < 0.15) continue;
+        // 越靠近球心越亮，靠近边缘越暗 —— 明暗本身就是球体的立体感。
+        const depth = (p.facing - 0.15) / 0.85;
+        ctx.fillStyle = `rgba(125, 211, 252, ${0.12 + depth * 0.55})`;
+        const size = 0.9 + depth * 1.0;
         ctx.fillRect(p.x, p.y, size, size);
       }
 
@@ -135,7 +143,7 @@ export function Globe({ points, self, latest }: Props) {
       for (const point of pointsRef.current) {
         if (!point.lat && !point.lon) continue;
         const p = project(toVec3(point.lat, point.lon, 1.004));
-        if (p.z > 0.35) continue;
+        if (p.facing < 0.15) continue;
         const weight = Math.min(1, 0.35 + Math.log10(point.count + 1) * 0.4);
         const phase = ((time / 1800) + point.lat * 0.01 + point.lon * 0.01) % 1;
 
@@ -155,7 +163,7 @@ export function Globe({ points, self, latest }: Props) {
       const home = selfRef.current;
       if (home && (home.lat || home.lon)) {
         const p = project(toVec3(home.lat, home.lon, 1.006));
-        if (p.z <= 0.35) {
+        if (p.facing >= 0.15) {
           ctx.fillStyle = 'rgba(248, 250, 252, 0.95)';
           ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
           ctx.strokeStyle = 'rgba(248, 250, 252, 0.35)';
@@ -176,7 +184,8 @@ export function Globe({ points, self, latest }: Props) {
         }
         const a = project(arc.from);
         const b = project(arc.to);
-        if (a.z > 0.4 || b.z > 0.4) continue;
+        // 两端都得在正对我们的这半球上，否则弧线会穿过球体画出来。
+        if (a.facing < 0.15 || b.facing < 0.15) continue;
         const lift = Math.hypot(b.x - a.x, b.y - a.y) * 0.35;
         const mx = (a.x + b.x) / 2;
         const my = (a.y + b.y) / 2 - lift;
