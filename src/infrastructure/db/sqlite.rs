@@ -20,6 +20,21 @@ pub struct UserRow {
     pub password_hash: String,
 }
 
+/// A programmatic access token (MCP / skills). Only the SHA-256 hash of the
+/// plaintext is stored — the secret itself is shown once at creation.
+#[derive(Debug, Clone)]
+pub struct ApiTokenRow {
+    pub id: String,
+    pub name: String,
+    pub prefix: String,
+    pub token_hash: String,
+    pub scope: String,
+    /// JSON array of permission ids granted to this token.
+    pub permissions: String,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -90,6 +105,17 @@ impl Database {
                 finished_at TEXT,
                 retry_count INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (task_id) REFERENCES automation_tasks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS api_tokens (
+                id           TEXT PRIMARY KEY NOT NULL,
+                name         TEXT NOT NULL DEFAULT '',
+                prefix       TEXT NOT NULL DEFAULT '',
+                token_hash   TEXT NOT NULL UNIQUE,
+                scope        TEXT NOT NULL DEFAULT 'read',
+                permissions  TEXT NOT NULL DEFAULT '[]',
+                created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                last_used_at TEXT
             );
             ",
         )?;
@@ -451,6 +477,90 @@ impl Database {
     pub fn remove_log_source(&self, id: &str) -> Result<bool> {
         let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
         let n = conn.execute("DELETE FROM log_sources WHERE id = ?1", params![id])?;
+        Ok(n > 0)
+    }
+
+    // ── API Tokens ──
+
+    const TOKEN_COLS: &'static str =
+        "id, name, prefix, token_hash, scope, permissions, created_at, last_used_at";
+
+    fn map_token_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ApiTokenRow> {
+        Ok(ApiTokenRow {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            prefix: row.get(2)?,
+            token_hash: row.get(3)?,
+            scope: row.get(4)?,
+            permissions: row.get(5)?,
+            created_at: row.get(6)?,
+            last_used_at: row.get(7)?,
+        })
+    }
+
+    pub fn create_api_token(
+        &self,
+        id: &str,
+        name: &str,
+        prefix: &str,
+        token_hash: &str,
+        scope: &str,
+        permissions_json: &str,
+    ) -> Result<ApiTokenRow> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO api_tokens(id, name, prefix, token_hash, scope, permissions)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, name, prefix, token_hash, scope, permissions_json],
+        )?;
+        conn.query_row(
+            &format!("SELECT {} FROM api_tokens WHERE id = ?1", Self::TOKEN_COLS),
+            params![id],
+            Self::map_token_row,
+        )
+        .map_err(Into::into)
+    }
+
+    pub fn list_api_tokens(&self) -> Result<Vec<ApiTokenRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM api_tokens ORDER BY created_at ASC",
+            Self::TOKEN_COLS
+        ))?;
+        let rows = stmt.query_map([], Self::map_token_row)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// Lookup is by hash, never by plaintext — the plaintext is not stored.
+    pub fn find_api_token_by_hash(&self, token_hash: &str) -> Result<Option<ApiTokenRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM api_tokens WHERE token_hash = ?1",
+            Self::TOKEN_COLS
+        ))?;
+        stmt.query_row(params![token_hash], Self::map_token_row)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    /// Best-effort "last seen" stamp. Failure must never break a tool call,
+    /// so callers ignore the result.
+    pub fn touch_api_token(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    pub fn revoke_api_token(&self, id: &str) -> Result<bool> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let n = conn.execute("DELETE FROM api_tokens WHERE id = ?1", params![id])?;
         Ok(n > 0)
     }
 

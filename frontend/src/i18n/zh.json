@@ -21,7 +21,8 @@
     "logout": "退出登录",
     "switch_lang": "English",
     "collapse": "收起",
-    "expand": "展开"
+    "expand": "展开",
+    "agent": "接入 Codex"
   },
   "theme": {
     "light": "浅色",
@@ -275,6 +276,8 @@
       "automation": {
         "manage": "自动化任务管理"
       }
-    }
+    },
+    "nav.agent": "接入 Codex",
+    "ops.agent.manage": "管理 MCP 令牌与技能"
   }
 }

@@ -24,6 +24,7 @@ import {
   HiOutlineDocumentText,
   HiOutlinePlayCircle,
   HiOutlineClock,
+  HiOutlineCpuChip,
 } from 'react-icons/hi2';
 import { SiDocker } from 'react-icons/si';
 import { cn } from '../../lib/utils';
@@ -59,3 +60,4 @@ export const NavChevronIcon = navIcon(HiOutlineChevronRight);
 export const NavLogViewerIcon = navIcon(HiOutlineDocumentText);
 export const NavTasksIcon = navIcon(HiOutlinePlayCircle);
 export const NavClockIcon = navIcon(HiOutlineClock);
+export const NavAgentIcon = navIcon(HiOutlineCpuChip);

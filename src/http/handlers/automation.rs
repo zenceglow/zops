@@ -137,7 +137,9 @@ async fn list_executions(
     )))
 }
 
-async fn execute_command(cmd: &str) -> String {
+/// Shared with the MCP `ops_automation_task_run` tool so both paths record the
+/// same execution output and status.
+pub(crate) async fn execute_command(cmd: &str) -> String {
     let output = tokio::process::Command::new("sh")
         .arg("-c")
         .arg(cmd)

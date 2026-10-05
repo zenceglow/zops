@@ -16,6 +16,7 @@ import {
   NavTasksIcon,
   NavUpdatesIcon,
   NavUsersIcon,
+  NavAgentIcon,
 } from '../components/icons/nav-icons';
 import { Perm } from '../lib/permissions';
 import {
@@ -42,6 +43,7 @@ const Icons = {
   NavFirewallIcon,
   NavUpdatesIcon,
   NavUsersIcon,
+  NavAgentIcon,
 } as const;
 
 export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
@@ -97,6 +99,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
         ],
       } as SidebarParent,
       { path: '/members', labelKey: 'nav.members', icon: Icons.NavUsersIcon, perm: Perm.NAV_MEMBERS },
+      { path: '/agent', labelKey: 'nav.agent', icon: Icons.NavAgentIcon, perm: Perm.NAV_AGENT },
 
     ],
   },

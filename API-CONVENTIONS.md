@@ -113,6 +113,27 @@ GET    /api/ops/system/overview        requires ops.system.read
 # … service / gateway / log / ssh gated by ops.* permissions
 ```
 
+### Agent surface (MCP / skill)
+
+These carry their own auth (an `ops_…` API token **or** a panel JWT, verified in
+the handler), so they are registered outside the JWT-protected group.
+
+```text
+POST   /api/ops/mcp                    JSON-RPC 2.0: initialize / tools/list / tools/call
+                                       GET returns 405 (no SSE stream)
+GET    /api/ops/skill                  SKILL.md as JSON (any authenticated credential)
+GET    /api/ops/skill/raw              raw markdown, for the install one-liner
+GET    /api/ops/skill/references/troubleshooting
+
+GET    /api/ops/token/list             requires ops.agent.manage
+POST   /api/ops/token/create           body: { name, scope: "read"|"write" }
+                                       → plaintext token returned exactly once
+DELETE /api/ops/token?id=
+```
+
+`scope=read` grants only `ops.*.read` + `ops.service.log`; `scope=write` grants the
+full catalog. `tools/list` hides tools the credential cannot call.
+
 ---
 
 ## 5. Checklist

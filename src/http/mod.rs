@@ -16,6 +16,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::http::handlers::{
     auth, automation, caddyfile, gateway, logs, member, permission, service, setup, ssh, system,
+    mcp, token as token_handler,
 };
 use crate::http::middleware::auth::auth_middleware;
 
@@ -34,6 +35,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/member", member::routes())
         .nest("/permission", permission::routes())
         .nest("/automation", automation::routes())
+        .nest("/token", token_handler::routes())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -42,6 +44,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .nest("/api/ops/auth", auth::public_routes(state.clone()))
         .nest("/api/ops/setup", setup::routes(state.clone()))
+        // Agent surface: these authenticate with an `ops_…` API token (or a
+        // panel JWT) inside the handler, so they must sit outside the JWT group.
+        .nest("/api/ops/mcp", mcp::mcp_routes())
+        .nest("/api/ops/skill", mcp::skill_routes())
         // SSH & log WebSocket authenticate via ?token= inside the handler
         .nest("/api/ops/ssh", ssh::routes())
         .nest("/api/ops/log", logs::public_routes())

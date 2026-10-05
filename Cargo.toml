@@ -28,3 +28,4 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 russh = "0.62"
 base64 = "0.22"
 cron = "0.12"
+sha2 = "0.10"

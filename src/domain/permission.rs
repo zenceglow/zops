@@ -31,6 +31,11 @@ pub const OPS_AUTOMATION_MANAGE: &str = "ops.automation.manage";
 /// Additional navigation permissions.
 pub const NAV_LOG_VIEWER: &str = "nav.logs";
 pub const NAV_AUTOMATION: &str = "nav.automation";
+/// "接入 Codex" page: MCP endpoint + agent tokens + skill install.
+pub const NAV_AGENT: &str = "nav.agent";
+
+/// Manage programmatic access tokens (MCP / skills) and read the skill pack.
+pub const OPS_AGENT_MANAGE: &str = "ops.agent.manage";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PermissionDef {
@@ -78,6 +83,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
             group: "nav",
         },
         PermissionDef {
+            id: NAV_AGENT,
+            group: "nav",
+        },
+        PermissionDef {
             id: OPS_SYSTEM_READ,
             group: "ops",
         },
@@ -119,6 +128,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
         },
         PermissionDef {
             id: OPS_AUTOMATION_MANAGE,
+            group: "ops",
+        },
+        PermissionDef {
+            id: OPS_AGENT_MANAGE,
             group: "ops",
         },
     ]

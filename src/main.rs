@@ -18,6 +18,7 @@ use service::{
     container::ContainerService,
     gateway::GatewayService, logs::LogService, member::MemberService, setup::SetupService,
     system::SystemService,
+    token::TokenService,
 };
 
 fn main() {
@@ -55,6 +56,7 @@ async fn async_main() {
         logs: Arc::new(LogService::new(db.clone())),
         members: Arc::new(MemberService::new(db.clone())),
         automation: Arc::new(AutomationService::new(db.clone())),
+        tokens: Arc::new(TokenService::new(db.clone())),
     });
 
     let router = http::build_router(state);

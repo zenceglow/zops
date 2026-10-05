@@ -21,7 +21,8 @@
     "logout": "Log out",
     "switch_lang": "中文",
     "collapse": "Collapse",
-    "expand": "Expand"
+    "expand": "Expand",
+    "agent": "Connect Codex"
   },
   "theme": {
     "light": "Light",
@@ -275,6 +276,8 @@
       "automation": {
         "manage": "Manage automation"
       }
-    }
+    },
+    "nav.agent": "Connect Codex",
+    "ops.agent.manage": "Manage MCP tokens and skills"
   }
 }

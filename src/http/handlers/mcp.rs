@@ -1,0 +1,636 @@
+//! Agent-facing surface: an MCP server (Streamable HTTP over JSON-RPC 2.0)
+//! plus the Codex skill pack that teaches an agent how to drive it.
+//!
+//! Auth is deliberately *not* the panel JWT group: MCP clients hold a long-lived
+//! `ops_…` token, so these routes verify the token hash themselves. A panel JWT
+//! is also accepted (that is what lets the browser-backed /skill preview work).
+
+use std::sync::Arc;
+
+use axum::{
+    body::Bytes,
+    extract::State,
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use jsonwebtoken::{decode, DecodingKey, Validation};
+use serde_json::{json, Value};
+
+use crate::domain::auth::{AuthUser, Claims};
+use crate::domain::mcp::{self, Request as RpcRequest};
+use crate::domain::permission::{
+    OPS_AUTOMATION_MANAGE, OPS_GATEWAY_CONTROL, OPS_GATEWAY_READ, OPS_GATEWAY_WRITE, OPS_LOG_READ,
+    OPS_MEMBER_MANAGE, OPS_SERVICE_CONTROL, OPS_SERVICE_LOG, OPS_SERVICE_READ, OPS_SYSTEM_READ,
+};
+use crate::domain::token::TOKEN_PREFIX;
+use crate::http::handlers::automation::execute_command;
+use crate::http::AppState;
+use crate::shared::AppError;
+
+// ─────────────────────────── principal ───────────────────────────
+
+/// Who is calling: an agent token, or a signed-in operator.
+pub enum Principal {
+    Token {
+        id: String,
+        scope: String,
+        permissions: Vec<String>,
+    },
+    User(Box<AuthUser>),
+}
+
+impl Principal {
+    fn has(&self, permission: &str) -> bool {
+        if permission.is_empty() {
+            return true;
+        }
+        match self {
+            Principal::Token { permissions, .. } => permissions.iter().any(|p| p == permission),
+            Principal::User(user) => user.has(permission),
+        }
+    }
+
+    fn scope(&self) -> String {
+        match self {
+            Principal::Token { scope, .. } => scope.clone(),
+            Principal::User(user) => user.role.clone(),
+        }
+    }
+}
+
+fn bearer(headers: &HeaderMap) -> &str {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim())
+        .and_then(|v| {
+            v.strip_prefix("Bearer ")
+                .or_else(|| v.strip_prefix("bearer "))
+        })
+        .map(str::trim)
+        .unwrap_or("")
+}
+
+fn resolve_principal(state: &AppState, headers: &HeaderMap) -> Result<Principal, AppError> {
+    let presented = bearer(headers);
+    if presented.is_empty() {
+        return Err(AppError::unauthorized("缺少 Authorization: Bearer <token>"));
+    }
+
+    if presented.starts_with(TOKEN_PREFIX) {
+        let row = state
+            .tokens
+            .verify(presented)?
+            .ok_or_else(|| AppError::unauthorized("令牌无效或已撤销"))?;
+        // Usage stamp is best-effort telemetry, not part of the check.
+        state.tokens.touch(&row.id);
+        return Ok(Principal::Token {
+            id: row.id,
+            scope: row.scope,
+            permissions: serde_json::from_str(&row.permissions).unwrap_or_default(),
+        });
+    }
+
+    let claims = decode::<Claims>(
+        presented,
+        &DecodingKey::from_secret(state.auth.jwt_secret().as_bytes()),
+        &Validation::default(),
+    )
+    .map_err(|_| AppError::unauthorized("令牌无效"))?
+    .claims;
+    let user = state.auth.load_auth_user(claims.uid)?;
+    if user.username != claims.sub {
+        return Err(AppError::unauthorized("令牌无效"));
+    }
+    Ok(Principal::User(Box::new(user)))
+}
+
+// ─────────────────────────── tool catalog ───────────────────────────
+
+#[derive(Clone, Copy)]
+enum ToolId {
+    PanelInfo,
+    SystemOverview,
+    ContainerList,
+    ContainerStatus,
+    ContainerStart,
+    ContainerStop,
+    ContainerRestart,
+    ContainerLogs,
+    GatewayStatus,
+    GatewayReload,
+    CaddyfileGet,
+    CaddyfilePut,
+    LogSourceList,
+    LogTail,
+    AutomationTaskList,
+    AutomationTaskRun,
+    MemberList,
+}
+
+struct ToolDef {
+    name: &'static str,
+    description: &'static str,
+    /// Permission required to even see the tool. Empty = always available.
+    permission: &'static str,
+    schema: fn() -> Value,
+    id: ToolId,
+}
+
+fn empty_schema() -> Value {
+    json!({ "type": "object", "properties": {}, "additionalProperties": false })
+}
+
+fn container_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "id": { "type": "string", "description": "容器名或 ID，例如 caddy" }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+    })
+}
+
+fn tool_catalog() -> Vec<ToolDef> {
+    vec![
+        ToolDef {
+            name: "ops_panel_info",
+            description: "面板自身信息：版本、当前凭证的权限范围、可用工具数量。用于确认连通性与授权范围。",
+            permission: "",
+            schema: empty_schema,
+            id: ToolId::PanelInfo,
+        },
+        ToolDef {
+            name: "ops_system_overview",
+            description: "服务器实时负载：CPU、内存、Swap、磁盘、网络、负载均值与进程数。排障第一步先看它。",
+            permission: OPS_SYSTEM_READ,
+            schema: empty_schema,
+            id: ToolId::SystemOverview,
+        },
+        ToolDef {
+            name: "ops_container_list",
+            description: "列出全部 Docker 容器（名称、镜像、状态、端口）。",
+            permission: OPS_SERVICE_READ,
+            schema: empty_schema,
+            id: ToolId::ContainerList,
+        },
+        ToolDef {
+            name: "ops_container_status",
+            description: "Docker 引擎是否可用及版本。",
+            permission: OPS_SERVICE_READ,
+            schema: empty_schema,
+            id: ToolId::ContainerStatus,
+        },
+        ToolDef {
+            name: "ops_container_start",
+            description: "启动一个已停止的容器。会改变线上状态。",
+            permission: OPS_SERVICE_CONTROL,
+            schema: container_schema,
+            id: ToolId::ContainerStart,
+        },
+        ToolDef {
+            name: "ops_container_stop",
+            description: "停止容器。会中断该容器提供的服务，执行前务必让用户确认。",
+            permission: OPS_SERVICE_CONTROL,
+            schema: container_schema,
+            id: ToolId::ContainerStop,
+        },
+        ToolDef {
+            name: "ops_container_restart",
+            description: "重启容器。会短暂中断服务，执行前务必让用户确认。",
+            permission: OPS_SERVICE_CONTROL,
+            schema: container_schema,
+            id: ToolId::ContainerRestart,
+        },
+        ToolDef {
+            name: "ops_container_logs",
+            description: "读取容器最近日志（默认 100 行），用于定位崩溃/报错。",
+            permission: OPS_SERVICE_LOG,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string", "description": "容器名或 ID" },
+                        "tail": { "type": "integer", "description": "返回多少行，默认 100，上限 5000" }
+                    },
+                    "required": ["id"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::ContainerLogs,
+        },
+        ToolDef {
+            name: "ops_gateway_status",
+            description: "Caddy 网关状态（是否在跑、版本、配置文件路径）。",
+            permission: OPS_GATEWAY_READ,
+            schema: empty_schema,
+            id: ToolId::GatewayStatus,
+        },
+        ToolDef {
+            name: "ops_gateway_reload",
+            description: "重载 Caddy 配置。改完 Caddyfile 后调用；配置写错会导致站点 502。",
+            permission: OPS_GATEWAY_CONTROL,
+            schema: empty_schema,
+            id: ToolId::GatewayReload,
+        },
+        ToolDef {
+            name: "ops_caddyfile_get",
+            description: "读取当前 Caddyfile 原文。改配置前先取一份做备份/对比。",
+            permission: OPS_GATEWAY_READ,
+            schema: empty_schema,
+            id: ToolId::CaddyfileGet,
+        },
+        ToolDef {
+            name: "ops_caddyfile_put",
+            description: "用新内容整体替换 Caddyfile（不会自动重载）。影响所有域名，必须让用户确认后再调用。",
+            permission: OPS_GATEWAY_WRITE,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "content": { "type": "string", "description": "完整的 Caddyfile 文本" }
+                    },
+                    "required": ["content"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::CaddyfilePut,
+        },
+        ToolDef {
+            name: "ops_log_source_list",
+            description: "已登记的应用日志文件列表（含路径），路径用于 ops_log_tail。",
+            permission: OPS_LOG_READ,
+            schema: empty_schema,
+            id: ToolId::LogSourceList,
+        },
+        ToolDef {
+            name: "ops_log_tail",
+            description: "读取服务器上某个日志文件的末尾若干行。",
+            permission: OPS_LOG_READ,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "日志文件的绝对路径" },
+                        "lines": { "type": "integer", "description": "返回多少行，默认 200" }
+                    },
+                    "required": ["path"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::LogTail,
+        },
+        ToolDef {
+            name: "ops_automation_task_list",
+            description: "列出已配置的定时任务（名称、cron 表达式、最近/下次执行时间）。",
+            permission: OPS_AUTOMATION_MANAGE,
+            schema: empty_schema,
+            id: ToolId::AutomationTaskList,
+        },
+        ToolDef {
+            name: "ops_automation_task_run",
+            description: "立刻执行某个定时任务（在服务器上跑它配置的 shell 命令）。属于破坏性操作，先确认。",
+            permission: OPS_AUTOMATION_MANAGE,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string", "description": "任务 ID，来自 ops_automation_task_list" }
+                    },
+                    "required": ["id"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::AutomationTaskRun,
+        },
+        ToolDef {
+            name: "ops_member_list",
+            description: "面板成员及其角色与权限。",
+            permission: OPS_MEMBER_MANAGE,
+            schema: empty_schema,
+            id: ToolId::MemberList,
+        },
+    ]
+}
+
+// ─────────────────────────── argument helpers ───────────────────────────
+
+fn require_str(args: &Value, key: &str) -> Result<String, String> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| format!("缺少必填参数 `{key}`（字符串）"))
+}
+
+fn opt_usize(args: &Value, key: &str, default: usize) -> usize {
+    args.get(key)
+        .and_then(Value::as_u64)
+        .map(|v| v as usize)
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+// ─────────────────────────── tool dispatch ───────────────────────────
+
+async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &Value) -> Value {
+    let def = match tool_catalog().into_iter().find(|t| t.name == name) {
+        Some(d) => d,
+        None => return mcp::tool_error(format!("未知工具：{name}")),
+    };
+
+    if !principal.has(def.permission) {
+        return mcp::tool_error(format!(
+            "当前凭证没有权限调用 {name}（需要 {}）。只读令牌需要写权限时，请在面板「接入 Codex」里新建 write 令牌。",
+            def.permission
+        ));
+    }
+
+    // `?` inside the arms must land on this block, not on `call_tool` — the
+    // function returns a tool payload, so failures become `isError` content.
+    let out: Result<Value, AppError> = async {
+        match def.id {
+        ToolId::PanelInfo => Ok(json!({
+            "name": mcp::SERVER_NAME,
+            "version": mcp::SERVER_VERSION,
+            "protocol_version": mcp::PROTOCOL_VERSION,
+            "credential_scope": principal.scope(),
+            "available_tools": tool_catalog()
+                .iter()
+                .filter(|t| principal.has(t.permission))
+                .count(),
+        })),
+        ToolId::SystemOverview => Ok(serde_json::to_value(state.system.overview()).unwrap_or(Value::Null)),
+        ToolId::ContainerList => Ok(
+            serde_json::to_value(state.containers.list().await?).unwrap_or(Value::Null),
+        ),
+        ToolId::ContainerStatus => {
+            Ok(serde_json::to_value(state.containers.status()).unwrap_or(Value::Null))
+        }
+        ToolId::ContainerStart => {
+            let id = require_str(args, "id").map_err(AppError::bad_request)?;
+            state.containers.start(&id).await?;
+            Ok(json!({ "ok": true, "action": "start", "container": id }))
+        }
+        ToolId::ContainerStop => {
+            let id = require_str(args, "id").map_err(AppError::bad_request)?;
+            state.containers.stop(&id).await?;
+            Ok(json!({ "ok": true, "action": "stop", "container": id }))
+        }
+        ToolId::ContainerRestart => {
+            let id = require_str(args, "id").map_err(AppError::bad_request)?;
+            state.containers.restart(&id).await?;
+            Ok(json!({ "ok": true, "action": "restart", "container": id }))
+        }
+        ToolId::ContainerLogs => {
+            let id = require_str(args, "id").map_err(AppError::bad_request)?;
+            let tail = opt_usize(args, "tail", 100).min(5000);
+            state.containers.logs(&id, tail).await
+        }
+        ToolId::GatewayStatus => {
+            Ok(serde_json::to_value(state.gateway.status()).unwrap_or(Value::Null))
+        }
+        ToolId::GatewayReload => {
+            state.gateway.reload()?;
+            Ok(json!({ "ok": true, "action": "reload" }))
+        }
+        ToolId::CaddyfileGet => Ok(serde_json::to_value(state.caddyfile.get().await?).unwrap_or(Value::Null)),
+        ToolId::CaddyfilePut => {
+            let content = require_str(args, "content").map_err(AppError::bad_request)?;
+            state.caddyfile.update(content).await
+        }
+        ToolId::LogSourceList => Ok(json!({ "sources": state.logs.list_sources()? })),
+        ToolId::LogTail => {
+            let path = require_str(args, "path").map_err(AppError::bad_request)?;
+            let lines = opt_usize(args, "lines", 200).min(2000);
+            Ok(serde_json::to_value(state.logs.tail_file(&path, lines).await?).unwrap_or(Value::Null))
+        }
+        ToolId::AutomationTaskList => Ok(json!({ "tasks": state.automation.list_tasks()? })),
+        ToolId::AutomationTaskRun => {
+            let id = require_str(args, "id").map_err(AppError::bad_request)?;
+            let task = state.automation.get_task(&id)?;
+            // Same execution bookkeeping the panel uses, including the
+            // background shell run so the HTTP call returns immediately.
+            let exec = state.automation.record_execution(&id, "", "running", 0)?;
+            let exec_id = exec.id.clone();
+            let svc = state.automation.clone();
+            let command = task.command.clone();
+            tokio::spawn(async move {
+                let output = execute_command(&command).await;
+                let status = if output.starts_with("[ERROR]") { "failed" } else { "success" };
+                let _ = svc.update_execution(&exec_id, status, Some(&output));
+            });
+            state.automation.mark_task_run(&id, &task.cron_expr).ok();
+            Ok(json!({
+                "ok": true,
+                "execution_id": exec.id,
+                "task": task.name,
+                "command": task.command,
+                "note": "已在后台执行，可用面板「自动化」页查看输出"
+            }))
+        }
+            ToolId::MemberList => Ok(json!({ "members": state.members.list()? })),
+        }
+    }
+    .await;
+
+    match out {
+        Ok(value) => mcp::tool_json(&value),
+        Err(err) => mcp::tool_error(err.message),
+    }
+}
+
+// ─────────────────────────── JSON-RPC handling ───────────────────────────
+
+fn json_response(status: StatusCode, body: Value) -> Response {
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.to_string(),
+    )
+        .into_response()
+}
+
+fn rpc_error(status: StatusCode, id: Value, code: i64, message: impl Into<String>) -> Response {
+    json_response(status, mcp::error(id, code, message))
+}
+
+async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest) -> Response {
+    // Notifications carry no id and must not be answered.
+    let Some(id) = req.id.clone() else {
+        return StatusCode::ACCEPTED.into_response();
+    };
+
+    match req.method.as_str() {
+        "initialize" => {
+            let requested = req
+                .params
+                .get("protocolVersion")
+                .and_then(Value::as_str)
+                .unwrap_or(mcp::PROTOCOL_VERSION);
+            json_response(
+                StatusCode::OK,
+                mcp::result(
+                    id,
+                    json!({
+                        "protocolVersion": mcp::supported_protocol_version(requested),
+                        "capabilities": { "tools": { "listChanged": false } },
+                        "serverInfo": { "name": mcp::SERVER_NAME, "version": mcp::SERVER_VERSION },
+                        "instructions": mcp::INSTRUCTIONS
+                    }),
+                ),
+            )
+        }
+        "ping" => json_response(StatusCode::OK, mcp::result(id, json!({}))),
+        "tools/list" => {
+            let tools: Vec<Value> = tool_catalog()
+                .into_iter()
+                // Hide what this credential cannot call: an agent that never
+                // sees a tool cannot be tempted to misuse it.
+                .filter(|t| principal.has(t.permission))
+                .map(|t| {
+                    json!({
+                        "name": t.name,
+                        "description": t.description,
+                        "inputSchema": (t.schema)()
+                    })
+                })
+                .collect();
+            json_response(StatusCode::OK, mcp::result(id, json!({ "tools": tools })))
+        }
+        "tools/call" => {
+            let name = match req.params.get("name").and_then(Value::as_str) {
+                Some(n) => n.to_string(),
+                None => {
+                    return rpc_error(
+                        StatusCode::OK,
+                        id,
+                        mcp::INVALID_PARAMS,
+                        "tools/call 需要参数 name",
+                    )
+                }
+            };
+            let args = req
+                .params
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            let result = call_tool(state, principal, &name, &args).await;
+            json_response(StatusCode::OK, mcp::result(id, result))
+        }
+        other => rpc_error(
+            StatusCode::OK,
+            id,
+            mcp::METHOD_NOT_FOUND,
+            format!("不支持的方法：{other}"),
+        ),
+    }
+}
+
+async fn mcp_post(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let principal = match resolve_principal(&state, &headers) {
+        Ok(p) => p,
+        Err(err) => {
+            return json_response(
+                StatusCode::UNAUTHORIZED,
+                mcp::error(Value::Null, mcp::INVALID_REQUEST, err.message),
+            )
+        }
+    };
+
+    let req: RpcRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => {
+            return rpc_error(
+                StatusCode::BAD_REQUEST,
+                Value::Null,
+                mcp::PARSE_ERROR,
+                format!("请求不是合法 JSON：{e}"),
+            )
+        }
+    };
+
+    handle_rpc(&state, &principal, req).await
+}
+
+/// MCP allows servers to skip the optional SSE stream. Answering 405 is
+/// spec-compliant and keeps clients on the POST path.
+async fn mcp_get() -> Response {
+    json_response(
+        StatusCode::METHOD_NOT_ALLOWED,
+        json!({
+            "jsonrpc": "2.0",
+            "id": null,
+            "error": {
+                "code": -32600,
+                "message": "本服务只支持 POST 的 JSON-RPC（未开 SSE 流）"
+            }
+        }),
+    )
+}
+
+// ─────────────────────────── skill pack ───────────────────────────
+
+async fn skill(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    // Any authenticated credential may read the skill pack. It is documentation
+    // that ships in the repo, not a secret — gating it behind `ops.agent.manage`
+    // would mean a read-only token could drive the MCP but not learn how to.
+    let _ = resolve_principal(&state, &headers)?;
+    Ok(Json(json!({
+        "name": crate::domain::mcp::SKILL_NAME,
+        "filename": "SKILL.md",
+        "content": crate::domain::mcp::SKILL_CONTENT,
+    })))
+}
+
+/// Raw markdown, so the install one-liner can pipe it straight into a file:
+/// `curl -H "Authorization: Bearer ops_…" …/skill/raw > ~/.agents/skills/…`
+async fn skill_raw(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let _ = resolve_principal(&state, &headers)?;
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
+        crate::domain::mcp::SKILL_CONTENT,
+    )
+        .into_response())
+}
+
+pub fn mcp_routes() -> Router<Arc<AppState>> {
+    Router::new().route("/", post(mcp_post).get(mcp_get))
+}
+
+pub fn skill_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/", get(skill))
+        .route("/raw", get(skill_raw))
+        .route("/references/troubleshooting", get(skill_troubleshooting))
+}
+
+/// Referenced by SKILL.md, so the install one-liner has to fetch it too —
+/// otherwise the agent gets a skill that points at a file nobody copied.
+async fn skill_troubleshooting(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let _ = resolve_principal(&state, &headers)?;
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
+        crate::domain::mcp::SKILL_REF_TROUBLESHOOTING,
+    )
+        .into_response())
+}

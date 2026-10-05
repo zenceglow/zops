@@ -9,6 +9,9 @@ use crate::shared::AppError;
 pub struct GatewayStatus {
     pub installed: bool,
     pub running: bool,
+    /// `docker` | `binary` | `none` — how the panel is driving Caddy.
+    pub runtime: String,
+    pub container: Option<String>,
     pub version: String,
     pub pid: Option<i32>,
     pub bin_path: String,
@@ -20,6 +23,8 @@ impl From<GatewayStatusSnapshot> for GatewayStatus {
         Self {
             installed: s.installed,
             running: s.running,
+            runtime: s.runtime,
+            container: s.container,
             version: s.version,
             pid: s.pid,
             bin_path: s.bin_path,

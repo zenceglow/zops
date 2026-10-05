@@ -8,3 +8,6 @@
 *.db-wal
 *.log
 .env
+
+# wrangler 本地状态
+.wrangler/

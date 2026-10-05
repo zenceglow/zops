@@ -5,6 +5,7 @@ use crate::service::{
     container::ContainerService,
     gateway::GatewayService, logs::LogService, member::MemberService, setup::SetupService,
     system::SystemService,
+    token::TokenService,
 };
 
 pub struct AppState {
@@ -17,4 +18,6 @@ pub struct AppState {
     pub logs: Arc<LogService>,
     pub members: Arc<MemberService>,
     pub automation: Arc<AutomationService>,
+    /// Agent access tokens (MCP / skills). Verified by `handlers::mcp`.
+    pub tokens: Arc<TokenService>,
 }

@@ -9,3 +9,4 @@ pub mod logs;
 pub mod member;
 pub mod setup;
 pub mod system;
+pub mod token;
