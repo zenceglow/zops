@@ -46,7 +46,7 @@ async fn async_main() {
     let db = Arc::new(Database::open(&cfg.db_path()).expect("打开数据库失败"));
     let jwt_secret = db.ensure_jwt_secret().expect("JWT secret");
 
-    let setup = Arc::new(SetupService::new(db.clone(), cfg.port));
+    let setup = Arc::new(SetupService::new(db.clone(), cfg.port, cfg.default_lang.clone()));
     setup.ensure_banner_if_needed().expect("setup banner");
 
     let sys = Arc::new(SysInfoProvider::new());

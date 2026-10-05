@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import i18n from '../i18n/i18n';
 import { getSetupStatus } from '../pages/setup/_api';
 
 export function SetupGate({ children }: { children: React.ReactNode }) {
@@ -14,6 +15,12 @@ export function SetupGate({ children }: { children: React.ReactNode }) {
       .then((res) => {
         if (!cancelled) {
           setInitialized(!!res.data?.initialized);
+          // 安装时选的语言就是面板的默认语言。用户自己切过一次之后
+          // localStorage 里就有值了，那种情况以他的选择为准，不再覆盖。
+          const lang = res.data?.default_lang;
+          if (lang && !localStorage.getItem('ops-lang') && i18n.language !== lang) {
+            void i18n.changeLanguage(lang);
+          }
           setReady(true);
         }
       })

@@ -7,6 +7,8 @@ pub struct Config {
     pub caddyfile_path: String,
     /// 服务的部署根目录。每个服务一个子目录。
     pub deploy_dir: PathBuf,
+    /// 界面默认语言。安装脚本写进来的 `OPS_DEFAULT_LANG`；空串 = 跟随浏览器。
+    pub default_lang: String,
 }
 
 impl Config {
@@ -27,11 +29,24 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/opt/docker-apps"));
 
+        // 只认 en / zh，别的一律当没设 —— 一个拼错的取值不该让界面变成空白。
+        let default_lang = match std::env::var("OPS_DEFAULT_LANG")
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase()
+            .as_str()
+        {
+            "en" => "en".to_string(),
+            "zh" => "zh".to_string(),
+            _ => String::new(),
+        };
+
         Self {
             port,
             data_dir,
             caddyfile_path,
             deploy_dir,
+            default_lang,
         }
     }
 

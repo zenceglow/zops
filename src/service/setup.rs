@@ -8,11 +8,16 @@ use crate::shared::AppError;
 pub struct SetupService {
     db: Arc<Database>,
     port: u16,
+    default_lang: String,
 }
 
 impl SetupService {
-    pub fn new(db: Arc<Database>, port: u16) -> Self {
-        Self { db, port }
+    pub fn new(db: Arc<Database>, port: u16, default_lang: String) -> Self {
+        Self {
+            db,
+            port,
+            default_lang,
+        }
     }
 
     pub fn ensure_banner_if_needed(&self) -> Result<(), AppError> {
@@ -27,6 +32,7 @@ impl SetupService {
         Ok(SetupStatus {
             initialized: self.db.is_initialized().map_err(AppError::from)?,
             port: self.port,
+            default_lang: self.default_lang.clone(),
         })
     }
 

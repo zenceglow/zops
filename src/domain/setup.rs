@@ -15,4 +15,7 @@ pub fn validate_admin_credentials(username: &str, password: &str) -> Result<(), 
 pub struct SetupStatus {
     pub initialized: bool,
     pub port: u16,
+    /// 面板界面默认用哪种语言。安装时选的那个 —— 空串表示"没指定，由浏览器
+    /// 自己判断"（用户手动切过一次之后以他的选择为准，这里就管不着了）。
+    pub default_lang: String,
 }
