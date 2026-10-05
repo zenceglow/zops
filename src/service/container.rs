@@ -46,4 +46,12 @@ impl ContainerService {
         let logs = self.docker.logs(id, tail).await?;
         Ok(serde_json::json!({ "logs": logs }))
     }
+
+    /// 清理垃圾（悬空镜像 / 已停止容器 / 未使用网络）。不碰卷。
+    pub async fn prune(
+        &self,
+        what: &crate::infrastructure::docker::PruneRequest,
+    ) -> Result<crate::infrastructure::docker::PruneResult, AppError> {
+        self.docker.prune(what).await
+    }
 }

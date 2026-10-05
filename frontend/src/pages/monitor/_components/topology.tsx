@@ -95,11 +95,6 @@ export function Topology({
 
   return (
     <div className="rounded-2xl border border-border/60 px-4 py-4">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-sm font-medium">{t('topology.title')}</span>
-        <span className="text-xs text-muted-foreground">{t('topology.desc')}</span>
-      </div>
-
       <svg viewBox={`0 0 ${W} ${H}`} className="h-[300px] w-full sm:h-[340px]" role="img" aria-label={t('topology.title')}>
         <defs>
           <radialGradient id="globe-fill" cx="38%" cy="32%">

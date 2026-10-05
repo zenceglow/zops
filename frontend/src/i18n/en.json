@@ -349,7 +349,20 @@
     "more": "More details",
     "todo": "To-do",
     "todo_empty": "Reserved — tell me what goes here.",
-    "monitor": "Monitor"
+    "monitor": "Monitor",
+    "score": "Server health",
+    "score_unit": "/ 100",
+    "score_good": "Good",
+    "score_fair": "Fair",
+    "score_poor": "Needs attention",
+    "score_clean": "All metrics in the healthy range — nothing deducted.",
+    "metric_cpu": "CPU",
+    "metric_memory": "Memory",
+    "metric_disk": "Disk",
+    "metric_swap": "Swap",
+    "metric_loadPct": "Load",
+    "cleanup": "Clean up",
+    "patch": "Patch"
   },
   "net": {
     "realtime": "Live",
@@ -379,5 +392,18 @@
     "desc": "Internet → site entry → container, matched by port",
     "to_port": "to port",
     "empty": "No site entries yet"
+  },
+  "cleanup": {
+    "title": "Clean up",
+    "desc": "Only removes things nothing is using: dangling images, stopped containers, unused networks.",
+    "junk_images": "Dangling images (untagged, unreferenced)",
+    "junk_containers": "Stopped containers",
+    "junk_networks": "Networks with no containers",
+    "volume_note": "Data volumes are never touched.",
+    "run": "Clean up",
+    "running": "Cleaning…",
+    "done": "Removed {{count}} items, freed {{size}}",
+    "nothing": "Nothing to clean up.",
+    "fail": "Cleanup failed"
   }
 }

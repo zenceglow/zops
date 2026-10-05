@@ -349,7 +349,20 @@
     "more": "更多详情",
     "todo": "待办",
     "todo_empty": "这块先留着，等你定要放什么。",
-    "monitor": "监控"
+    "monitor": "监控",
+    "score": "服务器运行评分",
+    "score_unit": "分",
+    "score_good": "良好",
+    "score_fair": "一般",
+    "score_poor": "需要注意",
+    "score_clean": "各项都在健康区间，没有扣分项。",
+    "metric_cpu": "CPU",
+    "metric_memory": "内存",
+    "metric_disk": "磁盘",
+    "metric_swap": "Swap",
+    "metric_loadPct": "负载",
+    "cleanup": "垃圾清理",
+    "patch": "漏洞修复"
   },
   "net": {
     "realtime": "实时",
@@ -379,5 +392,18 @@
     "desc": "外网 → 站点入口 → 容器，中间按端口匹配",
     "to_port": "指向",
     "empty": "还没有配置站点入口"
+  },
+  "cleanup": {
+    "title": "垃圾清理",
+    "desc": "只清理没人还在用的东西：悬空镜像、已停止容器、没有接入的网络。",
+    "junk_images": "悬空镜像（没标签、没容器引用）",
+    "junk_containers": "已停止的容器",
+    "junk_networks": "没有被接入的网络",
+    "volume_note": "不会动数据卷。",
+    "run": "开始清理",
+    "running": "清理中…",
+    "done": "已清理 {{count}} 项，释放 {{size}}",
+    "nothing": "没有可清理的内容。",
+    "fail": "清理失败"
   }
 }

@@ -99,6 +99,17 @@ async fn logs(
     Ok(Json(ApiResponse::ok(data)))
 }
 
+/// 清理垃圾。要显式指定清哪几类 —— 不给默认值，免得前端漏传一个参数就把
+/// 用户没打算删的东西删了。
+async fn prune(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<crate::infrastructure::docker::PruneRequest>,
+) -> Result<Json<ApiResponse<crate::infrastructure::docker::PruneResult>>, AppError> {
+    require_perm(&user, OPS_SERVICE_CONTROL)?;
+    Ok(Json(ApiResponse::ok(state.containers.prune(&body).await?)))
+}
+
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/list", get(list))
@@ -106,6 +117,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/start", post(start))
         .route("/stop", post(stop))
         .route("/restart", post(restart))
+        .route("/prune", post(prune))
         .route("/", delete(remove))
         .route("/log", get(logs))
 }

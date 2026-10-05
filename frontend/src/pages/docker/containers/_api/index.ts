@@ -38,4 +38,18 @@ export async function containerAction(id: string, action: 'start' | 'stop' | 're
   if (!res.success) throw new Error(res.message || 'Failed');
 }
 
+export interface PruneResult {
+  containers: number;
+  images: number;
+  networks: number;
+  bytes: number;
+}
+
+/** 清理垃圾。默认只清"没人还在用"的三类；卷不在接口里，后端也不动它。 */
+export async function pruneJunk(what: { containers: boolean; images: boolean; networks: boolean }) {
+  const res = await post<PruneResult>('/service/prune', what);
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
+}
+
 export type { ContainerInfo, DockerStatus };

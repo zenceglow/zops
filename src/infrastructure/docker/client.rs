@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use bollard::image::PruneImagesOptions;
 use bollard::container::{
     InspectContainerOptions, ListContainersOptions, LogsOptions, RemoveContainerOptions,
     MemoryStatsStats, Stats, StatsOptions, StopContainerOptions,
@@ -23,6 +24,27 @@ use crate::shared::AppError;
 /// 请求变成 500。
 fn short_id(id: &str) -> String {
     id.get(..12).unwrap_or(id).to_string()
+}
+
+/// 清理垃圾时"要清哪些"。
+///
+/// 只有这三类，是因为 bollard 这个版本没有构建缓存的 prune 接口 —— 不为了凑数去
+/// 调 docker CLI 再解析人类可读的 "1.2GB"，那种解析很脆。卷同样不在里面：卷里是
+/// 数据，"没在使用"不等于"可以删"。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct PruneRequest {
+    pub containers: bool,
+    pub images: bool,
+    pub networks: bool,
+}
+
+/// 各项删掉的数量 + 合计释放的空间。
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct PruneResult {
+    pub containers: i64,
+    pub images: i64,
+    pub networks: i64,
+    pub bytes: i64,
 }
 
 /// 端口映射的线上格式：`宿主ip:宿主端口-容器端口`，多条用逗号分隔。
@@ -403,6 +425,50 @@ impl DockerClient {
             .stop_container(id, None::<StopContainerOptions>)
             .await
             .map_err(|_| AppError::internal("操作失败"))
+    }
+
+    /// 清理垃圾，返回各项释放的字节数。
+    ///
+    /// 只做"没人还在用"的东西：悬空镜像（没标签、没容器引用）、已停止容器、没有
+    /// 容器接入的网络。**刻意不动卷** —— 卷里是数据，"没在使用"和"可以删"是两回事。
+    ///
+    /// 每项都单独返回释放量，因为 Docker 给的就是这个数：做完能说出"清了 1.2 GB"，
+    /// 比一句"清理完成"有意义得多。
+    pub async fn prune(&self, what: &PruneRequest) -> Result<PruneResult, AppError> {
+        let docker = self.docker()?;
+        let mut result = PruneResult::default();
+
+        if what.containers {
+            let r = docker
+                .prune_containers(None::<bollard::container::PruneContainersOptions<String>>)
+                .await
+                .map_err(|_| AppError::internal("清理已停止容器失败"))?;
+            result.containers = r.containers_deleted.map(|v| v.len() as i64).unwrap_or(0);
+            result.bytes += r.space_reclaimed.unwrap_or(0);
+        }
+        if what.images {
+            let r = docker
+                .prune_images(Some(PruneImagesOptions::<String> {
+                    // dangling=true：只删悬空镜像。不加这个会把所有没在跑的镜像
+                    // 都算进去（包括 next 部署要用的那个），那是事故不是清理。
+                    filters: std::collections::HashMap::from([(
+                        "dangling".to_string(),
+                        vec!["true".to_string()],
+                    )]),
+                }))
+                .await
+                .map_err(|_| AppError::internal("清理悬空镜像失败"))?;
+            result.images = r.images_deleted.map(|v| v.len() as i64).unwrap_or(0);
+            result.bytes += r.space_reclaimed.unwrap_or(0);
+        }
+        if what.networks {
+            let r = docker
+                .prune_networks(None::<bollard::network::PruneNetworksOptions<String>>)
+                .await
+                .map_err(|_| AppError::internal("清理未使用网络失败"))?;
+            result.networks = r.networks_deleted.map(|v| v.len() as i64).unwrap_or(0);
+        }
+        Ok(result)
     }
 
     pub async fn restart(&self, id: &str) -> Result<(), AppError> {

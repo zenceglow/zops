@@ -5,6 +5,7 @@ import { formatBytes, formatUptime, useMonitor } from './_hooks/use-monitor';
 import { ContainerGrid } from './_components/container-grid';
 import { GatewayEntry } from './_components/gateway-entry';
 import { NetworkWidget } from './_components/network-widget';
+import { ServerScore } from './_components/server-score';
 import { Stats } from './_components/stats';
 import { Topology } from './_components/topology';
 import { useGatewayEntries } from './_hooks/use-gateway';
@@ -104,10 +105,7 @@ export default function MonitorPage() {
 
       {/* 待办是预留位（还没定要放什么），右边是横向柱状的占用对比。 */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-        <div className="flex flex-col rounded-2xl border border-dashed border-border/70 px-4 py-4">
-          <p className="text-sm font-medium">{t('home.todo')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('home.todo_empty')}</p>
-        </div>
+        <ServerScore sys={sys} diskPct={diskPct} loadPct={loadPct} swapPct={swapPct} />
         <div className="flex flex-col rounded-2xl border border-border/60 px-4 py-4">
           <p className="mb-3 text-sm font-medium">{t('home.monitor')}</p>
           <Stats
