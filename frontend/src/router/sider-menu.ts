@@ -59,6 +59,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { path: '/ssh', labelKey: 'nav.ssh', icon: Icons.NavSshIcon, perm: Perm.NAV_SSH },
       { path: '/files', labelKey: 'nav.files', icon: Icons.NavFilesIcon, perm: Perm.NAV_FILES },
       { path: '/logs', labelKey: 'nav.logs', icon: Icons.NavLogViewerIcon, perm: Perm.NAV_LOG_VIEWER },
+      { path: '/agent', labelKey: 'nav.agent', icon: Icons.NavAgentIcon, perm: Perm.NAV_AGENT },
     ],
   },
   {
@@ -99,7 +100,6 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
         ],
       } as SidebarParent,
       { path: '/members', labelKey: 'nav.members', icon: Icons.NavUsersIcon, perm: Perm.NAV_MEMBERS },
-      { path: '/agent', labelKey: 'nav.agent', icon: Icons.NavAgentIcon, perm: Perm.NAV_AGENT },
 
     ],
   },

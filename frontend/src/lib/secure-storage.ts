@@ -7,6 +7,29 @@ const IDB_NAME = 'zenceglow-ops-secure';
 const IDB_STORE = 'keys';
 const IDB_KEY = 'device-aes-gcm';
 const ENC_PREFIX = 'zgenc1:';
+/** 降级模式的标记：值以明文（未加密）存储。 */
+const PLAIN_PREFIX = 'zgenc0:';
+
+/**
+ * Web Crypto 只在**安全上下文**可用（HTTPS 或 localhost）。
+ *
+ * 面板默认就跑在 http://<服务器IP>:<端口> 这种裸 IP 上 —— 那里 `crypto.subtle`
+ * 是 undefined。之前的实现直接调 `crypto.subtle.generateKey`，导致 persist 的
+ * 第一次写入就抛异常，登录态根本存不下来，面板等于打不开。所以这里必须降级，
+ * 而不是假设环境是 HTTPS。
+ */
+const cryptoAvailable =
+  typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined';
+
+let warnedInsecure = false;
+function warnInsecureOnce() {
+  if (warnedInsecure) return;
+  warnedInsecure = true;
+  console.warn(
+    '[zenceglow-ops] 当前不是安全上下文，浏览器不提供 Web Crypto；' +
+      '登录态将以明文保存在 localStorage。给面板配一个域名走 HTTPS 即可恢复加密存储。',
+  );
+}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -49,6 +72,9 @@ async function idbPut(key: CryptoKey): Promise<void> {
 let keyPromise: Promise<CryptoKey> | null = null;
 
 async function getDeviceKey(): Promise<CryptoKey> {
+  if (!cryptoAvailable) {
+    throw new Error('Web Crypto unavailable (insecure context)');
+  }
   if (!keyPromise) {
     keyPromise = (async () => {
       const existing = await idbGet();
@@ -113,6 +139,10 @@ export const encryptedLocalStorage = {
       if (raw.startsWith(ENC_PREFIX)) {
         return await decryptString(raw);
       }
+      // 非安全上下文下我们自己写的明文值
+      if (raw.startsWith(PLAIN_PREFIX)) {
+        return raw.slice(PLAIN_PREFIX.length);
+      }
       // Migrate legacy plaintext zustand JSON → encrypted
       if (raw.startsWith('{')) {
         await encryptedLocalStorage.setItem(name, raw);
@@ -126,6 +156,11 @@ export const encryptedLocalStorage = {
     }
   },
   setItem: async (name: string, value: string): Promise<void> => {
+    if (!cryptoAvailable) {
+      warnInsecureOnce();
+      localStorage.setItem(name, PLAIN_PREFIX + value);
+      return;
+    }
     const enc = await encryptString(value);
     localStorage.setItem(name, enc);
   },

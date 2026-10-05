@@ -257,6 +257,7 @@ case "$STATUS_JSON" in
   *'"initialized":true'*) INITIALIZED=1 ;;
   *) INITIALIZED=0 ;;
 esac
+CREATED_ADMIN=0
 if [ "$INITIALIZED" = "1" ]; then
   ok "面板已初始化过，跳过创建管理员"
 else
@@ -276,6 +277,7 @@ else
     -H 'Content-Type: application/json' -d "$BODY" 2>&1)" \
     || die "创建管理员失败：$RES"
   ok "管理员已创建"
+  CREATED_ADMIN=1
 fi
 
 # ─────────────────────────── 域名反代 ───────────────────────────
@@ -349,7 +351,19 @@ ${G} ✅ 安装完成${N}
 ${B}=========================================${N}
  面板地址   $HOST
  用户名     $ADMIN_USER
+EOF
+
+if [ "$CREATED_ADMIN" = "1" ]; then
+  cat <<EOF
  密码       $ADMIN_PASS
+EOF
+else
+  cat <<EOF
+ 密码       （沿用原密码，本次未修改）
+EOF
+fi
+
+cat <<EOF
 
  MCP 地址   $HOST/api/ops/mcp
 
