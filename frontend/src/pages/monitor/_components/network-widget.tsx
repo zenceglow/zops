@@ -23,8 +23,13 @@ export function NetworkWidget() {
       to="/system/network"
       className="group flex w-full flex-col gap-4 sm:w-[400px]"
     >
-      {/* Row：左列上下行竖排，右侧走势占满剩余宽度 */}
+      {/* Row：走势占满剩余宽度，上下行竖排靠右 */}
       <div className="flex items-center gap-5">
+        <NetworkSparkline
+          history={net?.history ?? []}
+          height={56}
+          className="min-w-0 flex-1"
+        />
         <div className="flex shrink-0 flex-col gap-2">
           <div className="flex items-baseline gap-2 whitespace-nowrap">
             <span className="w-8 text-[10px] text-muted-foreground">↑ {t('net.up')}</span>
@@ -39,11 +44,6 @@ export function NetworkWidget() {
             </span>
           </div>
         </div>
-        <NetworkSparkline
-          history={net?.history ?? []}
-          height={56}
-          className="min-w-0 flex-1"
-        />
       </div>
 
       {/* Row：网卡数量 · 累计流量 · chevron */}
