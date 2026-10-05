@@ -13,6 +13,7 @@ import {
 } from '../../components/ui/select';
 import { toast } from '../../components/ui/sonner';
 import { cn } from '../../lib/utils';
+import { copyText } from '../../lib/clipboard';
 import { CapabilityGrid, type AgentTool } from './_components/capability-grid';
 import {
   createToken,
@@ -27,12 +28,13 @@ import {
 function CopyBlock({ label, value }: { label?: string; value: string }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
+    // 走统一的复制实现：公网 http 下 navigator.clipboard 不存在，直接用它等于
+    // 点了没反应。失败时明确说"手动选中复制"，别让用户以为已经复制走了。
+    if (await copyText(value)) {
       setDone(true);
       setTimeout(() => setDone(false), 1600);
-    } catch {
-      toast.error('复制失败，请手动选择');
+    } else {
+      toast.error('复制失败，请手动选中这段文本复制');
     }
   };
   return (
@@ -100,11 +102,18 @@ http_headers = { Authorization = "Bearer ${token}" }`,
 }`,
   }[flavor];
 
-  const skillCmd = `mkdir -p ~/.agents/skills/zops/references
+  // 先下到临时文件、成功再挪过去。直接 `curl ... > 目标文件` 的话，令牌写错时
+  // shell 已经把目标文件清空了，curl 再失败 —— 结果是 agent 读到一个空的 SKILL.md，
+  // 比没装还难查。
+  const skillCmd = `D=~/.agents/skills/zops
+mkdir -p "$D/references"
 curl -fsSL -H "Authorization: Bearer ${token}" \\
-  ${origin}/api/ops/skill/raw > ~/.agents/skills/zops/SKILL.md
+  ${origin}/api/ops/skill/raw -o "$D/SKILL.md.new" && mv "$D/SKILL.md.new" "$D/SKILL.md"
 curl -fsSL -H "Authorization: Bearer ${token}" \\
-  ${origin}/api/ops/skill/references/troubleshooting > ~/.agents/skills/zops/references/troubleshooting.md`;
+  ${origin}/api/ops/skill/references/troubleshooting \\
+  -o "$D/references/troubleshooting.md.new" \\
+  && mv "$D/references/troubleshooting.md.new" "$D/references/troubleshooting.md"
+echo "已装到 $D"`;
 
   const create = async () => {
     setBusy(true);
@@ -229,8 +238,15 @@ curl -fsSL -H "Authorization: Bearer ${token}" \\
             label={flavor === 'codex' ? '~/.codex/config.toml' : 'Workbuddy / Cursor / Claude Desktop 等'}
             value={config}
           />
+          {!created && (
+            <p className="text-xs text-amber-600 dark:text-amber-500">
+              上面那段里还是占位令牌，直接粘给 agent 会连不上 —— 先点「新建令牌」，
+              配置会自动带上它。
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">
-            令牌没填的话，先把上面新建的令牌复制进来；走公网 IP 的 http 是明文传输，长期用建议配域名走 HTTPS。
+            新建令牌后这段会自动带上它；刷新页面就拿不到令牌原文了，那时得重新建一个。
+            走公网 IP 的 http 是明文传输，长期用建议配域名走 HTTPS。
           </p>
         </CardContent>
       </Card>
