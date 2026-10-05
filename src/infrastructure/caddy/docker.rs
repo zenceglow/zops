@@ -152,7 +152,8 @@ pub fn fmt(container: &str, raw: &str) -> Result<String, String> {
     use std::io::Write;
 
     let mut child = Command::new("docker")
-        .args(["exec", "-i", container, "caddy", "fmt", "--parser"])
+        // 同上：`--parser` 不存在，stdin 需要显式用 `-` 当路径。
+        .args(["exec", "-i", container, "caddy", "fmt", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

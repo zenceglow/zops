@@ -108,7 +108,28 @@
     "save_fail": "保存失败",
     "site_actions": "站点操作",
     "domain_placeholder": "例如 example.com",
-    "target_placeholder": "例如 localhost:3000 或 /var/www"
+    "target_placeholder": "例如 localhost:3000 或 /var/www",
+    "template": "模板",
+    "template_standard": "规范模板（推荐）",
+    "template_simple": "简洁（只写最少指令）",
+    "template_hint": "规范模板包含安全响应头、gzip/zstd 压缩、JSON 访问日志、扫描器路径拦截和 TLS 配置，与现网站点保持一致。",
+    "directive": {
+      "reverse_proxy": "反向代理",
+      "root": "站点根目录",
+      "file_server": "静态文件服务",
+      "redir": "重定向",
+      "respond": "直接响应",
+      "encode": "压缩",
+      "handle_path": "路径处理",
+      "handle": "处理块",
+      "route": "路由块",
+      "header": "响应头",
+      "header_up": "转发请求头",
+      "header_remove": "删除响应头",
+      "log": "访问日志",
+      "tls": "TLS 配置",
+      "matcher": "匹配器"
+    }
   },
   "docker": {
     "title": "Docker",

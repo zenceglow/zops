@@ -9,6 +9,7 @@ import {
   type GatewayConfig,
   type GatewayStatus,
 } from '../_api';
+import { buildSiteBlock, type SiteTemplate } from '../_lib/site-template';
 
 export function useSites() {
   const { t } = useTranslation();
@@ -22,6 +23,8 @@ export function useSites() {
   const [newDomain, setNewDomain] = useState('');
   const [newType, setNewType] = useState<'proxy' | 'static'>('proxy');
   const [newTarget, setNewTarget] = useState('');
+  // 默认走规范模板：新加的站点应当和现网那些长得一样，而不是一条裸的 reverse_proxy。
+  const [newTemplate, setNewTemplate] = useState<SiteTemplate>('standard');
 
   const fetchAll = useCallback(() => {
     fetchGatewayStatus().then(setStatus).catch(() => {});
@@ -73,19 +76,33 @@ export function useSites() {
     }
   }, [rawEditor, fetchAll, t]);
 
-  const handleAddSite = useCallback(() => {
+  const handleAddSite = useCallback(async () => {
     if (!newDomain || !newTarget) return;
-    const line =
-      newType === 'proxy'
-        ? `${newDomain} {\n    reverse_proxy ${newTarget}\n}`
-        : `${newDomain} {\n    root * ${newTarget}\n    file_server\n}`;
-    const updated = (rawEditor || config?.raw || '').replace(/\n*$/, '') + '\n\n' + line + '\n';
-    setRawEditor(updated);
-    setNewDomain('');
-    setNewTarget('');
-    setShowAdd(false);
-    setMsg(t('sites.saved_reload'));
-  }, [newDomain, newType, newTarget, rawEditor, config, t]);
+    const block = buildSiteBlock({
+      domain: newDomain.trim(),
+      type: newType,
+      target: newTarget.trim(),
+      template: newTemplate,
+    });
+    // 基于编辑器里的内容拼（而不是服务端那份），否则会把用户还没保存的手改覆盖掉。
+    const updated = (rawEditor || config?.raw || '').replace(/\n*$/, '') + '\n\n' + block + '\n';
+
+    try {
+      // 以前这里只往编辑器的缓冲区里追加文本、不落盘：点在「可视化管理」下加站点，
+      // 什么都不会发生（列表不变、文件也没写），得再切到「配置文件」手动保存一次。
+      await saveGatewayConfig(updated);
+      // 存完取回服务端格式化后的版本，本地拼的缩进和真实文件才对得上。
+      const fresh = await fetchGatewayConfig();
+      setConfig(fresh);
+      setRawEditor(fresh.raw);
+      setNewDomain('');
+      setNewTarget('');
+      setShowAdd(false);
+      setMsg(t('sites.saved_reload'));
+    } catch (e) {
+      setMsg(`${t('sites.save_fail')}: ${e instanceof Error ? e.message : ''}`);
+    }
+  }, [newDomain, newType, newTarget, newTemplate, rawEditor, config, fetchAll, t]);
 
   return {
     status,
@@ -104,6 +121,8 @@ export function useSites() {
     setNewType,
     newTarget,
     setNewTarget,
+    newTemplate,
+    setNewTemplate,
     serverAction,
     handleInstall,
     saveConfig,

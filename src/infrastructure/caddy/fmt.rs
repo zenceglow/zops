@@ -5,7 +5,11 @@ pub async fn fmt_caddyfile(bin: &str, raw: String) -> Result<String, AppError> {
     tokio::task::spawn_blocking(move || -> Result<String, String> {
         let mut child = std::process::Command::new(&bin)
             .arg("fmt")
-            .arg("--parser")
+            // 从 stdin 读、结果打到 stdout。`--parser` 这个参数并不存在（那是当初
+            // 想当然写的），caddy 会直接以 "unknown flag: --parser" 退出，于是
+            // 「保存配置」永远失败；而且读 stdin 必须显式给一个 `-` 当路径，
+            // 否则 caddy 会去找默认的 Caddyfile。
+            .arg("-")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

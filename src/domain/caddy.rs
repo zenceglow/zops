@@ -44,6 +44,20 @@ pub fn parse_caddyfile(raw: &str) -> Caddyfile {
             continue;
         }
 
+        // 顶部的全局选项块：整份 Caddyfile 只有一个，写法就是光秃秃一个 `{`。
+        // 之前这里按"站点块"处理，地址取到空字符串，于是界面上会多出一张没有域名、
+        // 只装着 email 的卡片，而真正的全局配置（preamble）反而是空的。
+        if line == "{" {
+            let start = pos - 1;
+            let (_, consumed) = parse_block(&lines, pos);
+            pos += consumed;
+            for l in &lines[start..pos] {
+                preamble_lines.push(l.to_string());
+            }
+            in_preamble = false;
+            continue;
+        }
+
         if line.contains('{') && !line.starts_with('}') {
             in_preamble = false;
             let addr = line.trim_end_matches('{').trim().to_string();

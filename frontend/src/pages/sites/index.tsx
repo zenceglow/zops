@@ -183,6 +183,22 @@ export default function SitesPage() {
                 placeholder={t('sites.target_placeholder')}
               />
             </div>
+            <div className="space-y-2">
+              <Label>{t('sites.template')}</Label>
+              <Select
+                value={s.newTemplate}
+                onValueChange={(v) => s.setNewTemplate(v as 'standard' | 'simple')}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standard">{t('sites.template_standard')}</SelectItem>
+                  <SelectItem value="simple">{t('sites.template_simple')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t('sites.template_hint')}</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => s.setShowAdd(false)}>

@@ -108,7 +108,28 @@
     "save_fail": "Save failed",
     "site_actions": "Site Actions",
     "domain_placeholder": "e.g. example.com",
-    "target_placeholder": "e.g. localhost:3000 or /var/www"
+    "target_placeholder": "e.g. localhost:3000 or /var/www",
+    "template": "Template",
+    "template_standard": "Standard (recommended)",
+    "template_simple": "Minimal",
+    "template_hint": "The standard template adds security headers, gzip/zstd, JSON access logs, scanner-path blocking and TLS settings — matching the sites already in production.",
+    "directive": {
+      "reverse_proxy": "Reverse proxy",
+      "root": "Site root",
+      "file_server": "Static files",
+      "redir": "Redirect",
+      "respond": "Respond",
+      "encode": "Compression",
+      "handle_path": "Handle path",
+      "handle": "Handle block",
+      "route": "Route block",
+      "header": "Response headers",
+      "header_up": "Forward request header",
+      "header_remove": "Remove header",
+      "log": "Access log",
+      "tls": "TLS config",
+      "matcher": "Matcher"
+    }
   },
   "docker": {
     "title": "Docker",
