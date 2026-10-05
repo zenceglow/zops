@@ -1,3 +1,4 @@
+pub mod access;
 pub mod bin;
 pub mod docker;
 pub mod fmt;

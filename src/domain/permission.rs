@@ -8,6 +8,8 @@ pub const ROLE_MEMBER: &str = "member";
 
 /// Sidebar permissions.
 pub const NAV_MONITOR: &str = "nav.monitor";
+/// 数据大屏：Caddy 访问日志的统计视图。
+pub const NAV_SCREEN: &str = "nav.screen";
 pub const NAV_SITES: &str = "nav.sites";
 pub const NAV_SSH: &str = "nav.ssh";
 pub const NAV_DOCKER: &str = "nav.docker";
@@ -56,6 +58,10 @@ pub fn all_permissions() -> Vec<PermissionDef> {
     vec![
         PermissionDef {
             id: NAV_MONITOR,
+            group: "nav",
+        },
+        PermissionDef {
+            id: NAV_SCREEN,
             group: "nav",
         },
         PermissionDef {

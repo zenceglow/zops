@@ -197,6 +197,45 @@ impl Database {
                 kind          TEXT NOT NULL DEFAULT 'file',
                 deleted_at    TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            -- 访问流水。从 Caddy 的访问日志里采过来，给数据大屏用。
+            --
+            -- 只存 IP，不存城市：归属地是查出来的、还可能要重查（换了查询源、
+            -- 旧记录当时没查通），放在 geo_cache 里 join 出来，一次修正能覆盖
+            -- 所有历史行。把城市冗余进每一行，改一次就得全表重写。
+            CREATE TABLE IF NOT EXISTS access_events (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts       REAL NOT NULL,
+                ip       TEXT NOT NULL,
+                host     TEXT NOT NULL DEFAULT '',
+                method   TEXT NOT NULL DEFAULT '',
+                uri      TEXT NOT NULL DEFAULT '',
+                status   INTEGER NOT NULL DEFAULT 0,
+                bytes    INTEGER NOT NULL DEFAULT 0,
+                duration_ms REAL NOT NULL DEFAULT 0,
+                ua       TEXT NOT NULL DEFAULT '',
+                source   TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_access_events_ts ON access_events(ts);
+            CREATE INDEX IF NOT EXISTS idx_access_events_ip ON access_events(ip);
+
+            -- IP → 归属地缓存。每个 IP 只问外网一次。
+            CREATE TABLE IF NOT EXISTS geo_cache (
+                ip         TEXT PRIMARY KEY NOT NULL,
+                label      TEXT NOT NULL DEFAULT '',
+                country    TEXT NOT NULL DEFAULT '',
+                city       TEXT NOT NULL DEFAULT '',
+                isp        TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            -- 每个访问日志文件读到哪个字节了。按文件记而不是按行号：日志在长，
+            -- 行号要重数，字节偏移是稳定的。
+            CREATE TABLE IF NOT EXISTS ingest_cursor (
+                source     TEXT PRIMARY KEY NOT NULL,
+                offset     INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             ",
         )?;
 
@@ -1061,6 +1100,291 @@ impl Database {
         }
         Ok(out)
     }
+
+    // ── 访问流水（数据大屏） ──
+
+    /// 批量落库。一条一条 insert 在积压几百行时会明显卡住，用事务包起来。
+    pub fn insert_access_events(&self, events: &[NewAccessEvent]) -> Result<usize> {
+        if events.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO access_events (ts, ip, host, method, uri, status, bytes, duration_ms, ua, source)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            )?;
+            for e in events {
+                stmt.execute(params![
+                    e.ts, e.ip, e.host, e.method, e.uri, e.status, e.bytes, e.duration_ms, e.ua,
+                    e.source
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(events.len())
+    }
+
+    /// 还没查过归属地的 IP。只取出现过的，别去查日志里那些扫描器的垃圾 IP。
+    pub fn access_unknown_ips(&self, limit: i64) -> Result<Vec<String>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT e.ip FROM access_events e
+             LEFT JOIN geo_cache g ON g.ip = e.ip
+             WHERE g.ip IS NULL
+             ORDER BY e.ts DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| row.get::<_, String>(0))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn upsert_geo(&self, rows: &[GeoRow]) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO geo_cache (ip, label, country, city, isp, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+                 ON CONFLICT(ip) DO UPDATE SET
+                    label = excluded.label, country = excluded.country,
+                    city = excluded.city, isp = excluded.isp, updated_at = excluded.updated_at",
+            )?;
+            for r in rows {
+                stmt.execute(params![r.ip, r.label, r.country, r.city, r.isp])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn ingest_cursor(&self, source: &str) -> Result<Option<i64>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare("SELECT offset FROM ingest_cursor WHERE source = ?1")?;
+        let mut rows = stmt.query(params![source])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(row.get(0)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn set_ingest_cursor(&self, source: &str, offset: i64) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO ingest_cursor (source, offset, updated_at) VALUES (?1, ?2, datetime('now'))
+             ON CONFLICT(source) DO UPDATE SET offset = excluded.offset, updated_at = excluded.updated_at",
+            params![source, offset],
+        )?;
+        Ok(())
+    }
+
+    /// 删掉太久以前的记录。访问流水会一直长，没有清理的统计表迟早把磁盘吃满。
+    pub fn prune_access_events(&self, before_ts: f64) -> Result<usize> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        Ok(conn.execute("DELETE FROM access_events WHERE ts < ?1", params![before_ts])?)
+    }
+
+    pub fn access_totals(&self, since: f64) -> Result<(i64, i64)> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let row = conn.query_row(
+            "SELECT COUNT(*), COUNT(DISTINCT ip) FROM access_events WHERE ts >= ?1",
+            params![since],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok(row)
+    }
+
+    /// 按归属地排名。没有归属地记录的算"未知"，不隐藏 —— 藏起来会让人以为
+    /// 总数对得上。
+    pub fn access_top_locations(&self, since: f64, limit: i64) -> Result<Vec<(String, i64)>> {
+        self.group_count(
+            "SELECT COALESCE(NULLIF(g.label, ''), '未知') k, COUNT(*) c
+             FROM access_events e LEFT JOIN geo_cache g ON g.ip = e.ip
+             WHERE e.ts >= ?1 GROUP BY k ORDER BY c DESC LIMIT ?2",
+            since,
+            limit,
+        )
+    }
+
+    pub fn access_top_hosts(&self, since: f64, limit: i64) -> Result<Vec<(String, i64)>> {
+        self.group_count(
+            "SELECT host k, COUNT(*) c FROM access_events
+             WHERE ts >= ?1 GROUP BY k ORDER BY c DESC LIMIT ?2",
+            since,
+            limit,
+        )
+    }
+
+    pub fn access_top_uris(&self, since: f64, limit: i64) -> Result<Vec<(String, i64)>> {
+        self.group_count(
+            "SELECT uri k, COUNT(*) c FROM access_events
+             WHERE ts >= ?1 GROUP BY k ORDER BY c DESC LIMIT ?2",
+            since,
+            limit,
+        )
+    }
+
+    /// 状态码按百位分档：200/300/400/500 各多少，比逐个数好读。
+    pub fn access_status_buckets(&self, since: f64) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT (status / 100) * 100 k, COUNT(*) c FROM access_events
+             WHERE ts >= ?1 GROUP BY k ORDER BY k",
+        )?;
+        let rows = stmt.query_map(params![since], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        Ok(rows
+            .filter_map(|r| r.ok())
+            .map(|(code, count)| {
+                let label = match code {
+                    0 => "其他".to_string(),
+                    c => format!("{c}"),
+                };
+                (label, count)
+            })
+            .collect())
+    }
+
+    /// 每小时的请求数，本地时区。空的小时由服务层补齐，SQL 里不造时间轴。
+    pub fn access_hourly(&self, since: f64) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT strftime('%Y-%m-%d %H', datetime(ts, 'unixepoch', 'localtime')) k, COUNT(*) c
+             FROM access_events WHERE ts >= ?1 GROUP BY k ORDER BY k",
+        )?;
+        let rows = stmt.query_map(params![since], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    fn group_count(&self, sql: &str, since: f64, limit: i64) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map(params![since, limit], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// 最近的访问记录，带上归属地。
+    ///
+    /// `after_id` 给"实时递增"用：只取比它新的，界面上就是一条条往下加。
+    pub fn access_recent(&self, after_id: i64, limit: i64) -> Result<Vec<AccessEventRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT e.id, e.ts, e.ip, e.host, e.method, e.uri, e.status, e.bytes,
+                    e.duration_ms, e.ua, COALESCE(g.label, ''), COALESCE(g.isp, '')
+             FROM access_events e LEFT JOIN geo_cache g ON g.ip = e.ip
+             WHERE e.id > ?1 ORDER BY e.id ASC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![after_id, limit], |row| {
+            Ok(AccessEventRow {
+                id: row.get(0)?,
+                ts: row.get(1)?,
+                ip: row.get(2)?,
+                host: row.get(3)?,
+                method: row.get(4)?,
+                uri: row.get(5)?,
+                status: row.get(6)?,
+                bytes: row.get(7)?,
+                duration_ms: row.get(8)?,
+                ua: row.get(9)?,
+                label: row.get(10)?,
+                isp: row.get(11)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// 最新一条的 id。首次加载时用它当游标，之后的轮询只取更新的。
+    pub fn access_last_id(&self) -> Result<i64> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        Ok(conn.query_row("SELECT COALESCE(MAX(id), 0) FROM access_events", [], |r| {
+            r.get(0)
+        })?)
+    }
+
+    /// 最近 N 条，按时间正序返回（旧 → 新）。
+    ///
+    /// 先倒着取再翻过来，和增量查询的顺序一致；反过来写成
+    /// `ORDER BY id ASC LIMIT n` 会拿到**最早**的 n 条，那是完全不同的一件事。
+    pub fn access_latest(&self, limit: i64) -> Result<Vec<AccessEventRow>> {
+        let mut rows = self.access_recent_desc(limit)?;
+        rows.reverse();
+        Ok(rows)
+    }
+
+    fn access_recent_desc(&self, limit: i64) -> Result<Vec<AccessEventRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT e.id, e.ts, e.ip, e.host, e.method, e.uri, e.status, e.bytes,
+                    e.duration_ms, e.ua, COALESCE(g.label, ''), COALESCE(g.isp, '')
+             FROM access_events e LEFT JOIN geo_cache g ON g.ip = e.ip
+             ORDER BY e.id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(AccessEventRow {
+                id: row.get(0)?,
+                ts: row.get(1)?,
+                ip: row.get(2)?,
+                host: row.get(3)?,
+                method: row.get(4)?,
+                uri: row.get(5)?,
+                status: row.get(6)?,
+                bytes: row.get(7)?,
+                duration_ms: row.get(8)?,
+                ua: row.get(9)?,
+                label: row.get(10)?,
+                isp: row.get(11)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NewAccessEvent {
+    pub ts: f64,
+    pub ip: String,
+    pub host: String,
+    pub method: String,
+    pub uri: String,
+    pub status: i64,
+    pub bytes: i64,
+    pub duration_ms: f64,
+    pub ua: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct GeoRow {
+    pub ip: String,
+    pub label: String,
+    pub country: String,
+    pub city: String,
+    pub isp: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AccessEventRow {
+    pub id: i64,
+    pub ts: f64,
+    pub ip: String,
+    pub host: String,
+    pub method: String,
+    pub uri: String,
+    pub status: i64,
+    pub bytes: i64,
+    pub duration_ms: f64,
+    pub ua: String,
+    pub label: String,
+    pub isp: String,
 }
 
 #[derive(Debug, Clone)]

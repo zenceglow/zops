@@ -22,7 +22,8 @@
     "switch_lang": "English",
     "collapse": "收起",
     "expand": "展开",
-    "agent": "MCP"
+    "agent": "MCP",
+    "screen": "数据大屏"
   },
   "theme": {
     "light": "浅色",
@@ -563,5 +564,49 @@
     "show_source": "查看技能原文（给 agent 读的提示词）",
     "hide_source": "收起技能原文",
     "write_badge": "会改动服务器"
+  },
+  "screen": {
+    "title": "数据大屏",
+    "range_24h": "24 小时",
+    "range_7d": "7 天",
+    "range_30d": "30 天",
+    "total": "访问次数",
+    "visitors": "独立访客",
+    "cities": "来源城市",
+    "per_minute": "每分钟请求",
+    "per_minute_unit": "次",
+    "hourly": "每小时请求",
+    "now": "现在",
+    "top_cities": "来源城市",
+    "top_hosts": "访问域名",
+    "top_paths": "热门路径",
+    "live_title": "实时访问",
+    "live_hint": "每 3 秒自动刷新",
+    "watching": "正在采集 {{count}} 个日志文件",
+    "live_empty": "还没有采到访问记录",
+    "live_empty_hint": "面板每 15 秒从 Caddy 的访问日志里采一次；如果一直为空，检查站点配置里有没有开访问日志。",
+    "col_time": "时间",
+    "col_location": "来源",
+    "col_host": "域名",
+    "col_method": "类型",
+    "col_uri": "URI",
+    "col_status": "状态",
+    "refresh": "刷新"
+  },
+  "about": {
+    "title": "关于",
+    "tagline": "服务器运维面板 · 自托管",
+    "intro": "ZOPS 把一台服务器的观察和操作收进一个界面：负载与容器、Caddy 网关与站点、文件与日志、定时任务，以及暴露给 AI agent 的 MCP 接口。它不需要云账号，装在被管的那台机器上，数据也留在那台机器上。",
+    "version": "版本",
+    "uptime": "已运行",
+    "license": "开源协议",
+    "github": "开源仓库",
+    "contact": "联系我们",
+    "copy": "复制",
+    "email_copied": "邮箱已复制",
+    "uptime_dh": "{{d}} 天 {{h}} 小时",
+    "uptime_hm": "{{h}} 小时 {{m}} 分钟",
+    "uptime_m": "{{m}} 分钟",
+    "footer": "遇到问题、有建议，或者想加个功能，欢迎到仓库提 issue 或直接发邮件。"
   }
 }

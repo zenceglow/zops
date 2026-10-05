@@ -2,6 +2,7 @@
 
 pub mod api_response;
 pub mod error;
+pub mod panel;
 
 pub use api_response::ApiResponse;
 pub use error::AppError;

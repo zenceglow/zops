@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { BrandLogo } from '../brand-logo';
 import { SIDEBAR_GROUPS } from '../../router/sider-menu';
 import { isParent, pathMatches } from '../../lib/sidebar-config';
@@ -30,6 +30,7 @@ function useSectionLabel() {
   const { t } = useTranslation();
   // 这几页不进 Dock，也就不在导航配置里，单独列一下。
   if (pathname === '/profile') return t('profile.title');
+  if (pathname === '/about') return t('about.title');
   if (pathname === '/settings/system') return t('settings.system');
   if (pathname === '/settings/panel') return t('settings.panel');
   for (const group of SIDEBAR_GROUPS) {
@@ -47,6 +48,7 @@ function useSectionLabel() {
 
 export function MenuBar() {
   const user = useUserStore((s) => s.user);
+  const { t } = useTranslation();
   const now = useClock();
   const section = useSectionLabel();
 
@@ -60,9 +62,17 @@ export function MenuBar() {
         'bg-background/70 px-3 text-[11px] backdrop-blur-xl'
       }
     >
-      <BrandLogo className="size-4" />
-      {/* 品牌名不跟随语言切换：它是标识，不是文案。 */}
-      <span className="font-semibold tracking-wide">ZOPS</span>
+      {/* logo 点进关于页 —— 这是"这软件是什么"最自然的位置，也是桌面系统里
+          "关于本机"那一项的等价物。 */}
+      <Link
+        to="/about"
+        title={t('about.title')}
+        className="flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors hover:bg-accent"
+      >
+        <BrandLogo className="size-4" />
+        {/* 品牌名不跟随语言切换：它是标识，不是文案。 */}
+        <span className="font-semibold tracking-wide">ZOPS</span>
+      </Link>
       {section && (
         <>
           <span className="text-muted-foreground/40">|</span>

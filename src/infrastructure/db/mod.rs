@@ -1,4 +1,7 @@
 pub mod password;
 pub mod sqlite;
 
-pub use sqlite::{AuditRow, CaddyfileVersionRow, Database, LogSourceRow, TrashRow};
+pub use sqlite::{
+    AccessEventRow, AuditRow, CaddyfileVersionRow, Database, GeoRow, LogSourceRow, NewAccessEvent,
+    TrashRow,
+};

@@ -15,6 +15,20 @@ use crate::http::middleware::auth::require_perm;
 use crate::http::AppState;
 use crate::shared::{ApiResponse, AppError};
 
+/// 面板自身的信息。关于页用。
+///
+/// 故意**不**要 `ops.system.read`：这是"这个软件是什么、去哪提问题"，任何登录
+/// 用户都该看得到。主机的负载、补丁那些才是要权限的东西。
+async fn panel(Extension(_user): Extension<AuthUser>) -> Json<ApiResponse<serde_json::Value>> {
+    Json(ApiResponse::ok(serde_json::json!({
+        "name": crate::shared::panel::NAME,
+        "version": crate::shared::panel::VERSION,
+        "github": crate::shared::panel::GITHUB,
+        "email": crate::shared::panel::EMAIL,
+        "uptime_seconds": crate::shared::panel::uptime_seconds(),
+    })))
+}
+
 async fn overview(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
@@ -82,6 +96,7 @@ async fn set_timezone(
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/panel", get(panel))
         .route("/overview", get(overview))
         .route("/updates", get(updates))
         .route("/updates/check", post(check_updates))

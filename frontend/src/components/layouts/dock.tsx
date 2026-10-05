@@ -31,6 +31,7 @@ import { cn } from '../../lib/utils';
  */
 const DOCK_ORDER = [
   '/monitor',
+  '/screen',
   '/ssh',
   '/files',
   '/logs',

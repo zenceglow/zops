@@ -25,6 +25,7 @@ import {
   HiPlayCircle,
   HiClock,
   HiCpuChip,
+  HiChartBarSquare,
 } from 'react-icons/hi2';
 import { SiDocker } from 'react-icons/si';
 import { cn } from '../../lib/utils';
@@ -44,6 +45,8 @@ function navIcon(Icon: IconType) {
 // 首页那格是"桌面"，图标就用房子：柱状图在这个尺寸下会被读成信号格，
 // 而且它描述的是"监控"这个能力，不是"回首页"这个动作。
 export const NavHomeIcon = navIcon(HiHome);
+// 大屏用柱状图——这一格本来描述的就是"统计"，和首页的"回桌面"不冲突。
+export const NavScreenIcon = navIcon(HiChartBarSquare);
 export const NavSitesIcon = navIcon(HiGlobeAlt);
 export const NavSshIcon = navIcon(HiCommandLine);
 export const NavFilesIcon = navIcon(HiFolderOpen);

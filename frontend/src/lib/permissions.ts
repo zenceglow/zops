@@ -10,6 +10,7 @@
 
 export const Perm = {
   NAV_MONITOR: 'nav.monitor',
+  NAV_SCREEN: 'nav.screen',
   NAV_SITES: 'nav.sites',
   NAV_SSH: 'nav.ssh',
   NAV_DOCKER: 'nav.docker',

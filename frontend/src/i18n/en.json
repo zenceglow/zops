@@ -22,7 +22,8 @@
     "switch_lang": "中文",
     "collapse": "Collapse",
     "expand": "Expand",
-    "agent": "MCP"
+    "agent": "MCP",
+    "screen": "Screen"
   },
   "theme": {
     "light": "Light",
@@ -563,5 +564,49 @@
     "show_source": "Show the raw skill (the prompt the agent reads)",
     "hide_source": "Hide the raw skill",
     "write_badge": "changes the server"
+  },
+  "screen": {
+    "title": "Screen",
+    "range_24h": "24h",
+    "range_7d": "7d",
+    "range_30d": "30d",
+    "total": "Requests",
+    "visitors": "Unique IPs",
+    "cities": "Cities",
+    "per_minute": "Per minute",
+    "per_minute_unit": "req",
+    "hourly": "Requests per hour",
+    "now": "now",
+    "top_cities": "Top cities",
+    "top_hosts": "Top hosts",
+    "top_paths": "Top paths",
+    "live_title": "Live traffic",
+    "live_hint": "refreshes every 3s",
+    "watching": "tailing {{count}} log file(s)",
+    "live_empty": "No requests captured yet",
+    "live_empty_hint": "The panel tails Caddy's access log every 15s. If it stays empty, check that your sites enable an access log.",
+    "col_time": "Time",
+    "col_location": "From",
+    "col_host": "Host",
+    "col_method": "Method",
+    "col_uri": "URI",
+    "col_status": "Code",
+    "refresh": "Refresh"
+  },
+  "about": {
+    "title": "About",
+    "tagline": "Self-hosted server operations panel",
+    "intro": "ZOPS puts one server's observation and control into a single surface: load and containers, the Caddy gateway and its sites, files and logs, scheduled tasks, and an MCP endpoint for AI agents. No cloud account — it runs on the machine it manages, and the data stays there.",
+    "version": "Version",
+    "uptime": "Uptime",
+    "license": "License",
+    "github": "Repository",
+    "contact": "Contact",
+    "copy": "copy",
+    "email_copied": "Email copied",
+    "uptime_dh": "{{d}}d {{h}}h",
+    "uptime_hm": "{{h}}h {{m}}m",
+    "uptime_m": "{{m}}m",
+    "footer": "Found a bug, have an idea, or want a feature? Open an issue or just send an email."
   }
 }

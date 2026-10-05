@@ -218,7 +218,7 @@ fn is_access_log(path: &Path) -> bool {
 ///
 /// 故意用逐行扫描而不是真正的解析器：漏掉一个路径的代价只是退回到约定路径，而且
 /// 候选路径最后都要过一遍 `stat`，猜错了也不会误报。
-fn log_paths_from_caddyfile(raw: &str) -> Vec<String> {
+pub(super) fn log_paths_from_caddyfile(raw: &str) -> Vec<String> {
     raw.lines()
         .filter_map(|line| {
             let rest = line.trim().strip_prefix("output file ")?;

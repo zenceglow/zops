@@ -14,6 +14,7 @@ use infrastructure::{
     caddy::CaddyProcess, db::Database, docker::DockerClient, system::SysInfoProvider,
 };
 use service::{
+    analytics::AnalyticsService,
     audit::AuditService,
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     files::FilesService,
@@ -36,6 +37,7 @@ fn main() {
 }
 
 async fn async_main() {
+    crate::shared::panel::mark_started();
     let cfg = Config::from_env();
 
     let db = Arc::new(Database::open(&cfg.db_path()).expect("打开数据库失败"));
@@ -51,7 +53,11 @@ async fn async_main() {
     let system = Arc::new(SystemService::new(sys, db.clone()));
     let updates_worker = system.clone();
 
+    let analytics = Arc::new(AnalyticsService::new(db.clone(), caddy.clone()));
+    let analytics_worker = analytics.clone();
+
     let state = Arc::new(AppState {
+        analytics,
         audit: Arc::new(AuditService::new(db.clone())),
         auth: Arc::new(AuthService::new(db.clone(), jwt_secret)),
         setup: setup.clone(),
@@ -80,6 +86,19 @@ async fn async_main() {
         loop {
             let _ = updates_worker.check_updates().await;
             tokio::time::sleep(crate::infrastructure::system::updates::CHECK_INTERVAL).await;
+        }
+    });
+
+    // 访问流水采集。
+    //
+    // 每 15 秒读一次访问日志的增量，顺便把没查过归属地的 IP 补上。放后台而不是
+    // 等页面来问：大屏的"实时"要的是"已经采好了"，不是"打开页面才开始读盘"；
+    // 而且归属地查询要走外网，放在请求路径里会让页面卡住。
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        loop {
+            let _ = analytics_worker.ingest().await;
+            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }
     });
 

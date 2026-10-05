@@ -1,5 +1,6 @@
 //! Service: use-case orchestration. No Axum types.
 
+pub mod analytics;
 pub mod auth;
 pub mod automation;
 pub mod audit;
