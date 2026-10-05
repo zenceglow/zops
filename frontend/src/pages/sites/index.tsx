@@ -14,7 +14,6 @@ import {
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Textarea } from '../../components/ui/textarea';
 import { Badge } from '../../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
@@ -36,6 +35,7 @@ import {
 import { Skeleton } from '../../components/ui/skeleton';
 import { useSites } from './_hooks/use-sites';
 import { DirectiveRow } from './_components/directive-row';
+import { CaddyfileEditor } from './_components/caddyfile-editor';
 
 export default function SitesPage() {
   const { t } = useTranslation();
@@ -267,12 +267,7 @@ export default function SitesPage() {
         <TabsContent value="editor" className="mt-4 space-y-3">
           {s.config && (
             <>
-              <Textarea
-                value={s.rawEditor}
-                onChange={(e) => s.setRawEditor(e.target.value)}
-                className="min-h-[55vh] font-mono text-sm"
-                spellCheck={false}
-              />
+              <CaddyfileEditor value={s.rawEditor} onChange={s.setRawEditor} />
               <div className="flex gap-3">
                 <Button onClick={s.saveConfig}>
                   <Save />
