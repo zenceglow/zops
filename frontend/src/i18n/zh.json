@@ -952,7 +952,19 @@
     "kind_frontend": "前端静态站（不发布宿主端口，网关按容器名反代）",
     "port": "宿主端口",
     "port_auto": "留空自动挑一个空端口（8000-9999）",
-    "spec_hint": "创建时会按这台机器的规范写好骨架：docker-compose.yml（网络 local、restart always、TZ=Asia/Shanghai、日志轮转 50m×10）、Dockerfile、deploy.sh（部署脚本）。已经存在的文件不会被覆盖。"
+    "spec_hint": "创建时会按这台机器的规范写好骨架：docker-compose.yml（网络 local、restart always、TZ=Asia/Shanghai、日志轮转 50m×10）、Dockerfile、deploy.sh（部署脚本）。已经存在的文件不会被覆盖。",
+    "step1_desc": "把要部署的东西传上来（发布包、compose、配置都行）。这一步可以跳过——有些服务只有脚本变化。",
+    "step2_desc": "写这个目录里要执行的部署脚本，写完记得保存。",
+    "step3_desc": "在服务器上的 /opt/docker-apps/<服务名>/ 里执行脚本，输出会实时显示。",
+    "log_hint": "还没执行过。点右上角「执行部署」开始，输出会实时显示在这里。",
+    "state_files": "{{count}} 个产物",
+    "state_no_files": "还没传产物",
+    "state_script_saved": "已保存",
+    "state_script_dirty": "有未保存修改",
+    "state_not_run": "还没执行",
+    "prev": "上一步",
+    "next": "下一步",
+    "finish": "完成"
   },
   "security": {
     "title": "安全中心",

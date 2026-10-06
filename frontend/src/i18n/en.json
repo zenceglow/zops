@@ -952,7 +952,19 @@
     "kind_frontend": "Static frontend (no host port; the gateway proxies by container name)",
     "port": "Host port",
     "port_auto": "Leave empty to pick a free one (8000-9999)",
-    "spec_hint": "Creating writes the house-convention skeleton: docker-compose.yml (network local, restart always, TZ=Asia/Shanghai, 50m×10 log rotation), Dockerfile, deploy.sh. Existing files are never overwritten."
+    "spec_hint": "Creating writes the house-convention skeleton: docker-compose.yml (network local, restart always, TZ=Asia/Shanghai, 50m×10 log rotation), Dockerfile, deploy.sh. Existing files are never overwritten.",
+    "step1_desc": "Upload what you want to deploy (a release package, compose file, configs). Skippable when only the script changed.",
+    "step2_desc": "Write the deploy script that runs inside this directory, then save it.",
+    "step3_desc": "Runs the script in /opt/docker-apps/<name>/ on the server, with live output.",
+    "log_hint": "Not run yet. Hit “Run deploy” in the top-right and the output shows up here live.",
+    "state_files": "{{count}} file(s)",
+    "state_no_files": "No files yet",
+    "state_script_saved": "Saved",
+    "state_script_dirty": "Unsaved changes",
+    "state_not_run": "Not run yet",
+    "prev": "Back",
+    "next": "Next",
+    "finish": "Done"
   },
   "security": {
     "title": "Security",

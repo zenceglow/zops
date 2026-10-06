@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Check,
   ChevronRight,
   CheckCircle2,
   CircleDashed,
@@ -117,6 +118,8 @@ export default function DeployPage() {
 
   const [script, setScript] = useState('');
   const [savingScript, setSavingScript] = useState(false);
+  /** 三步向导当前在第几步。一次只做一件事，别把三步堆在一屏里让人自己找顺序。 */
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
   const [runs, setRuns] = useState<DeployRun[]>([]);
   const [activeRun, setActiveRun] = useState<DeployRun | null>(null);
@@ -127,6 +130,8 @@ export default function DeployPage() {
   const logEndRef = useRef<HTMLPreElement>(null);
 
   const selected = jobs.find((j) => j.id === selectedId) ?? null;
+  /** 编辑器里的脚本和服务器上那份不一样 —— 保存按钮和向导上的状态都看它。 */
+  const dirty = !!selected && script !== selected.script;
 
   const refresh = useCallback(async () => {
     const list = await listJobs();
@@ -183,6 +188,7 @@ export default function DeployPage() {
   useEffect(() => {
     if (!selected) return;
     setScript(selected.script);
+    setStep(1);
     void listRuns(selected.id)
       .then(setRuns)
       .catch(() => setRuns([]));
@@ -511,174 +517,251 @@ export default function DeployPage() {
                 </CardContent>
               </Card>
 
-              {/* ① 产物 */}
-              <Card>
-                <CardContent className="space-y-3 pt-5">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[11px]">
-                      1
-                    </span>
-                    {t('deploy.step1')}
-                  </div>
-                  <label
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      void onUpload(e.dataTransfer.files);
-                    }}
-                    className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-border/70 py-6 text-center transition-colors hover:bg-muted/40"
-                  >
-                    <Upload className="size-4 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      {t('deploy.step1_hint')}
-                    </span>
-                    <input
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => void onUpload(e.target.files)}
-                    />
-                  </label>
-                  {uploadPct !== null && (
-                    <p className="text-xs text-muted-foreground">
-                      {t('deploy.uploading', { pct: uploadPct })}
-                    </p>
-                  )}
-                  {selected.files.length > 0 && (
-                    <ul className="divide-y divide-border/60 text-xs">
-                      {selected.files.map((f) => (
-                        <li key={f.path} className="flex items-center gap-2 py-1.5">
-                          <span className="flex-1 truncate font-mono">{f.path}</span>
-                          <span className="text-muted-foreground">{human(f.size)}</span>
-                          <span className="hidden text-muted-foreground sm:inline">
-                            {f.uploaded_by} · {when(f.uploaded_at, t)}
-                          </span>
-                          <button
-                            type="button"
-                            aria-label={t('deploy.delete_file', { path: f.path })}
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() =>
-                              void deleteFile(selected.id, f.path).then(refresh)
-                            }
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* ② 脚本 */}
-              <Card>
-                <CardContent className="space-y-3 pt-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[11px]">
-                        2
-                      </span>
-                      {t('deploy.step2')}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setScript(scriptTemplate(t))}
-                      >
-                        {t('deploy.fill_template')}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={onSaveScript} disabled={savingScript}>
-                        <Save />
-                        {t('deploy.save')}
-                      </Button>
-                    </div>
-                  </div>
-                  <textarea
-                    value={script}
-                    onChange={(e) => setScript(e.target.value)}
-                    spellCheck={false}
-                    rows={9}
-                    placeholder="docker compose up -d --build"
-                    className="w-full rounded-lg border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring"
-                  />
-                </CardContent>
-              </Card>
-
-              {/* ③ 执行 */}
-              <Card>
-                <CardContent className="space-y-3 pt-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[11px]">
-                        3
-                      </span>
-                      {t('deploy.step3')}
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        if (window.confirm(t('deploy.confirm_run', { dir: selected.dir })))
-                          void onRun();
-                      }}
-                      disabled={!!activeRun || !script.trim()}
+              {/* 三步向导：一次只做一件事。标题条既是进度也是导航，能点着跳。 */}
+              <nav className="grid grid-cols-3 gap-2">
+                {([1, 2, 3] as const).map((n) => {
+                  const active = step === n;
+                  const done =
+                    n === 1 ? selected.files.length > 0 : n === 2 ? !dirty : runs.length > 0;
+                  const hint =
+                    n === 1
+                      ? selected.files.length > 0
+                        ? t('deploy.state_files', { count: selected.files.length })
+                        : t('deploy.state_no_files')
+                      : n === 2
+                        ? dirty
+                          ? t('deploy.state_script_dirty')
+                          : t('deploy.state_script_saved')
+                        : runs[0]
+                          ? runs[0].status === 'success'
+                            ? t('deploy.status_success')
+                            : runs[0].status === 'running'
+                              ? t('deploy.status_running')
+                              : t('deploy.status_failed')
+                          : t('deploy.state_not_run');
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setStep(n)}
+                      className={cn(
+                        'flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors',
+                        active
+                          ? 'border-primary/40 bg-primary/5'
+                          : 'border-border/60 hover:border-border',
+                      )}
                     >
-                      {activeRun ? <Loader2 className="animate-spin" /> : <Play />}
-                      {activeRun ? t('deploy.running') : t('deploy.run')}
-                    </Button>
-                  </div>
-                  {log && (
-                    <pre
-                      ref={logEndRef}
-                      className="max-h-72 overflow-auto rounded-lg bg-neutral-950 p-3 font-mono text-[11px] leading-relaxed text-neutral-200"
-                    >
-                      {log}
-                    </pre>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* 记录 */}
-              <Card>
-                <CardContent className="space-y-2 pt-5">
-                  <div className="text-sm font-medium">{t('deploy.records')}</div>
-                  {runs.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">{t('deploy.no_records')}</p>
-                  ) : (
-                    <ul className="divide-y divide-border/60">
-                      {runs.map((run) => (
-                        <li key={run.id} className="py-2">
-                          <div className="flex items-center gap-3 text-xs">
-                            <StatusBadge status={run.status} />
-                            <span className="text-muted-foreground">
-                              {run.actor}
-                              {run.actor_kind === 'agent' ? '（agent）' : ''}
-                            </span>
-                            <span className="text-muted-foreground">
-                              {when(run.started_at, t)}
-                            </span>
-                            {run.duration_ms != null && (
-                              <span className="text-muted-foreground">
-                                {(run.duration_ms / 1000).toFixed(1)}s
-                              </span>
-                            )}
-                            {run.exit_code != null && run.exit_code !== 0 && (
-                              <span className="text-destructive">
-                                {t('deploy.exit_code', { code: run.exit_code })}
-                              </span>
-                            )}
-                          </div>
-                          {run.output && (
-                            <pre className="mt-1.5 max-h-32 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10px]">
-                              {run.output}
-                            </pre>
+                      <span className="flex items-center gap-1.5 text-xs font-medium">
+                        <span
+                          className={cn(
+                            'flex size-4 shrink-0 items-center justify-center rounded-full text-[10px]',
+                            active
+                              ? 'bg-primary text-primary-foreground'
+                              : done
+                                ? 'bg-emerald-500/15 text-emerald-600'
+                                : 'bg-muted text-muted-foreground',
                           )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </CardContent>
-              </Card>
+                        >
+                          {done && !active ? <Check className="size-3" /> : n}
+                        </span>
+                        <span className="truncate">{t(`deploy.step${n}`)}</span>
+                      </span>
+                      <span className="truncate pl-[22px] text-[11px] text-muted-foreground">
+                        {hint}
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              {/* 第 1 步：产物 */}
+              {step === 1 && (
+                <Card className="pop-in">
+                  <CardContent className="space-y-3 pt-5">
+                    <p className="text-xs text-muted-foreground">{t('deploy.step1_desc')}</p>
+                    <label
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        void onUpload(e.dataTransfer.files);
+                      }}
+                      className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-border/70 py-8 text-center transition-colors hover:bg-muted/40"
+                    >
+                      <Upload className="size-4 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {t('deploy.step1_hint')}
+                      </span>
+                      <input
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => void onUpload(e.target.files)}
+                      />
+                    </label>
+                    {uploadPct !== null && (
+                      <p className="text-xs text-muted-foreground">
+                        {t('deploy.uploading', { pct: uploadPct })}
+                      </p>
+                    )}
+                    {selected.files.length > 0 && (
+                      <ul className="divide-y divide-border/60 text-xs">
+                        {selected.files.map((f) => (
+                          <li key={f.path} className="flex items-center gap-2 py-1.5">
+                            <span className="flex-1 truncate font-mono">{f.path}</span>
+                            <span className="text-muted-foreground">{human(f.size)}</span>
+                            <span className="hidden text-muted-foreground sm:inline">
+                              {f.uploaded_by} · {when(f.uploaded_at, t)}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={t('deploy.delete_file', { path: f.path })}
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() =>
+                                void deleteFile(selected.id, f.path).then(refresh)
+                              }
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* 第 2 步：脚本 */}
+              {step === 2 && (
+                <Card className="pop-in">
+                  <CardContent className="space-y-3 pt-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">{t('deploy.step2_desc')}</p>
+                      <div className="flex shrink-0 gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setScript(scriptTemplate(t))}
+                        >
+                          {t('deploy.fill_template')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={onSaveScript}
+                          disabled={savingScript || !dirty}
+                        >
+                          <Save />
+                          {t('deploy.save')}
+                        </Button>
+                      </div>
+                    </div>
+                    <textarea
+                      value={script}
+                      onChange={(e) => setScript(e.target.value)}
+                      spellCheck={false}
+                      rows={14}
+                      placeholder="docker compose up -d --build"
+                      className="w-full rounded-lg border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring"
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* 第 3 步：执行 + 记录 */}
+              {step === 3 && (
+                <div className="space-y-4">
+                  <Card className="pop-in">
+                    <CardContent className="space-y-3 pt-5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">{t('deploy.step3_desc')}</p>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (window.confirm(t('deploy.confirm_run', { dir: selected.dir })))
+                              void onRun();
+                          }}
+                          disabled={!!activeRun || !script.trim()}
+                        >
+                          {activeRun ? <Loader2 className="animate-spin" /> : <Play />}
+                          {activeRun ? t('deploy.running') : t('deploy.run')}
+                        </Button>
+                      </div>
+                      {log ? (
+                        <pre
+                          ref={logEndRef}
+                          className="max-h-72 overflow-auto rounded-lg bg-neutral-950 p-3 font-mono text-[11px] leading-relaxed text-neutral-200"
+                        >
+                          {log}
+                        </pre>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">{t('deploy.log_hint')}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="space-y-2 pt-5">
+                      <div className="text-sm font-medium">{t('deploy.records')}</div>
+                      {runs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">{t('deploy.no_records')}</p>
+                      ) : (
+                        <ul className="divide-y divide-border/60">
+                          {runs.map((run) => (
+                            <li key={run.id} className="py-2">
+                              <div className="flex items-center gap-3 text-xs">
+                                <StatusBadge status={run.status} />
+                                <span className="text-muted-foreground">
+                                  {run.actor}
+                                  {run.actor_kind === 'agent' ? '（agent）' : ''}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {when(run.started_at, t)}
+                                </span>
+                                {run.duration_ms != null && (
+                                  <span className="text-muted-foreground">
+                                    {(run.duration_ms / 1000).toFixed(1)}s
+                                  </span>
+                                )}
+                                {run.exit_code != null && run.exit_code !== 0 && (
+                                  <span className="text-destructive">
+                                    {t('deploy.exit_code', { code: run.exit_code })}
+                                  </span>
+                                )}
+                              </div>
+                              {run.output && (
+                                <pre className="mt-1.5 max-h-32 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10px]">
+                                  {run.output}
+                                </pre>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={step === 1}
+                  onClick={() => setStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3) : s))}
+                >
+                  {t('deploy.prev')}
+                </Button>
+                {step < 3 ? (
+                  <Button size="sm" onClick={() => setStep((s) => ((s + 1) as 1 | 2 | 3))}>
+                    {t('deploy.next')}
+                    <ChevronRight />
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => setSelectedId(null)}>
+                    {t('deploy.finish')}
+                  </Button>
+                )}
+              </DialogFooter>
             </div>
           )}
             </DialogContent>
