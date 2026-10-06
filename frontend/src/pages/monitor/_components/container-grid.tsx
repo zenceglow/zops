@@ -318,8 +318,11 @@ export function ContainerGrid({ containers }: { containers: ContainerInfo[] }) {
           免得这一节只有只读的卡片、想动手还得回 Dock 上找。 */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <SectionTitle icon={Server} title={t('docker.apps_services')} />
+        {/* 这一节列的是**容器**，所以"管理"要进容器列表，不是部署页 ——
+            之前指到 /deploy（应用与服务=部署任务），没建过应用的人点进去是一片空的，
+            看起来像"首页有、进去就没了"。部署入口在 Dock 上，各走各的。 */}
         <Link
-          to="/deploy"
+          to="/docker/containers"
           className="group ml-auto inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {t('docker.manage_apps')}
