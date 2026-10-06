@@ -226,5 +226,9 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/junk", get(junk))
         .route("/prune", post(prune))
         .route("/", delete(remove))
+        // 老前端（浏览器里还缓存着上一版 bundle）会打 `/service/?id=` 这个带尾斜杠的
+        // 地址。axum 的 nest 只把内层 "/" 挂在**不带**尾斜杠的路径上，带斜杠的那种
+        // 会落到 SPA 兜底 → 200 HTML → 用户看到"删除成功但容器还在"。这里显式补一条。
+        .route("", delete(remove))
         .route("/log", get(logs))
 }

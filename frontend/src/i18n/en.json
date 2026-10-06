@@ -1034,7 +1034,8 @@
     "state_not_run": "Not run yet",
     "prev": "Back",
     "next": "Next",
-    "finish": "Done"
+    "finish": "Done",
+    "delete_app": "Delete app"
   },
   "security": {
     "title": "Security",

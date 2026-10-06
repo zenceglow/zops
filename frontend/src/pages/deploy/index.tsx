@@ -505,6 +505,7 @@ export default function DeployPage() {
                     </span>
                     <Button size="sm" variant="ghost" onClick={onDeleteJob}>
                       <Trash2 className="size-3.5" />
+                      {t('deploy.delete_app')}
                     </Button>
                   </div>
                   {selected.note && (
