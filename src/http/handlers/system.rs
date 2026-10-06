@@ -46,7 +46,17 @@ async fn panel(Extension(_user): Extension<AuthUser>) -> Json<ApiResponse<serde_
         "github": crate::shared::panel::GITHUB,
         "email": crate::shared::panel::EMAIL,
         "uptime_seconds": crate::shared::panel::uptime_seconds(),
+        // 和 MCP 报的是同一份指纹：人和 agent 各看一边就能对上号。
+        "host": crate::shared::panel::identity(),
     })))
+}
+
+/// 无鉴权的身份端点：`GET /api/ops/version` → 版本 + 主机名 + 启动时刻。
+///
+/// 只回这三样（外加 machine/docker 指纹），不含任何账号、容器、路径信息 ——
+/// 用途是"对面是谁、什么版本"，脚本和 agent 一句话就能核对，不必先拿令牌。
+pub async fn version() -> Json<ApiResponse<serde_json::Value>> {
+    Json(ApiResponse::ok(crate::shared::panel::identity()))
 }
 
 /// 有没有新版本。

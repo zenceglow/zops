@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowUpRight,
   Clock,
+  Fingerprint,
   Download,
   Loader2,
   Mail,
@@ -23,6 +24,15 @@ type PanelInfo = {
   github: string;
   email: string;
   uptime_seconds: number;
+  /** 身份指纹：和 MCP/agent 报的是同一份，用来核对"连的是哪个面板"。 */
+  host: {
+    hostname: string;
+    machine_id: string;
+    docker_id: string;
+    started_at: string;
+    port: string;
+    bin: string;
+  };
 };
 
 /** 秒 → "3 天 4 小时" 这种人话。关于页不需要精确到秒。 */
@@ -166,6 +176,25 @@ export default function AboutPage() {
         <InfoCell icon={Scale} label={t('about.license')} value="MIT" />
       </div>
 
+      {/* 面板指纹：agent 通过 MCP 报的是同一份 —— 对不上就说明它连的是别的面板。 */}
+      {info?.host && (
+        <div className="rounded-2xl border border-border/60 px-4 py-3.5">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Fingerprint className="size-3.5" />
+            {t('about.fingerprint')}
+          </div>
+          <dl className="mt-2 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+            <FpRow k={t('about.host')} v={info.host.hostname} />
+            <FpRow k={t('about.started_at')} v={info.host.started_at} />
+            <FpRow k={t('about.docker_id')} v={info.host.docker_id || '—'} />
+            <FpRow k={t('about.machine_id')} v={info.host.machine_id || '—'} />
+          </dl>
+          <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+            {t('about.fingerprint_hint')}
+          </p>
+        </div>
+      )}
+
       {/* 更新。自动弹出的提示只在真拉清单拉到新版本时出现，这里给一个随时能点的入口。 */}
       <div className="rounded-2xl border border-border/60 px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -262,6 +291,15 @@ export default function AboutPage() {
       </div>
 
       <p className="text-center text-xs leading-6 text-muted-foreground">{t('about.footer')}</p>
+    </div>
+  );
+}
+
+function FpRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex min-w-0 gap-2">
+      <dt className="shrink-0 text-muted-foreground">{k}</dt>
+      <dd className="min-w-0 truncate font-mono">{v}</dd>
     </div>
   );
 }

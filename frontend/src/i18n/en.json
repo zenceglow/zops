@@ -807,7 +807,13 @@
     "updated": "Updated to {{v}} — refresh the page",
     "copy_command": "Copy upgrade command",
     "command_copied": "Command copied",
-    "copy_failed": "Copy failed — select the text and copy manually"
+    "copy_failed": "Copy failed — select the text and copy manually",
+    "fingerprint": "Panel fingerprint",
+    "host": "Host",
+    "started_at": "Started",
+    "docker_id": "Docker daemon",
+    "machine_id": "machine-id",
+    "fingerprint_hint": "An agent over MCP reports this same fingerprint. Different version = it is talking to another panel; different start time = a different process. If it does not match, do not trust its data."
   },
   "notify": {
     "title": "Notifications",

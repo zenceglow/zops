@@ -55,6 +55,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         ));
 
     Router::new()
+        // 无鉴权的身份端点：只回"版本 / 主机名 / 启动时刻 / 指纹"，用来核对
+        // agent 连的是哪个面板。不含任何账号、容器、路径信息，所以不需要令牌。
+        .route("/api/ops/version", axum::routing::get(system::version))
         .nest("/api/ops/auth", auth::public_routes(state.clone()))
         .nest("/api/ops/setup", setup::routes(state.clone()))
         // Agent surface: these authenticate with an `ops_…` API token (or a

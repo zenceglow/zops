@@ -807,7 +807,13 @@
     "updated": "已更新到 {{v}}，刷新页面即可",
     "copy_command": "复制升级命令",
     "command_copied": "命令已复制",
-    "copy_failed": "复制失败，请手动选中复制"
+    "copy_failed": "复制失败，请手动选中复制",
+    "fingerprint": "面板指纹",
+    "host": "主机",
+    "started_at": "启动于",
+    "docker_id": "Docker 守护进程",
+    "machine_id": "machine-id",
+    "fingerprint_hint": "agent 通过 MCP 报的是同一份指纹。版本不同 = 它连的是另一个面板；启动时刻不同 = 不是同一个进程。对不上就别信它的数据。"
   },
   "notify": {
     "title": "通知",

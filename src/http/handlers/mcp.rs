@@ -631,6 +631,9 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
                 .iter()
                 .filter(|t| principal.has(t.permission))
                 .count(),
+            // 身份指纹：agent 汇报任何"这台机器"的事实前，先把这几项说出来。
+            // 版本不对 = 连的是另一个（旧的）面板；started_at 不对 = 不是同一个进程。
+            "host": crate::shared::panel::identity(),
         })),
         ToolId::SystemOverview => Ok(serde_json::to_value(state.system.overview()).unwrap_or(Value::Null)),
         ToolId::ContainerList => Ok(
@@ -795,7 +798,15 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
     .await;
 
     match out {
-        Ok(value) => mcp::tool_json(&value),
+        // 每个成功回包都带上身份指纹（只给对象结果附，数组/标量不硬塞）。
+        // 数据自带出处 —— 谁读这份数据，都能说清它来自哪台机器、哪个版本、哪个进程。
+        Ok(value) => {
+            let mut value = value;
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert("_host".into(), crate::shared::panel::identity());
+            }
+            mcp::tool_json(&value)
+        }
         Err(err) => mcp::tool_error(err.message),
     }
 }
@@ -876,6 +887,8 @@ async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest, ip
                             "resources": { "subscribe": false, "listChanged": false }
                         },
                         "serverInfo": { "name": mcp::SERVER_NAME, "version": mcp::SERVER_VERSION },
+                        // 一开口就报身份：客户端缓存了旧连接时，这一行会立刻露馅。
+                        "host": crate::shared::panel::identity(),
                         "instructions": mcp::INSTRUCTIONS
                     }),
                 ),
