@@ -801,11 +801,22 @@ impl DockerClient {
             .map_err(|_| AppError::internal("操作失败"))
     }
 
-    pub async fn remove(&self, id: &str) -> Result<(), AppError> {
+    /// 删容器。`force: true` 会先 kill 再删 —— 界面上的删除按钮已经二次确认过
+    /// （"容器里没挂到卷上的数据会一起消失"），不带 force 的话运行中的容器一律
+    /// 删不掉，用户只会看到一句"操作失败"。
+    pub async fn remove(&self, id: &str, force: bool) -> Result<(), AppError> {
         self.docker()?
-            .remove_container(id, None::<RemoveContainerOptions>)
+            .remove_container(
+                id,
+                Some(RemoveContainerOptions {
+                    force,
+                    ..Default::default()
+                }),
+            )
             .await
-            .map_err(|_| AppError::internal("操作失败"))
+            // 把 Docker 的原话带出来：以前统一写"操作失败"，出问题时看不出是
+            // 没权限、容器在用、还是名字不对。
+            .map_err(|e| AppError::internal(format!("删除容器失败：{e}")))
     }
 
     pub async fn logs(&self, id: &str, tail: usize) -> Result<Vec<String>, AppError> {

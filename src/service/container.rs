@@ -51,8 +51,9 @@ impl ContainerService {
         self.docker.restart(id).await
     }
 
-    pub async fn remove(&self, id: &str) -> Result<(), AppError> {
-        self.docker.remove(id).await
+    /// 删容器（强制：运行中的也删）。调用方负责先让用户确认。
+    pub async fn remove(&self, id: &str, force: bool) -> Result<(), AppError> {
+        self.docker.remove(id, force).await
     }
 
     /// 删镜像。`force` 会连带删掉用它的容器 —— 界面上必须问过再传 true。

@@ -494,6 +494,9 @@ export default function DeployPage() {
 
           {selected && (
             <div className="space-y-4">
+              {/* 放进 DialogHeader：右上角是弹窗自带的关闭按钮，header 预留了
+                  pr-12 的位置。塞在 body 里会被关闭按钮压住 —— 之前就压住了。 */}
+              <DialogHeader>
               <Card>
                 <CardContent className="space-y-1 pt-5">
                   <div className="flex items-center justify-between gap-3">
@@ -518,6 +521,7 @@ export default function DeployPage() {
                   </p>
                 </CardContent>
               </Card>
+              </DialogHeader>
 
               {/* 三步向导：一次只做一件事。标题条既是进度也是导航，能点着跳。 */}
               <nav className="grid grid-cols-3 gap-2">
