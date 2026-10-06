@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        Extension, Query, State, WebSocketUpgrade,
+        Extension, Path, Query, State, WebSocketUpgrade,
     },
     response::IntoResponse,
     routing::{delete, get},
@@ -48,18 +48,15 @@ async fn add_source(
     Ok(Json(ApiResponse::ok(state.logs.add_source(&body.path, &label)?)))
 }
 
-#[derive(Deserialize)]
-struct IdQuery {
-    id: String,
-}
-
+/// 删除一个日志源。id 走路径（`DELETE /log/sources/{id}`）—— 以前这里读的是查询串，
+/// 而路由给的是路径参数，两边对不上：删除请求根本到不了这个函数，卡片也就删不掉。
 async fn remove_source(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
-    Query(q): Query<IdQuery>,
+    Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     require_perm(&user, OPS_LOG_READ)?;
-    state.logs.remove_source(&q.id)?;
+    state.logs.remove_source(&id)?;
     Ok(Json(ApiResponse::<()>::ok_empty()))
 }
 
