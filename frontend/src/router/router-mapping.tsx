@@ -21,6 +21,7 @@ export const APP_ROUTES: RouteDef[] = [
   { path: '/files', lazy: page(() => import('../pages/files')) },
   { path: '/deploy', lazy: page(() => import('../pages/deploy')) },
   { path: '/logs', lazy: page(() => import('../pages/logs')) },
+  { path: '/security', lazy: page(() => import('../pages/security')) },
   { path: '/automation/tasks', lazy: page(() => import('../pages/automation/tasks')) },
   { path: '/agent', lazy: page(() => import('../pages/agent')) },
   { path: '/notify', lazy: page(() => import('../pages/notify')) },
@@ -36,7 +37,6 @@ export const APP_ROUTES: RouteDef[] = [
   { path: '/docker/settings', lazy: page(() => import('../pages/docker/settings')) },
   { path: '/system/swap', lazy: page(() => import('../pages/system/swap')) },
   { path: '/system/network', lazy: page(() => import('../pages/system/network')) },
-  { path: '/system/firewall', lazy: page(() => import('../pages/system/firewall')) },
   { path: '/system/updates', lazy: page(() => import('../pages/system/updates')) },
 ];
 
@@ -50,6 +50,7 @@ const FALLBACKS: [string, string][] = [
   ['/docker', '/docker/containers'],
   ['/system', '/system/swap'],
   ['/automation', '/automation/tasks'],
+  ['/system/firewall', '/security'],
   ['/dashboard', '/monitor'],
 ];
 

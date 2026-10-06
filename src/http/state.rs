@@ -10,6 +10,7 @@ use crate::service::{
     files::FilesService,
     gateway::GatewayService, logs::LogService, member::MemberService,
     notify::NotifyService,
+    security::SecurityService,
     selfupdate::SelfUpdateService, setup::SetupService,
     system::SystemService,
     token::TokenService,
@@ -31,6 +32,8 @@ pub struct AppState {
     pub logs: Arc<LogService>,
     pub members: Arc<MemberService>,
     pub notify: Arc<NotifyService>,
+    /// 安全中心：预警、端口访问记录、暴露面。
+    pub security: Arc<SecurityService>,
     pub selfupdate: Arc<SelfUpdateService>,
     pub automation: Arc<AutomationService>,
     /// Agent access tokens (MCP / skills). Verified by `handlers::mcp`.

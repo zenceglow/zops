@@ -13,6 +13,7 @@ pub mod member;
 pub mod notify;
 pub mod permission;
 pub mod service;
+pub mod security;
 pub mod setup;
 pub mod ssh;
 pub mod system;

@@ -471,6 +471,7 @@
     },
     "nav.agent": "接入 Codex",
     "nav.deploy": "部署",
+    "nav.security": "安全中心",
     "ops.agent.manage": "管理 MCP 令牌与技能"
   },
   "home": {

@@ -193,6 +193,29 @@ impl AnalyticsService {
             let mut batch = Vec::new();
             for line in &lines {
                 if let Some(e) = access::parse_line(line) {
+                    // 顺手把可疑的挑出来存进安全中心：大屏上只是几个数字，这里存的是
+                    // "谁在打什么"。分类函数和阈值放在 security 那边，两边看同一套规则。
+                    if let Some((kind, reason)) =
+                        crate::service::security::SecurityService::classify(
+                            &e.uri,
+                            e.status as i64,
+                            &e.ua,
+                            BOT_HINTS,
+                            TOOL_HINTS,
+                        )
+                    {
+                        let _ = self.db.upsert_security_event(
+                            &e.ip,
+                            kind,
+                            &reason,
+                            &e.host,
+                            &e.method,
+                            &e.uri,
+                            e.status as i64,
+                            &e.ua,
+                            e.ts,
+                        );
+                    }
                     batch.push(NewAccessEvent {
                         ts: e.ts,
                         ip: e.ip,

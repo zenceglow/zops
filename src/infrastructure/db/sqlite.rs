@@ -278,6 +278,43 @@ impl Database {
                 ua       TEXT NOT NULL DEFAULT '',
                 source   TEXT NOT NULL DEFAULT ''
             );
+
+            -- ── 安全中心 ────────────────────────────────────────────────────
+            --
+            -- 预警：从接入日志里挑出来的可疑访问（被拦下的、扫描器、探测路径）。
+            -- 按 (ip, kind, uri, 小时) 聚合 —— 同一个 IP 拿同一个路径扫一万次算一条，
+            -- 记 hits / first_seen / last_seen。预警列表要的是「谁在干什么」，不是
+            -- 把访问日志再抄一遍。
+            CREATE TABLE IF NOT EXISTS security_events (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip         TEXT NOT NULL,
+                kind       TEXT NOT NULL,
+                reason     TEXT NOT NULL DEFAULT '',
+                host       TEXT NOT NULL DEFAULT '',
+                method     TEXT NOT NULL DEFAULT '',
+                uri        TEXT NOT NULL DEFAULT '',
+                status     INTEGER NOT NULL DEFAULT 0,
+                ua         TEXT NOT NULL DEFAULT '',
+                bucket     INTEGER NOT NULL,
+                hits       INTEGER NOT NULL DEFAULT 1,
+                first_seen REAL NOT NULL,
+                last_seen  REAL NOT NULL,
+                UNIQUE(ip, kind, uri, bucket)
+            );
+
+            -- 端口访问记录。眼下就是 22 端口上的 sshd：谁从哪儿来、用什么身份、
+            -- 成功还是失败。这些原本只躺在 /var/log/secure 里，翻起来全靠 grep。
+            CREATE TABLE IF NOT EXISTS ssh_events (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts     REAL NOT NULL,
+                ip     TEXT NOT NULL,
+                user   TEXT NOT NULL DEFAULT '',
+                result TEXT NOT NULL,
+                method TEXT NOT NULL DEFAULT '',
+                port   INTEGER NOT NULL DEFAULT 0,
+                raw    TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS ssh_events_ts ON ssh_events(ts DESC);
             CREATE INDEX IF NOT EXISTS idx_access_events_ts ON access_events(ts);
             CREATE INDEX IF NOT EXISTS idx_access_events_ip ON access_events(ip);
 
@@ -1916,6 +1953,181 @@ impl Database {
         )?;
         Ok(n > 0)
     }
+
+    // ── 安全中心 ─────────────────────────────────────────────────────────
+
+    /// 记一条预警。同一个 IP 在同一个小时里打同一个路径算一条，只加次数。
+    ///
+    /// 聚合成这个粒度是刻意的：扫描器一分钟能打上千次，按条存下来预警列表就没法
+    /// 看了；按小时聚，既不丢"谁在扫什么"，又保证列表是可读的。
+    pub fn upsert_security_event(
+        &self,
+        ip: &str,
+        kind: &str,
+        reason: &str,
+        host: &str,
+        method: &str,
+        uri: &str,
+        status: i64,
+        ua: &str,
+        ts: f64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let bucket = (ts / 3600.0).floor() as i64;
+        conn.execute(
+            "INSERT INTO security_events(ip, kind, reason, host, method, uri, status, ua, bucket, hits, first_seen, last_seen)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, ?10)
+             ON CONFLICT(ip, kind, uri, bucket) DO UPDATE SET
+                hits = hits + 1,
+                last_seen = excluded.last_seen,
+                status = excluded.status,
+                ua = excluded.ua,
+                reason = excluded.reason",
+            params![ip, kind, reason, host, method, uri, status, ua, bucket, ts],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_security_events(
+        &self,
+        kind: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<SecurityEventRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, ip, kind, reason, host, method, uri, status, ua, hits, first_seen, last_seen
+               FROM security_events
+              WHERE (?1 = '' OR kind = ?1)
+              ORDER BY last_seen DESC LIMIT ?2 OFFSET ?3",
+        )?;
+        let rows = stmt.query_map(params![kind.unwrap_or(""), limit, offset], |row| {
+            Ok(SecurityEventRow {
+                id: row.get(0)?,
+                ip: row.get(1)?,
+                kind: row.get(2)?,
+                reason: row.get(3)?,
+                host: row.get(4)?,
+                method: row.get(5)?,
+                uri: row.get(6)?,
+                status: row.get(7)?,
+                ua: row.get(8)?,
+                hits: row.get(9)?,
+                first_seen: row.get(10)?,
+                last_seen: row.get(11)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// 预警概览：三类各多少条、涉及多少个 IP。`since` 之前的只计数不列。
+    pub fn security_counts(&self, since: f64) -> Result<(i64, i64, i64, i64)> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        Ok(conn.query_row(
+            "SELECT
+                COALESCE(SUM(CASE WHEN kind = 'blocked' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN kind = 'bot' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN kind = 'probe' THEN 1 ELSE 0 END), 0),
+                COUNT(DISTINCT ip)
+             FROM security_events WHERE last_seen >= ?1",
+            params![since],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?)
+    }
+
+    pub fn prune_security_events(&self, cutoff: f64) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "DELETE FROM security_events WHERE last_seen < ?1",
+            params![cutoff],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_ssh_events(&self, rows: &[NewSshEvent]) -> Result<usize> {
+        if rows.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let tx = conn.unchecked_transaction()?;
+        let mut n = 0usize;
+        for r in rows {
+            n += tx.execute(
+                "INSERT INTO ssh_events(ts, ip, user, result, method, port, raw)
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![r.ts, r.ip, r.user, r.result, r.method, r.port, r.raw],
+            )?;
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
+    pub fn list_ssh_events(&self, result: Option<&str>, limit: i64) -> Result<Vec<SshEventRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, ts, ip, user, result, method, port, raw FROM ssh_events
+              WHERE (?1 = '' OR result = ?1)
+              ORDER BY ts DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![result.unwrap_or(""), limit], |row| {
+            Ok(SshEventRow {
+                id: row.get(0)?,
+                ts: row.get(1)?,
+                ip: row.get(2)?,
+                user: row.get(3)?,
+                result: row.get(4)?,
+                method: row.get(5)?,
+                port: row.get(6)?,
+                raw: row.get(7)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// 端口访问概览：成功 / 失败 / 无效用户各多少，涉及多少个来源 IP。
+    pub fn ssh_counts(&self, since: f64) -> Result<(i64, i64, i64, i64)> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        Ok(conn.query_row(
+            "SELECT
+                COALESCE(SUM(CASE WHEN result = 'accepted' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN result = 'failed' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN result = 'invalid' THEN 1 ELSE 0 END), 0),
+                COUNT(DISTINCT ip)
+             FROM ssh_events WHERE ts >= ?1",
+            params![since],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?)
+    }
+
+    /// 失败次数最多的来源 IP —— "谁在敲门"的第一眼答案。
+    pub fn ssh_top_failed_ips(&self, since: f64, limit: i64) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT ip, COUNT(*) c FROM ssh_events
+              WHERE ts >= ?1 AND result <> 'accepted'
+              GROUP BY ip ORDER BY c DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![since, limit], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn prune_ssh_events(&self, cutoff: f64) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute("DELETE FROM ssh_events WHERE ts < ?1", params![cutoff])?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2073,4 +2285,47 @@ pub struct DeployFileRow {
     pub size: i64,
     pub uploaded_at: String,
     pub uploaded_by: String,
+}
+
+/// 一条安全预警（按 IP + 类型 + 路径 + 小时聚合过）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SecurityEventRow {
+    pub id: i64,
+    pub ip: String,
+    /// blocked | bot | probe
+    pub kind: String,
+    pub reason: String,
+    pub host: String,
+    pub method: String,
+    pub uri: String,
+    pub status: i64,
+    pub ua: String,
+    pub hits: i64,
+    pub first_seen: f64,
+    pub last_seen: f64,
+}
+
+/// 一条端口（22）访问记录。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SshEventRow {
+    pub id: i64,
+    pub ts: f64,
+    pub ip: String,
+    pub user: String,
+    /// accepted | failed | invalid
+    pub result: String,
+    pub method: String,
+    pub port: i64,
+    pub raw: String,
+}
+
+/// 待入库的 sshd 记录。
+pub struct NewSshEvent {
+    pub ts: f64,
+    pub ip: String,
+    pub user: String,
+    pub result: String,
+    pub method: String,
+    pub port: i64,
+    pub raw: String,
 }

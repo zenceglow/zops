@@ -8,6 +8,7 @@ pub mod deploy_job;
 pub mod logs;
 pub mod mcp;
 pub mod permission;
+pub mod security;
 pub mod setup;
 pub mod system;
 pub mod token;

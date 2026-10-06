@@ -48,14 +48,15 @@ const byPath = (path: string) =>
     isParent(i) ? i.children.some((c) => c.path === path) : i.path === path,
   );
 
-/** Dock 上按固定顺序排的项目；防火墙是单独拎出来的顶层入口。 */
+/** Dock 上按固定顺序排的项目；安全中心是单独拎出来的顶层入口。 */
 function dockItems(): SidebarItem[] {
   const ordered = DOCK_ORDER.map(byPath).filter((i): i is SidebarItem => !!i);
-  // 防火墙原来在"系统"子菜单里，现在直接上 Dock —— 它是会被频繁点开的东西。
-  const firewall = ALL_ITEMS.flatMap((i) => (isParent(i) ? i.children : [i])).find(
-    (c) => c.path === '/system/firewall',
+  // 安全中心原来只是"系统"子菜单里的一个占位页（防火墙），现在直接上 Dock ——
+  // 查端口、看预警是会被频繁点开的东西。
+  const security = ALL_ITEMS.flatMap((i) => (isParent(i) ? i.children : [i])).find(
+    (c) => c.path === '/security',
   );
-  return firewall ? [...ordered, firewall] : ordered;
+  return security ? [...ordered, security] : ordered;
 }
 
 function dockClass(active?: boolean) {

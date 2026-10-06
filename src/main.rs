@@ -23,6 +23,7 @@ use service::{
     deploy_job::DeployJobService,
     gateway::GatewayService, logs::LogService, member::MemberService,
     notify::NotifyService,
+    security::SecurityService,
     selfupdate::SelfUpdateService,
     setup::SetupService, watch::Watcher,
     system::SystemService,
@@ -147,6 +148,9 @@ async fn async_main() {
     let analytics = Arc::new(AnalyticsService::new(db.clone(), caddy.clone()));
     let analytics_worker = analytics.clone();
 
+    let security = Arc::new(SecurityService::new(db.clone()));
+    let security_worker = security.clone();
+
     let state = Arc::new(AppState {
         analytics,
         audit: Arc::new(AuditService::new(db.clone())),
@@ -162,6 +166,7 @@ async fn async_main() {
         logs: Arc::new(LogService::new(db.clone())),
         members: Arc::new(MemberService::new(db.clone())),
         notify: Arc::new(NotifyService::new(db.clone())),
+        security,
         selfupdate: Arc::new(SelfUpdateService::new(
             db.clone(),
             cfg.update_url.clone(),
@@ -205,8 +210,16 @@ async fn async_main() {
     // 而且归属地查询要走外网，放在请求路径里会让页面卡住。
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let mut round = 0u32;
         loop {
             let _ = analytics_worker.ingest().await;
+            // 同一个循环顺手读 sshd 的增量：预警和端口访问记录是同一类"最近发生了什么"，
+            // 没必要再起一个定时器。清理一天做一次就够。
+            let _ = security_worker.ingest_ssh();
+            round = round.wrapping_add(1);
+            if round % 5760 == 0 {
+                let _ = security_worker.prune();
+            }
             tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }
     });

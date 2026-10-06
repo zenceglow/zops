@@ -14,6 +14,7 @@ pub mod logs;
 pub mod member;
 pub mod notify;
 pub mod selfupdate;
+pub mod security;
 pub mod setup;
 pub mod system;
 pub mod token;

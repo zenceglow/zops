@@ -104,7 +104,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
         children: [
           { path: '/system/swap', labelKey: 'system.swap', icon: Icons.NavSwapIcon, perm: Perm.NAV_SYSTEM },
           { path: '/system/network', labelKey: 'system.network', icon: Icons.NavNetIcon, perm: Perm.NAV_SYSTEM },
-          { path: '/system/firewall', labelKey: 'system.firewall', icon: Icons.NavFirewallIcon, perm: Perm.NAV_SYSTEM },
+          { path: '/security', labelKey: 'nav.security', icon: Icons.NavFirewallIcon, perm: Perm.NAV_SYSTEM },
           { path: '/system/updates', labelKey: 'system.updates', icon: Icons.NavUpdatesIcon, perm: Perm.NAV_SYSTEM },
         ],
       } as SidebarParent,
