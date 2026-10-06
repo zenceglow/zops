@@ -29,7 +29,7 @@ export function SetupForm() {
   return (
     <div className="w-full max-w-[360px]">
       <div className="mb-10 flex flex-col items-center text-center">
-        <BrandLogo className="mb-5 size-12" />
+        <BrandLogo className="mb-3 text-[2.6rem] text-foreground" />
         <h1 className="text-[1.65rem] font-semibold tracking-tight text-foreground">
           {step === 1 ? t('setup.title_secret') : t('setup.title_admin')}
         </h1>

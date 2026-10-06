@@ -3901,7 +3901,7 @@ dependencies = [
 
 [[package]]
 name = "zenceglow-ops"
-version = "0.2.37"
+version = "0.2.38"
 dependencies = [
  "anyhow",
  "argon2 0.5.3",

@@ -1,34 +1,23 @@
 import { cn } from '../lib/utils';
 
 /**
- * 主站 logo（两个交叠的圆）套在本面板的 app-icon 底板里：
- * 24% 圆角 + TL→BR 白–黑–白渐变描边，和主站顶栏的呈现保持一致。
+ * ZOPS 字标 —— 品牌就是这四个大写字母，没有图形 logo。
  *
- * 圆的几何值直接取自 zenceglow-web/public/logo.svg，改主站 logo 时这里要对齐。
+ * 以前这里套的是公司 logo（两个交叠的圆）的副本，而公司 logo 会频繁改版：
+ * 每改一次，面板这边就得跟着对齐一遍，忘了就是"面板还挂着旧 logo"。面板是
+ * 独立产品，不该跟着公司 VI 走，所以统一收成字标。
+ *
+ * 尺寸由调用方给：传 `text-4xl`、`text-6xl` 这种字号类名，不要给 size-*。
  */
 export function BrandLogo({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-[24%] p-px',
+        'inline-flex shrink-0 items-center leading-none font-black tracking-[-0.045em] select-none',
         className,
       )}
-      style={{
-        backgroundImage:
-          'linear-gradient(to bottom right, #ffffff,rgba(0, 0, 0, 0.85), #ffffff)',
-      }}
-      aria-hidden
     >
-      <span className="flex size-full items-center justify-center overflow-hidden rounded-[24%] bg-neutral-950 text-white">
-        <svg
-          viewBox="0 0 1024 1024"
-          xmlns="http://www.w3.org/2000/svg"
-          className="block size-full"
-        >
-          <ellipse cx="397.241" cy="511.5" rx="205.735" ry="207.9" fill="#B8B8B8" />
-          <ellipse cx="625.814" cy="511.5" rx="205.735" ry="207.9" fill="#FFFFFF" />
-        </svg>
-      </span>
+      ZOPS
     </span>
   );
 }

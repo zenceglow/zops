@@ -160,9 +160,8 @@ export default function AboutPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8 py-4">
       <div className="flex flex-col items-center gap-4 text-center">
-        <BrandLogo className="size-20" />
+        <BrandLogo className="text-6xl" />
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">ZOPS</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">{t('about.tagline')}</p>
         </div>
         <span className="rounded-full border border-border/60 px-3 py-1 font-mono text-xs text-muted-foreground">

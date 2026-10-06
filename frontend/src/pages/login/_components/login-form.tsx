@@ -40,10 +40,7 @@ export function LoginForm() {
   return (
     <div className="w-full max-w-[360px]">
       <div className="mb-10 flex flex-col items-center text-center">
-        <BrandLogo className="mb-5 size-12" />
-        <h1 className="text-[1.65rem] font-semibold tracking-tight text-foreground">
-          {t('app.name')}
-        </h1>
+        <BrandLogo className="mb-3 text-[2.6rem] text-foreground" />
         <p className="mt-2 text-[0.9375rem] leading-relaxed text-muted-foreground">
           {t('login.subtitle')}
         </p>

@@ -79,8 +79,7 @@ export function MenuBar() {
         title={t('nav.monitor')}
         className="flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors hover:bg-accent"
       >
-        <BrandLogo className="size-4" />
-        <span className="font-semibold tracking-wide">{brand}</span>
+        <BrandLogo className="text-[0.95rem]" />
       </Link>
       {section && (
         <>
