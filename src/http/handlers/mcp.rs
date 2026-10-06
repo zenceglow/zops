@@ -621,6 +621,41 @@ fn rpc_error(status: StatusCode, id: Value, code: i64, message: impl Into<String
     json_response(status, mcp::error(id, code, message))
 }
 
+/// 技能包作为 MCP `resources` 暴露。
+///
+/// 以前"技能"只能靠人在面板上复制一段 shell，把它写进 agent 的技能目录 —— 连接本身
+/// 是哑的：client 读完 `initialize` + `tools/list` 就走了，永远不知道还有部署剧本和
+/// 排障剧本。走 resources 之后，连接一建好 agent 就能自己读到，也不用担心技能里的
+/// 工具名和 `tools/list` 对不上。
+const SKILL_RESOURCES: &[(&str, &str, &str)] = &[
+    (
+        "skill://zops/SKILL.md",
+        "ZOPS 技能",
+        "怎么用这些工具干活：侦察顺序、哪些动作要先确认、输出怎么读",
+    ),
+    (
+        "skill://zops/references/deploy",
+        "部署剧本",
+        "把项目部署到这台机器上的既有习惯：端口、网络、日志、反代",
+    ),
+    (
+        "skill://zops/references/troubleshooting",
+        "排障剧本",
+        "磁盘满 / 容器反复重启 / 502 / 证书 / 内存 / Caddyfile 回滚",
+    ),
+];
+
+fn skill_text(uri: &str) -> Option<&'static str> {
+    match uri {
+        "skill://zops/SKILL.md" => Some(crate::domain::mcp::SKILL_CONTENT),
+        "skill://zops/references/deploy" => Some(crate::domain::mcp::SKILL_REF_DEPLOY),
+        "skill://zops/references/troubleshooting" => {
+            Some(crate::domain::mcp::SKILL_REF_TROUBLESHOOTING)
+        }
+        _ => None,
+    }
+}
+
 async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest, ip: &str) -> Response {
     // Notifications carry no id and must not be answered.
     let Some(id) = req.id.clone() else {
@@ -640,7 +675,12 @@ async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest, ip
                     id,
                     json!({
                         "protocolVersion": mcp::supported_protocol_version(requested),
-                        "capabilities": { "tools": { "listChanged": false } },
+                        "capabilities": {
+                            "tools": { "listChanged": false },
+                            // 技能包走 resources，连接建好就能读 —— 不用再让人复制一段
+                            // shell 去装技能目录。subscribe 不开：技能是编译进二进制的。
+                            "resources": { "subscribe": false, "listChanged": false }
+                        },
                         "serverInfo": { "name": mcp::SERVER_NAME, "version": mcp::SERVER_VERSION },
                         "instructions": mcp::INSTRUCTIONS
                     }),
@@ -648,6 +688,51 @@ async fn handle_rpc(state: &AppState, principal: &Principal, req: RpcRequest, ip
             )
         }
         "ping" => json_response(StatusCode::OK, mcp::result(id, json!({}))),
+        "resources/list" => {
+            let resources: Vec<Value> = SKILL_RESOURCES
+                .iter()
+                .map(|(uri, name, description)| {
+                    json!({
+                        "uri": uri,
+                        "name": name,
+                        "description": description,
+                        "mimeType": "text/markdown"
+                    })
+                })
+                .collect();
+            json_response(
+                StatusCode::OK,
+                mcp::result(id, json!({ "resources": resources })),
+            )
+        }
+        "resources/read" => {
+            let uri = req
+                .params
+                .get("uri")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            match skill_text(uri) {
+                Some(text) => json_response(
+                    StatusCode::OK,
+                    mcp::result(
+                        id,
+                        json!({
+                            "contents": [{
+                                "uri": uri,
+                                "mimeType": "text/markdown",
+                                "text": text
+                            }]
+                        }),
+                    ),
+                ),
+                None => rpc_error(
+                    StatusCode::OK,
+                    id,
+                    mcp::INVALID_PARAMS,
+                    format!("不认识的 resource：{uri}"),
+                ),
+            }
+        }
         "tools/list" => {
             let tools: Vec<Value> = tool_catalog()
                 .into_iter()
@@ -729,8 +814,8 @@ async fn mcp_post(
 /// agent 的工具调用留痕。
 ///
 /// 只记会改状态的工具：`ops_system_overview` 这种只读的，一个 agent 一次排障能调
-/// 十几次，全记下来会把"谁重启了容器"这类真正要紧的行淹掉。判断依据是工具自带的
-/// 权限 —— 权限以 `.read` 结尾的就是只读。
+/// 十几次，全记下来会把"谁重启了容器"这类真正要紧的行淹掉。判断依据是 `tool_level()`
+/// —— 它按工具名判断，比看权限名结尾靠谱（`ops_member_list` 用的就是 `.manage`）。
 fn audit_tool_call(
     state: &AppState,
     principal: &Principal,
@@ -894,4 +979,20 @@ async fn skill_deploy(
         crate::domain::mcp::SKILL_REF_DEPLOY,
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `resources/list` 里报出来的每一条都必须真读得到 —— 报了一条读不出的，
+    /// agent 就会拿着一份读不到的文件名去伸手。
+    #[test]
+    fn 列出来的技能资源都读得到() {
+        for (uri, name, _) in SKILL_RESOURCES {
+            assert!(!name.is_empty(), "{uri} 没有名字");
+            assert!(skill_text(uri).is_some(), "{uri} 列了却读不到");
+        }
+        assert!(skill_text("skill://zops/nope").is_none());
+    }
 }
