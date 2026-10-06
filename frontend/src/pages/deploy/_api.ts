@@ -64,6 +64,22 @@ export async function listJobs(): Promise<DeployJob[]> {
   return res.data;
 }
 
+/** 机器上真实在跑的服务（容器）。「应用与服务」列的就是它们。 */
+export type ServiceContainer = {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  ports: string;
+};
+
+export async function listServices(): Promise<ServiceContainer[]> {
+  const res = await get<{ containers: ServiceContainer[] }>('/service/list');
+  if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.err_load'));
+  return res.data.containers;
+}
+
 export async function createJob(name: string, note: string): Promise<DeployJob> {
   const res = await post<DeployJob>('/deploy/jobs', { name, note, source: 'manual' });
   if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.create_failed'));

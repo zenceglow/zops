@@ -925,7 +925,14 @@
     "err_runs": "Could not load history",
     "err_log": "Could not read the log",
     "err_upload": "Upload failed ({{code}})",
-    "err_network": "Network error — upload interrupted"
+    "err_network": "Network error — upload interrupted",
+    "state_running": "running",
+    "state_stopped": "stopped",
+    "no_service": "no matching container",
+    "unmanaged": "unmanaged (no deploy job yet)",
+    "adopt": "Adopt this service",
+    "adopt_desc": "Create a deploy job for this running service: upload artifacts, write the deploy script, run it — every run is recorded, and you can see which container it is bound to.",
+    "adopted": "Adopted {{name}}"
   },
   "security": {
     "title": "Security",

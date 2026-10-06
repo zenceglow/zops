@@ -925,7 +925,14 @@
     "err_runs": "读取记录失败",
     "err_log": "读取日志失败",
     "err_upload": "上传失败（{{code}}）",
-    "err_network": "网络错误，上传中断"
+    "err_network": "网络错误，上传中断",
+    "state_running": "运行中",
+    "state_stopped": "已停止",
+    "no_service": "没有对应容器",
+    "unmanaged": "未纳管（还没建部署任务）",
+    "adopt": "纳管这个服务",
+    "adopt_desc": "给这个已经在跑的服务建一条部署任务：以后传产物、写部署脚本、执行，都会留下记录，也能看到它绑在哪个容器上。",
+    "adopted": "已纳管 {{name}}"
   },
   "security": {
     "title": "安全中心",

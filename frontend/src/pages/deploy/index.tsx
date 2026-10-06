@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   CheckCircle2,
@@ -33,6 +33,7 @@ import {
   deleteFile,
   deleteJob,
   listJobs,
+  listServices,
   listRuns,
   readRunLog,
   runJob,
@@ -40,6 +41,7 @@ import {
   uploadFile,
   type DeployJob,
   type DeployRun,
+  type ServiceContainer,
 } from './_api';
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
@@ -96,6 +98,11 @@ export default function DeployPage() {
   const [jobs, setJobs] = useState<DeployJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** 机器上真实在跑的服务。「应用与服务」是建立在 Docker 之上的那一层：
+   *  没建过部署任务的服务也要列出来，否则"首页看得到、进来就没了"。 */
+  const [services, setServices] = useState<ServiceContainer[]>([]);
+  /** 点了没有部署任务的服务 —— 右侧显示"纳管"面板，而不是一片空白。 */
+  const [adoptTarget, setAdoptTarget] = useState<{ name: string } | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newNote, setNewNote] = useState('');
@@ -125,7 +132,28 @@ export default function DeployPage() {
     refresh()
       .catch((e) => toast.error(String(e.message ?? e)))
       .finally(() => setLoading(false));
+    void listServices()
+      .then(setServices)
+      .catch(() => setServices([]));
   }, [refresh]);
+
+  /** 服务 + 部署任务合并成一张表：同名就是同一个应用。 */
+  const apps = useMemo(() => {
+    const rows = new Map<string, { name: string; job?: DeployJob; service?: ServiceContainer }>();
+    for (const c of services) rows.set(c.name, { name: c.name, service: c });
+    for (const j of jobs) {
+      const row = rows.get(j.name);
+      if (row) row.job = j;
+      else rows.set(j.name, { name: j.name, job: j });
+    }
+    // 在跑的排前面，其余按名字。
+    return [...rows.values()].sort((a, b) => {
+      const ar = a.service?.state === 'running';
+      const br = b.service?.state === 'running';
+      if (ar !== br) return ar ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [services, jobs]);
 
   useEffect(() => {
     if (!selected) return;
@@ -179,6 +207,25 @@ export default function DeployPage() {
       await refresh();
       setSelectedId(job.id);
       toast.success(t('deploy.created', { name: job.name, dir: job.dir }));
+    } catch (e) {
+      toast.error(String((e as Error).message));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * 纳管一个已经在跑的服务：给它建一条部署任务（同名），之后就能传产物、写脚本、
+   * 留记录。这是"应用与服务"和纯 Docker 的区别 —— 不纳管也能看，纳管了才有记录。
+   */
+  const onAdopt = async (name: string) => {
+    setBusy(true);
+    try {
+      const job = await createJob(name, t('deploy.unmanaged'));
+      setAdoptTarget(null);
+      await refresh();
+      setSelectedId(job.id);
+      toast.success(t('deploy.adopted', { name }));
     } catch (e) {
       toast.error(String((e as Error).message));
     } finally {
@@ -267,7 +314,7 @@ export default function DeployPage() {
         </Button>
       </div>
 
-      {jobs.length === 0 ? (
+      {apps.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Rocket className="size-6 text-muted-foreground" />
@@ -279,39 +326,84 @@ export default function DeployPage() {
         </Card>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          {/* 左：任务列表 */}
+          {/* 左：应用列表。一个应用 = 一个服务（容器），有没有部署任务是它的一个属性，
+              而不是"能不能出现在这里"的条件。 */}
           <div className="space-y-2">
-            {jobs.map((job) => (
+            {apps.map((app) => {
+              const job = app.job;
+              const active = app.job ? job!.id === selectedId : adoptTarget?.name === app.name;
+              return (
               <button
-                key={job.id}
+                key={app.name}
                 type="button"
-                onClick={() => setSelectedId(job.id)}
+                onClick={() => {
+                  if (job) {
+                    setAdoptTarget(null);
+                    setSelectedId(job.id);
+                  } else {
+                    setAdoptTarget({ name: app.name });
+                  }
+                }}
                 className={cn(
                   'w-full rounded-xl border border-border/60 p-3 text-left transition-colors hover:bg-muted/50',
-                  job.id === selectedId && 'border-primary/50 bg-primary/5',
+                  active && 'border-primary/50 bg-primary/5',
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-mono text-sm">{job.name}</span>
-                  {job.source === 'agent' && (
+                  <span className="truncate font-mono text-sm">{app.name}</span>
+                  {job?.source === 'agent' && (
                     <Badge variant="secondary" className="h-4 px-1 text-[10px]">
                       agent
                     </Badge>
                   )}
                 </div>
                 <div className="mt-1.5">
-                  <StatusBadge status={job.status} />
+                  {job ? (
+                    <StatusBadge status={job.status} />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {app.service?.state === 'running'
+                        ? t('deploy.state_running')
+                        : t('deploy.state_stopped')}
+                    </span>
+                  )}
                 </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {job.last_run_at
-                    ? when(job.last_run_at, t)
-                    : t('deploy.never_deployed')}
+                <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                  {app.service?.image ?? t('deploy.no_service')}
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {job
+                    ? job.last_run_at
+                      ? when(job.last_run_at, t)
+                      : t('deploy.never_deployed')
+                    : t('deploy.unmanaged')}
                 </p>
               </button>
-            ))}
+              );
+            })}
           </div>
 
           {/* 右：三步走 + 记录 */}
+          {adoptTarget && !selected && (
+            <Card>
+              <CardContent className="space-y-3 py-10 text-center">
+                <Rocket className="mx-auto size-6 text-muted-foreground" />
+                <p className="font-mono text-sm">{adoptTarget.name}</p>
+                <p className="mx-auto max-w-md text-xs text-muted-foreground">
+                  {t('deploy.adopt_desc')}
+                </p>
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void onAdopt(adoptTarget.name)}
+                >
+                  <Plus />
+                  {t('deploy.adopt')}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {selected && (
             <div className="space-y-4">
               <Card>
