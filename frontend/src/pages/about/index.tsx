@@ -119,6 +119,9 @@ export default function AboutPage() {
       setUpdating(false);
       return;
     }
+    // 点下去必须有回音：换二进制是几秒的事，但面板重启回来要几十秒 —— 中间
+    // 这段时间如果界面上什么都没变，人只会以为"点了没反应"然后反复点。
+    toast.success(t('about.update_started'));
     const started = Date.now();
     pollRef.current = window.setInterval(async () => {
       if (Date.now() - started > 10 * 60 * 1000) {
@@ -133,7 +136,10 @@ export default function AboutPage() {
           setUpdating(false);
           setRelease(r.data);
           setFetched(true);
-          if (!r.data.has_update) setUpdatedTo(r.data.current);
+          if (!r.data.has_update) {
+            setUpdatedTo(r.data.current);
+            toast.success(t('about.updated', { v: r.data.current }));
+          }
         }
       } catch {
         /* 面板正在重启，下一轮再问 */
@@ -219,12 +225,18 @@ export default function AboutPage() {
                 ? t('about.last_checked', { t: release.checked_at })
                 : t('about.never_checked')}
             </p>
+            {release?.has_update && !release.can_apply && (
+              <p className="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                {t('about.cannot_apply')}
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {release?.has_update && release.can_apply && !updating && (
-              <Button size="sm" onClick={updateNow}>
-                <Download />
-                {t('about.update_now')}
+            {/* 升级期间按钮留着（禁用 + 转圈），不要让它凭空消失 */}
+            {release?.has_update && release.can_apply && (
+              <Button size="sm" onClick={updateNow} disabled={updating}>
+                {updating ? <Loader2 className="animate-spin" /> : <Download />}
+                {updating ? t('about.updating_now') : t('about.update_now')}
               </Button>
             )}
             {release?.has_update && !release.can_apply && (

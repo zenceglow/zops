@@ -881,7 +881,10 @@
     "started_at": "启动于",
     "docker_id": "Docker 守护进程",
     "machine_id": "machine-id",
-    "fingerprint_hint": "agent 通过 MCP 报的是同一份指纹。版本不同 = 它连的是另一个面板；启动时刻不同 = 不是同一个进程。对不上就别信它的数据。"
+    "fingerprint_hint": "agent 通过 MCP 报的是同一份指纹。版本不同 = 它连的是另一个面板；启动时刻不同 = 不是同一个进程。对不上就别信它的数据。",
+    "updating_now": "升级中…",
+    "update_started": "已开始升级：面板会自己下载替换并重启，大约 30 秒后回来",
+    "cannot_apply": "这台的运行方式不支持自升级（跑的不是安装脚本装的那份二进制），请用下面复制的命令手动升级。"
   },
   "notify": {
     "title": "通知",

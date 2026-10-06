@@ -881,7 +881,10 @@
     "started_at": "Started",
     "docker_id": "Docker daemon",
     "machine_id": "machine-id",
-    "fingerprint_hint": "An agent over MCP reports this same fingerprint. Different version = it is talking to another panel; different start time = a different process. If it does not match, do not trust its data."
+    "fingerprint_hint": "An agent over MCP reports this same fingerprint. Different version = it is talking to another panel; different start time = a different process. If it does not match, do not trust its data.",
+    "updating_now": "Updating…",
+    "update_started": "Update started: the panel replaces itself and restarts in ~30s",
+    "cannot_apply": "This instance can't self-update (it isn't running the installer's binary); use the copied command instead."
   },
   "notify": {
     "title": "Notifications",
