@@ -122,6 +122,7 @@ msg() {
     dl_bin)    [ "$L" = zh ] && printf '· 下载二进制…' || printf '· Downloading binary…' ;;
     dl_fail)   [ "$L" = zh ] && printf '下载失败：%s' "$1" || printf 'Download failed: %s' "$1" ;;
     dl_ok)     [ "$L" = zh ] && printf '已安装 %s' "$1" || printf 'Installed %s' "$1" ;;
+    zops_link) [ "$L" = zh ] && printf '已建立命令 %s' "$1" || printf 'Linked command %s' "$1" ;;
     unit_write) [ "$L" = zh ] && printf '· 写入 systemd 服务…' || printf '· Writing systemd unit…' ;;
     unit_ok)   [ "$L" = zh ] && printf '已写入 %s' "$1" || printf 'Wrote %s' "$1" ;;
     svc_start) [ "$L" = zh ] && printf '· 启动服务…' || printf '· Starting service…' ;;
@@ -153,6 +154,7 @@ msg() {
     f_firewall) [ "$L" = zh ] && printf ' · 若面板打不开，先放行端口：firewall-cmd --add-port=%s/tcp --permanent && firewall-cmd --reload' "$1" || printf ' · If the panel is unreachable, open the port: firewall-cmd --add-port=%s/tcp --permanent && firewall-cmd --reload' "$1" ;;
     f_codex)   [ "$L" = zh ] && printf ' · 打开面板 → 「接入 Codex」→ 生成令牌 → 复制配置贴给 Codex' || printf ' · Open the panel → "MCP" → create a token → paste the config into Codex' ;;
     f_service) [ "$L" = zh ] && printf ' · 管理服务：systemctl status %s / journalctl -u %s -f' "$1" "$2" || printf ' · Manage the service: systemctl status %s / journalctl -u %s -f' "$1" "$2" ;;
+    f_cli)     [ "$L" = zh ] && printf ' · 常用命令：zops info ｜ zops update ｜ zops resetpwd ｜ zops access local ｜ zops uninstall' || printf ' · Handy commands: zops info | zops update | zops resetpwd | zops access local | zops uninstall' ;;
     f_private) [ "$L" = zh ] && printf '上面的地址是内网 IP（云主机 NAT）。对外访问还要在云控制台的安全组放行 TCP %s，' "$1" || printf 'That address is a private IP (cloud NAT). Open TCP %s in your cloud security group,' "$1" ;;
     f_private2) [ "$L" = zh ] && printf '或者跑一次：bash install.sh（第 2 步填一个指向本机的域名，会自动配好 HTTPS 反代）。' || printf 'or re-run the installer with a domain that resolves here to get HTTPS automatically.' ;;
     *) printf '' ;;
@@ -588,6 +590,11 @@ fi
 install -m 0755 "$NEW_BIN" "$BIN_PATH"
 ok "$(msg dl_ok "$BIN_PATH")"
 
+# `zops` 这个短名字也建上：装完之后要敲的是 `zops info` / `zops update`，
+# 而不是一长串 zenceglow-ops。软链跟着二进制走，升级时不需要重建。
+ln -sf "$BIN_PATH" "$(dirname "$BIN_PATH")/zops" &&
+  ok "$(msg zops_link "$(dirname "$BIN_PATH")/zops")"
+
 say "$(msg unit_write)"
 cat > "$UNIT_PATH" <<UNIT
 [Unit]
@@ -759,6 +766,7 @@ $(msg f_notes)
 $(msg f_firewall "$PORT")
 $(msg f_codex)
 $(msg f_service "$SERVICE" "$SERVICE")
+$(msg f_cli)
 ${B}=========================================${N}
 EOF
 

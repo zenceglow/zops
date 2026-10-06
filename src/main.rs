@@ -1,4 +1,5 @@
 mod assets;
+mod cli;
 mod config;
 mod domain;
 mod http;
@@ -47,6 +48,12 @@ fn main() {
     //   zenceglow-ops --list-users
     //   zenceglow-ops --reset-password <用户名> <新密码>
     if let Some(code) = cli_accounts() {
+        std::process::exit(code);
+    }
+
+    // `zops info / update / resetpwd / access / uninstall`：装完之后常用的几件事。
+    // 不带子命令就是正常起服务（systemd 就是这么起的）。
+    if let Some(code) = cli::dispatch() {
         std::process::exit(code);
     }
 
@@ -236,7 +243,10 @@ async fn async_main() {
         }
     });
 
-    let addr = format!("0.0.0.0:{}", cfg.port);
+    // 对外访问开关：`zops access local` 会把 OPS_BIND 写成 127.0.0.1（只允许本机），
+    // 默认 0.0.0.0。改完要重启服务才生效 —— CLI 那边会顺手重启。
+    let bind = std::env::var("OPS_BIND").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let addr = format!("{bind}:{}", cfg.port);
     tracing::info!("Zenceglow Ops Panel listening on {addr}");
     axum::serve(
         tokio::net::TcpListener::bind(&addr).await.expect("bind"),
