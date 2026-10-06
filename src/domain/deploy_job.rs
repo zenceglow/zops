@@ -71,6 +71,12 @@ pub struct CreateDeployJob {
     /// 面板传 manual，agent 走 MCP 时传 agent。
     #[serde(default)]
     pub source: String,
+    /// frontend | backend。决定骨架里"发不发布宿主端口"。
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// 后端要发布的宿主端口。留空就从 8000-9999 里挑一个空着的。
+    #[serde(default)]
+    pub port: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]

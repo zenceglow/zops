@@ -938,7 +938,13 @@
     "filter_unmanaged": "Unmanaged",
     "no_match": "No matching service",
     "count": "{{total}} services · {{managed}} managed",
-    "managed": "managed"
+    "managed": "managed",
+    "kind": "Type",
+    "kind_backend": "Backend service (publishes a host port; the gateway proxies localhost:<port>)",
+    "kind_frontend": "Static frontend (no host port; the gateway proxies by container name)",
+    "port": "Host port",
+    "port_auto": "Leave empty to pick a free one (8000-9999)",
+    "spec_hint": "Creating writes the house-convention skeleton: docker-compose.yml (network local, restart always, TZ=Asia/Shanghai, 50m×10 log rotation), Dockerfile, deploy.sh. Existing files are never overwritten."
   },
   "security": {
     "title": "Security",

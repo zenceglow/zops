@@ -938,7 +938,13 @@
     "filter_unmanaged": "未纳管",
     "no_match": "没有匹配的服务",
     "count": "{{total}} 个服务 · {{managed}} 个已纳管",
-    "managed": "已纳管"
+    "managed": "已纳管",
+    "kind": "类型",
+    "kind_backend": "后端服务（发布一个宿主端口，网关反代 localhost:<端口>）",
+    "kind_frontend": "前端静态站（不发布宿主端口，网关按容器名反代）",
+    "port": "宿主端口",
+    "port_auto": "留空自动挑一个空端口（8000-9999）",
+    "spec_hint": "创建时会按这台机器的规范写好骨架：docker-compose.yml（网络 local、restart always、TZ=Asia/Shanghai、日志轮转 50m×10）、Dockerfile、deploy.sh（部署脚本）。已经存在的文件不会被覆盖。"
   },
   "security": {
     "title": "安全中心",

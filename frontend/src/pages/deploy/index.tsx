@@ -110,6 +110,9 @@ export default function DeployPage() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newNote, setNewNote] = useState('');
+  /** 建应用时先定类型：前端只在网关后面，后端发布一个宿主端口。骨架按它生成。 */
+  const [newKind, setNewKind] = useState<'frontend' | 'backend'>('backend');
+  const [newPort, setNewPort] = useState('');
   const [busy, setBusy] = useState(false);
 
   const [script, setScript] = useState('');
@@ -222,10 +225,17 @@ export default function DeployPage() {
   const onCreate = async () => {
     setBusy(true);
     try {
-      const job = await createJob(newName.trim(), newNote.trim());
+      const parsed = Number.parseInt(newPort, 10);
+      const job = await createJob(
+        newName.trim(),
+        newNote.trim(),
+        newKind,
+        newKind === 'backend' && Number.isFinite(parsed) ? parsed : undefined,
+      );
       setCreating(false);
       setNewName('');
       setNewNote('');
+      setNewPort('');
       await refresh();
       setSelectedId(job.id);
       toast.success(t('deploy.created', { name: job.name, dir: job.dir }));
@@ -702,6 +712,45 @@ export default function DeployPage() {
                 placeholder={t('deploy.note_placeholder')}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label>{t('deploy.kind')}</Label>
+              <div className="flex gap-2">
+                {(
+                  [
+                    { id: 'backend', label: t('deploy.kind_backend') },
+                    { id: 'frontend', label: t('deploy.kind_frontend') },
+                  ] as { id: 'frontend' | 'backend'; label: string }[]
+                ).map((k) => (
+                  <button
+                    key={k.id}
+                    type="button"
+                    onClick={() => setNewKind(k.id)}
+                    className={cn(
+                      'flex-1 rounded-xl px-3 py-2 text-left text-xs ring-1 transition-colors',
+                      newKind === k.id
+                        ? 'bg-primary/5 ring-primary/50'
+                        : 'ring-border/60 hover:bg-muted/50',
+                    )}
+                  >
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {newKind === 'backend' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="deploy-port">{t('deploy.port')}</Label>
+                <Input
+                  id="deploy-port"
+                  value={newPort}
+                  onChange={(e) => setNewPort(e.target.value.replace(/\D/g, ''))}
+                  placeholder={t('deploy.port_auto')}
+                  className="font-mono"
+                />
+              </div>
+            )}
+            {/* 说清这一步落地的是什么：规范不是提示，是创建动作本身。 */}
+            <p className="text-[11px] leading-5 text-muted-foreground">{t('deploy.spec_hint')}</p>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCreating(false)}>

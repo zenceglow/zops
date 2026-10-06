@@ -138,6 +138,11 @@ impl DeployJobService {
     }
 
     /// 建任务 = 建目录 + 落一条记录。目录先建出来，用户下一步就能往里传东西。
+    ///
+    /// **规范落在这一步**：不管发起者是人（面板）还是 agent（MCP），创建时都会把
+    /// compose / Dockerfile / 部署脚本按这台机器的既有习惯写好 —— 网络 `local`、
+    /// `restart: always`、`TZ`、日志轮转、前端不发布端口 / 后端发布一个。
+    /// 规范写在文档里只能靠自觉，写进创建动作里才是"一个规范"。
     pub fn create(
         &self,
         name: &str,
@@ -145,6 +150,8 @@ impl DeployJobService {
         source: &str,
         actor: &str,
         actor_kind: &str,
+        kind: &str,
+        port: Option<u16>,
     ) -> Result<DeployJob, AppError> {
         let name = name.trim();
         if !valid_name(name) {
@@ -165,12 +172,53 @@ impl DeployJobService {
         std::fs::create_dir_all(&dir)
             .map_err(|e| AppError::internal(format!("创建 {} 失败：{e}", dir.display())))?;
 
+        // 骨架。前端只在网关后面（不发布宿主端口），后端发布一个宿主端口。
+        let frontend = kind == "frontend";
+        let port = if frontend {
+            0
+        } else {
+            port.unwrap_or_else(pick_free_port)
+        };
+        let script = deploy_script(name, frontend, port);
+        let files: [(&str, String); 3] = [
+            ("docker-compose.yml", compose_file(name, frontend, port)),
+            ("Dockerfile", dockerfile(name, frontend, port)),
+            ("deploy.sh", script.clone()),
+        ];
+        // **只补缺的，不覆盖已有的**：纳管一个本来就存在、手写过配置的服务时，
+        // 把它目录里的 compose/Dockerfile 冲掉是最不能犯的错。
+        for (file, body) in &files {
+            let path = dir.join(file);
+            if path.exists() {
+                continue;
+            }
+            std::fs::write(&path, body)
+                .map_err(|e| AppError::internal(format!("写入 {file} 失败：{e}")))?;
+        }
+        // 脚本以目录里那份为准（老目录里可能已经有一份），没有才用骨架。
+        let script = std::fs::read_to_string(dir.join("deploy.sh")).unwrap_or(script);
+
         let id = uuid::Uuid::new_v4().to_string();
         let row = self
             .db
             .create_deploy_job(&id, name, note.trim(), source, actor, actor_kind)
             .map_err(AppError::from)?;
-        self.hydrate(row)
+        // 脚本直接落库：面板第 2 步、agent 的 put_script 都从这儿起步。
+        self.db.save_deploy_script(&id, &script).map_err(AppError::from)?;
+        for (file, body) in &files {
+            self.db
+                .upsert_deploy_file(
+                    &uuid::Uuid::new_v4().to_string(),
+                    &id,
+                    file,
+                    body.len() as i64,
+                    actor,
+                )
+                .map_err(AppError::from)?;
+        }
+        // 从库里重读一次：脚本和产物是刚写进去的，别把创建前的快照返回给调用方。
+        let _ = row;
+        self.get(&id)
     }
 
     pub fn save_script(&self, id: &str, script: &str) -> Result<DeployJob, AppError> {
@@ -393,6 +441,100 @@ fn to_run(row: DeployRunRow) -> DeployRun {
     }
 }
 
+/// 后端要发布的宿主端口：从 8000-9999 里挑一个**真能绑上**的（和 `ops_port_list` 同一口径）。
+fn pick_free_port() -> u16 {
+    let used: HashSet<u16> = crate::infrastructure::system::listeners()
+        .into_iter()
+        .map(|l| l.port)
+        .collect();
+    crate::infrastructure::system::suggest_free(&used, 8000, 9999, 1)
+        .first()
+        .copied()
+        .unwrap_or(8000)
+}
+
+/// 规范化的 compose。前端不发布宿主端口（网关按容器名反代），后端发布一个。
+fn compose_file(name: &str, frontend: bool, port: u16) -> String {
+    let ports = if frontend {
+        String::new()
+    } else {
+        format!("    ports:\n      - \"{port}:{port}\"\n")
+    };
+    let log_mount = if frontend {
+        "      - ./logs:/var/log/caddy\n"
+    } else {
+        "      - ./logs:/app/logs\n      - /etc/localtime:/etc/localtime:ro\n"
+    };
+    format!(
+        "services:
+  {name}:
+    image: {name}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {name}
+    hostname: {name}
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+{log_mount}{ports}    logging:
+      driver: json-file
+      options: {{ max-size: \"50m\", max-file: \"10\", compress: \"true\" }}
+    networks:
+      - local
+networks:
+  local:
+    name: local
+    external: true
+"
+    )
+}
+
+fn dockerfile(name: &str, frontend: bool, port: u16) -> String {
+    if frontend {
+        // 前端是静态文件 + caddy:alpine，产物落在 ./dist。
+        "# 静态前端：产物放 ./dist，Caddy 直接服务 /srv。\n\
+         FROM caddy:alpine\n\
+         COPY ./dist /srv\n"
+            .to_string()
+    } else {
+        // 二进制名 = 应用名（这台机器上的既有习惯：zenceglow-server 就是这么 COPY 的）。
+        format!(
+            "# 后端：把构建好的二进制放到本目录，文件名与本应用同名。\n\
+             FROM alpine:3.20\n\
+             WORKDIR /app\n\
+             RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup \\\n    && mkdir -p /app/data /app/logs && chown -R appuser:appgroup /app\n\
+             COPY {name} .\n\
+             USER appuser\n\
+             EXPOSE {port}\n\
+             ENV PORT={port}\n\
+             CMD [\"./{name}\"]\n"
+        )
+    }
+}
+
+/// 部署脚本骨架。面板第 2 步、agent 的 `put_script` 都从这一份起步。
+fn deploy_script(name: &str, frontend: bool, port: u16) -> String {
+    let head = format!(
+        "# {name} 的部署脚本（zops 生成的骨架，按需改）。\n\
+         # 工作目录就是 /opt/docker-apps/{name}/：产物、compose、Dockerfile 都在这儿。\n"
+    );
+    let unpack = if frontend {
+        "# 有发布包就解开；前端产物应该落在 ./dist/\nif [ -f package.tgz ]; then tar zxvf package.tgz -C ./; fi\n"
+    } else {
+        "# 有发布包就解开；二进制名要和应用名一致（和 Dockerfile 的 COPY 对齐）\nif [ -f package.tgz ]; then tar zxvf package.tgz -C ./; fi\n"
+    };
+    let smoke = if frontend {
+        "# 前端不发布宿主端口，冒烟直接看网关：curl -fsS https://<域名>/\n".to_string()
+    } else {
+        format!("# 有 /health 就探一下\ncurl -fsS http://127.0.0.1:{port}/health || true\n")
+    };
+    format!(
+        "{head}{unpack}docker build -t {name} .\ndocker compose up -d --build\n{smoke}"
+    )
+}
+
 /// 服务名/目录名。字符集卡死是安全边界：允许 `/` 或 `..` 就等于允许写到别处去。
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty()
@@ -549,6 +691,41 @@ mod tests {
         }
     }
 
+    /// 创建即落规范：不管发起者是人还是 agent，建出来的目录都是同一套骨架。
+    #[test]
+    fn 创建时写出规范骨架() {
+        let db = Arc::new(Database::open(Path::new(":memory:")).unwrap());
+        let root = std::env::temp_dir().join(format!("zops-spec-{}", std::process::id()));
+        let svc = DeployJobService::new(db, root.clone());
+
+        let job = svc
+            .create("zops-spec-app", "", "manual", "tester", "user", "backend", Some(8123))
+            .unwrap();
+        let dir = svc.dir_of("zops-spec-app");
+        for f in ["docker-compose.yml", "Dockerfile", "deploy.sh"] {
+            assert!(dir.join(f).is_file(), "应该写出 {f}");
+        }
+        let compose = std::fs::read_to_string(dir.join("docker-compose.yml")).unwrap();
+        assert!(compose.contains("name: local"), "要接既有网络 local");
+        assert!(compose.contains("restart: always"), "要自启");
+        assert!(compose.contains("TZ=Asia/Shanghai"), "要设时区");
+        assert!(compose.contains("max-size"), "要日志轮转");
+        assert!(compose.contains("\"8123:8123\""), "后端发布宿主端口");
+        assert!(job.script.contains("docker compose up -d --build"), "脚本落库");
+
+        // 前端不发布宿主端口，产物落 ./dist
+        let fe = svc
+            .create("zops-spec-fe", "", "manual", "tester", "user", "frontend", None)
+            .unwrap();
+        let fe_compose =
+            std::fs::read_to_string(svc.dir_of("zops-spec-fe").join("docker-compose.yml")).unwrap();
+        assert!(!fe_compose.contains("ports:"), "前端不该发布宿主端口");
+        assert!(fe.script.contains("./dist"));
+        assert!(fe.files.iter().any(|f| f.path == "docker-compose.yml"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// 部署记录要能落库、能按 job 查回来 —— 这是"谁什么时候部署了什么"的底账。
     #[tokio::test]
     async fn 建任务传产物写脚本跑一次都留痕() {
@@ -557,14 +734,25 @@ mod tests {
         let svc = DeployJobService::new(db, root.clone());
 
         let job = svc
-            .create("zops-test-app", "测试", "manual", "tester", "user")
+            .create(
+                "zops-test-app",
+                "测试",
+                "manual",
+                "tester",
+                "user",
+                "backend",
+                None,
+            )
             .unwrap();
         assert!(svc.dir_of("zops-test-app").is_dir(), "目录应该建出来");
 
+        // 创建时就写好了 3 个骨架文件（compose / Dockerfile / deploy.sh）
+        let job = svc.get(&job.id).unwrap();
+        assert_eq!(job.files.len(), 3, "骨架文件");
         svc.upload(&job.id, "hello.txt", b"hi", "tester").unwrap();
         let job = svc.get(&job.id).unwrap();
-        assert_eq!(job.files.len(), 1);
-        assert_eq!(job.files[0].path, "hello.txt");
+        assert_eq!(job.files.len(), 4);
+        assert!(job.files.iter().any(|f| f.path == "hello.txt"));
 
         svc.save_script(&job.id, "echo deploying\ncat hello.txt")
             .unwrap();

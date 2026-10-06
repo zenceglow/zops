@@ -80,8 +80,21 @@ export async function listServices(): Promise<ServiceContainer[]> {
   return res.data.containers;
 }
 
-export async function createJob(name: string, note: string): Promise<DeployJob> {
-  const res = await post<DeployJob>('/deploy/jobs', { name, note, source: 'manual' });
+export async function createJob(
+  name: string,
+  note: string,
+  /** frontend（静态站，不发布宿主端口）| backend（发布一个宿主端口） */
+  kind: 'frontend' | 'backend' = 'backend',
+  /** 后端端口；留空由服务端从 8000-9999 挑一个空着的 */
+  port?: number,
+): Promise<DeployJob> {
+  const res = await post<DeployJob>('/deploy/jobs', {
+    name,
+    note,
+    source: 'manual',
+    kind,
+    port: port || null,
+  });
   if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.create_failed'));
   return res.data;
 }

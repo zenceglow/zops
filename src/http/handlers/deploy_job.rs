@@ -68,7 +68,15 @@ async fn create(
     require_perm(&user, OPS_DEPLOY)?;
     let job = state
         .deploy_jobs
-        .create(&body.name, &body.note, &body.source, &user.username, "user")?;
+        .create(
+            &body.name,
+            &body.note,
+            &body.source,
+            &user.username,
+            "user",
+            body.kind.as_deref().unwrap_or("backend"),
+            body.port,
+        )?;
     Ok(Json(ApiResponse::ok(job)))
 }
 

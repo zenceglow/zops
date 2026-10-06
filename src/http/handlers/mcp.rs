@@ -490,14 +490,17 @@ fn tool_catalog() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "ops_deploy_job_create",
-            description: "建一个部署任务：创建 /opt/docker-apps/<name>/ 目录并落一条记录。先建任务，再传产物、写脚本。",
+            description: "建一个部署任务：创建 /opt/docker-apps/<name>/ 并**按规范写好骨架**——docker-compose.yml（网络 local、restart always、TZ、日志轮转；backend 发布一个宿主端口，frontend 不发布）、Dockerfile、deploy.sh（同时落库成这个任务的脚本）。目录里已有的文件不会覆盖。kind 传 backend（默认）或 frontend；port 留空会自动挑一个空着的（8000-9999）。",
             permission: OPS_DEPLOY,
             schema: || {
                 json!({
                     "type": "object",
                     "properties": {
                         "name": { "type": "string", "description": "服务名，同时是目录名和容器名；只能用 a-z 0-9 - _" },
-                        "note": { "type": "string", "description": "这次部署是干什么的，一句话" }
+                "note": { "type": "string", "description": "这次部署是干什么的，一句话" }
+                        ,
+                        "kind": { "type": "string", "description": "frontend（静态站，不发布宿主端口）或 backend（发布一个宿主端口），默认 backend" },
+                        "port": { "type": "integer", "description": "后端要发布的宿主端口；留空会自动从 8000-9999 里挑一个空着的" }
                     },
                     "required": ["name"],
                     "additionalProperties": false
@@ -744,10 +747,15 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
         ToolId::DeployJobCreate => {
             let name = require_str(args, "name").map_err(AppError::bad_request)?;
             let note = args.get("note").and_then(Value::as_str).unwrap_or_default();
-            let (actor, kind) = principal_actor(state, principal);
+            let kind = args
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("backend");
+            let port = args.get("port").and_then(Value::as_u64).map(|p| p as u16);
+            let (actor, actor_kind) = principal_actor(state, principal);
             let job = state
                 .deploy_jobs
-                .create(&name, note, "agent", &actor, kind)?;
+                .create(&name, note, "agent", &actor, actor_kind, kind, port)?;
             Ok(json!({ "job": job }))
         }
         ToolId::DeployJobPutScript => {

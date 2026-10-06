@@ -30,12 +30,21 @@
 
 | 步骤 | 手段 |
 |---|---|
-| 1. 建任务（= 建 `/opt/docker-apps/<name>/`） | `ops_deploy_job_create` |
-| 2. 传文本产物（compose / Dockerfile / 配置） | `ops_deploy_job_put_file` |
+| 1. 建任务（= 建 `/opt/docker-apps/<name>/` **并写好规范骨架**） | `ops_deploy_job_create`（带 `kind`：`backend` 发布一个宿主端口 / `frontend` 不发布） |
+| 2. 传文本产物（配置、附加文件） | `ops_deploy_job_put_file` |
 | 3. 传二进制产物（tgz / dmg） | HTTP 上传：<br>`curl -T package.tgz -H "Authorization: Bearer <令牌>" "<面板地址>/api/ops/deploy/job/upload?id=<name>&path=package.tgz"` |
 | 4. 写部署脚本 | `ops_deploy_job_put_script` |
 | 5. 执行（**先让用户确认**） | `ops_deploy_job_run` |
 | 6. 拉进度 | `ops_deploy_job_log`（带上次的 `offset` 接着拉，`finished=true` 就是跑完） |
+
+**建任务这一步已经把规范写进去了**：`docker-compose.yml`（网络 `local`、`restart: always`、
+`TZ=Asia/Shanghai`、日志轮转 50m×10、前端不发布端口 / 后端发布一个）、`Dockerfile`
+（前端 `caddy:alpine` + `./dist`；后端 alpine + 二进制名 = 应用名）、`deploy.sh`
+（生成好的部署脚本，已经落库成这个任务的脚本）。目录里**已有的文件不会被覆盖** ——
+纳管一个手写过的服务不会把它的配置冲掉。
+
+所以第 2、4 步通常只是"替换产物、按需微调"，不是从零写 compose。改端口、加挂载这类
+改动请直接改目录里那份 compose，别在别处另起一份。
 
 部署脚本在 `/opt/docker-apps/<name>/` 里以 `sh -c` 执行（开头等于已经 `set -e`）。
 脚本要能重复跑：第二次部署是覆盖前一次的，不是从头来。
