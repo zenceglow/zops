@@ -217,7 +217,42 @@ impl CaddyProcess {
                     Err(AppError::internal(msg))
                 }
             })
-            .or_else(|_| systemctl("restart", "caddy"))
+            .or_else(|_| self.restart_with_rollback())
+    }
+
+    /// 重启 Caddy，并确认它**真的**起来了；起不来就退回上一版配置再重启一次。
+    ///
+    /// `caddy validate` 只能挡住语法错，挡不住"加载时才失败"的配置。最典型的是
+    /// 新加的 `log` 指向一个 Caddy 进程写不了的路径：配置合情合理，重启后 Caddy
+    /// 立刻退出 —— 本来只是想改一个站点，结果是全站 502。这里把那种事故降级成
+    /// "这次改动没生效，配置回滚了"。
+    fn restart_with_rollback(&self) -> Result<(), AppError> {
+        systemctl("restart", "caddy")?;
+        std::thread::sleep(Duration::from_millis(1200));
+        if bin::pid().is_some() {
+            return Ok(());
+        }
+
+        let bak = format!("{}.zops-bak", self.caddyfile_path);
+        if !std::path::Path::new(&bak).exists() {
+            return Err(AppError::internal(
+                "Caddy 重启后没有起来，而且没找到上一版配置，无法自动回滚 —— 先看网关日志（journalctl -u caddy）",
+            ));
+        }
+        let previous = std::fs::read_to_string(&bak)
+            .map_err(|e| AppError::internal(format!("读取上一版配置失败：{e}")))?;
+        std::fs::write(&self.caddyfile_path, previous)
+            .map_err(|e| AppError::internal(format!("写回上一版配置失败：{e}")))?;
+        systemctl("restart", "caddy")?;
+        std::thread::sleep(Duration::from_millis(1200));
+        if bin::pid().is_none() {
+            return Err(AppError::internal(
+                "配置回滚后 Caddy 仍然起不来，需要人工介入：journalctl -u caddy",
+            ));
+        }
+        Err(AppError::internal(
+            "新配置 Caddy 加载失败（进程起不来），已自动回滚到上一版并重启，改动没有生效。先看网关日志再改。",
+        ))
     }
 
     /// Validate + format a Caddyfile with whichever Caddy is actually serving.

@@ -46,7 +46,7 @@ pub enum Principal {
 }
 
 impl Principal {
-    fn has(&self, permission: &str) -> bool {
+    pub(crate) fn has(&self, permission: &str) -> bool {
         if permission.is_empty() {
             return true;
         }
@@ -77,7 +77,11 @@ fn bearer(headers: &HeaderMap) -> &str {
         .unwrap_or("")
 }
 
-fn resolve_principal(state: &AppState, headers: &HeaderMap) -> Result<Principal, AppError> {
+/// 调用者的身份：`ops_…` 令牌，或者面板登录后的 JWT。
+///
+/// 放在 handler 里而不是中间件里，是因为有些接口（MCP、产物上传）既要让 agent
+/// 用令牌调，也要让面板 UI 用 JWT 调 —— 中间件只认其中一种。
+pub(crate) fn resolve_principal(state: &AppState, headers: &HeaderMap) -> Result<Principal, AppError> {
     let presented = bearer(headers);
     if presented.is_empty() {
         return Err(AppError::unauthorized("缺少 Authorization: Bearer <token>"));
@@ -196,6 +200,11 @@ fn principal_actor(state: &AppState, principal: &Principal) -> (String, &'static
         }
         Principal::User(u) => (u.username.clone(), "user"),
     }
+}
+
+/// 记账用的名字：agent 令牌显示令牌名，面板用户显示用户名。
+pub(crate) fn principal_label(state: &AppState, principal: &Principal) -> String {
+    principal_actor(state, principal).0
 }
 
 fn deploy_schema() -> Value {

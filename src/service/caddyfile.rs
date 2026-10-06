@@ -90,6 +90,14 @@ impl CaddyfileService {
             self.snapshot(&previous, author, note);
         }
 
+        // 上一版同时落一份在配置文件旁边：语法校验挡不住"加载时才失败"的配置，
+        // 最典型的是新加的 `log` 指向 Caddy 进程写不了的路径 —— 配置看着没毛病，
+        // Caddy 一重启就退出，全站 502。真踩到的时候，网关那边靠这份文件自动退回。
+        let bak = format!("{path}.zops-bak");
+        if !previous.trim().is_empty() {
+            let _ = tokio::fs::write(&bak, &previous).await;
+        }
+
         // 目录可能还不存在（面板装到一半、或者路径是自定义的）。
         if let Some(dir) = std::path::Path::new(&path).parent() {
             if !dir.as_os_str().is_empty() {

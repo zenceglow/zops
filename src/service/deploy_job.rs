@@ -43,7 +43,12 @@ pub struct DeployJobService {
     root: PathBuf,
     /// 正在跑的任务名。同一个任务不允许两路同时部署 —— 两次 compose 撞在一起
     /// 是那种"排查一晚上发现是并发"的问题。
-    busy: Mutex<HashSet<String>>,
+    ///
+    /// 必须是 `Arc`：`run()` 里插入名字的是**服务实例本身**，真正跑完脚本的是
+    /// `tokio::spawn` 出去的克隆体。以前 `Clone` 给 busy 新建了一个空集合，于是
+    /// 克隆体 `remove` 清的是另一份，原实例里的名字永远留着 —— 表现就是"部署任务
+    /// 跑过一次之后，再点就永远提示正在部署"，只有重启面板才能恢复。
+    busy: Arc<Mutex<HashSet<String>>>,
 }
 
 impl Clone for DeployJobService {
@@ -51,7 +56,7 @@ impl Clone for DeployJobService {
         Self {
             db: self.db.clone(),
             root: self.root.clone(),
-            busy: Mutex::new(HashSet::new()),
+            busy: Arc::clone(&self.busy),
         }
     }
 }
@@ -61,7 +66,7 @@ impl DeployJobService {
         Self {
             db,
             root,
-            busy: Mutex::new(HashSet::new()),
+            busy: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 

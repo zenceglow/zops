@@ -15,8 +15,8 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::http::handlers::{
-    analytics, audit, auth, automation, caddyfile, deploy, files, gateway, logs, member, permission,
-    notify, security, service, setup, ssh, system, mcp, token as token_handler,
+    analytics, audit, auth, automation, caddyfile, deploy, deploy_job, files, gateway, logs, member,
+    permission, notify, security, service, setup, ssh, system, mcp, token as token_handler,
 };
 use crate::http::middleware::{audit::audit_middleware, auth::auth_middleware};
 
@@ -64,6 +64,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // panel JWT) inside the handler, so they must sit outside the JWT group.
         .nest("/api/ops/mcp", mcp::mcp_routes())
         .nest("/api/ops/skill", mcp::skill_routes())
+        // 产物上传：agent 拿 `ops_…` 令牌直接 `curl -T` 打这里，所以同样得待在
+        // JWT 组外面，由 handler 自己认凭证。
+        .nest("/api/ops/deploy", deploy_job::agent_routes())
         // SSH & log WebSocket authenticate via ?token= inside the handler
         .nest("/api/ops/ssh", ssh::routes())
         .nest("/api/ops/log", logs::public_routes())
