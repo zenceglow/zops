@@ -6,9 +6,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { NavFirewallIcon, NavLangIcon, NavSettingsIcon, NavUserIcon } from '../icons/nav-icons';
+import { NavAgentIcon, NavLangIcon, NavSettingsIcon, NavUserIcon } from '../icons/nav-icons';
 import { SIDEBAR_GROUPS } from '../../router/sider-menu';
 import { isParent, pathMatches } from '../../lib/sidebar-config';
+import { Perm } from '../../lib/permissions';
 import { SettingsMenu } from './settings-menu';
 import useUserStore from '../../stores/user.store';
 import { useThemeStore } from '../../stores/theme-store';
@@ -44,7 +45,7 @@ const ALL_LEAVES = SIDEBAR_GROUPS.flatMap((g) =>
 );
 const byPath = (path: string) => ALL_LEAVES.find((i) => i.path === path);
 
-/** Dock 上按固定顺序排的项目。Docker、成员、接入 Codex 不占这一条。 */
+/** Dock 上按固定顺序排的项目。Docker、成员不占这一条；接入 Codex 放在分隔线后。 */
 function dockItems() {
   return DOCK_ORDER.map(byPath).filter((i): i is NonNullable<typeof i> => !!i);
 }
@@ -203,6 +204,18 @@ export function Dock() {
         <DockAction label={t(themeLabelKey(theme))} onClick={() => setTheme(nextTheme(theme))}>
           <ThemeIcon className="size-5" />
         </DockAction>
+
+        {hasPermission(Perm.NAV_AGENT) && (
+          <NavLink
+            to="/agent"
+            aria-label={t('nav.agent')}
+            className={dockClass(pathMatches(pathname, '/agent'))}
+          >
+            <DockGlyph label={t('nav.agent')} active={pathMatches(pathname, '/agent')}>
+              <NavAgentIcon className="size-5" />
+            </DockGlyph>
+          </NavLink>
+        )}
 
         {/* 个人=进个人中心，不再弹菜单。退出登录放在那一页里 —— 它本来就该
             是"进来之后做的事"，而不是随时悬在头像上等着被误点。 */}
