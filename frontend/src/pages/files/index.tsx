@@ -897,7 +897,7 @@ export default function FilesPage() {
           {preview?.binary ? (
             <p className="py-10 text-center text-sm text-muted-foreground">{t('files.preview_binary')}</p>
           ) : (
-            <pre className="max-h-[60vh] overflow-auto rounded-xl border border-border/60 bg-muted/20 p-3 font-mono text-xs leading-relaxed">
+            <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/20 p-3 font-mono text-xs leading-relaxed">
               {preview?.content || ''}
             </pre>
           )}

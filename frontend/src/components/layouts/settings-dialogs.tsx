@@ -39,7 +39,7 @@ function CopyBlock({ value }: { value: string }) {
   const [done, setDone] = useState(false);
   return (
     <div className="relative">
-      <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-3 pr-20 font-mono text-xs leading-relaxed">
+      <pre className="overflow-y-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/30 p-3 pr-20 font-mono text-xs leading-relaxed">
         {value}
       </pre>
       <Button

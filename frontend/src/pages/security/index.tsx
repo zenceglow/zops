@@ -150,7 +150,7 @@ function FirewallTab() {
             <p className="text-sm font-medium">
               {t('security.rules_title', { n: fw.rules.length })}
             </p>
-            <pre className="max-h-72 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-relaxed">
+            <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-relaxed">
               {fw.rules.join('\n')}
             </pre>
             <p className="text-[11px] text-muted-foreground">{t('security.rules_note')}</p>

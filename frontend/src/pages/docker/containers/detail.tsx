@@ -145,7 +145,7 @@ export default function ContainerDetailPage() {
                 {t('docker.refresh')}
               </Button>
             </div>
-            <pre className="max-h-[52vh] overflow-auto px-4 py-3 font-mono text-xs leading-5 text-muted-foreground">
+            <pre className="max-h-[52vh] overflow-y-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-xs leading-5 text-muted-foreground">
               {logs || t('docker.logs_empty')}
             </pre>
           </div>

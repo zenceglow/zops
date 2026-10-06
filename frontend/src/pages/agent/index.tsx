@@ -630,7 +630,7 @@ function ConfigBlock({
           {t('logs.copy')}
         </Button>
       </div>
-      <pre className="max-w-full overflow-x-auto rounded-xl bg-muted/40 p-3 font-mono text-xs leading-relaxed">
+      <pre className="max-w-full overflow-y-auto whitespace-pre-wrap break-all rounded-xl bg-muted/40 p-3 font-mono text-xs leading-relaxed">
         {text}
       </pre>
     </div>

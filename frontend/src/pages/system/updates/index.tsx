@@ -137,7 +137,7 @@ export default function UpdatesPage() {
           </div>
 
           {output && (
-            <pre className="max-h-64 overflow-auto rounded-xl border border-border/60 px-4 py-3 font-mono text-xs text-muted-foreground">
+            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 px-4 py-3 font-mono text-xs text-muted-foreground">
               {output}
             </pre>
           )}
@@ -184,7 +184,7 @@ export default function UpdatesPage() {
               {t('system.patch_confirm_body', { count: security.length })}
             </p>
           </div>
-          <div className="max-h-40 overflow-auto rounded-xl border border-border/60 px-3 py-2 font-mono text-xs text-muted-foreground">
+          <div className="max-h-40 overflow-y-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 px-3 py-2 font-mono text-xs text-muted-foreground">
             {security.map((p) => p.name).join('\n')}
           </div>
           <DialogFooter>

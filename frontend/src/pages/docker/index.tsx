@@ -318,7 +318,7 @@ export default function DockerPage() {
             </button>
           </div>
           {showConfig ? (
-            <pre className="mt-3 max-h-72 overflow-auto rounded-xl border border-border/60 bg-muted/30 p-3 font-mono text-[11px] leading-5">
+            <pre className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/30 p-3 font-mono text-[11px] leading-5">
               {JSON.stringify(info?.info ?? {}, null, 2)}
             </pre>
           ) : (

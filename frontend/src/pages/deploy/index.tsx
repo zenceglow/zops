@@ -497,7 +497,9 @@ export default function DeployPage() {
               <Card>
                 <CardContent className="space-y-1 pt-5">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-mono text-sm">{selected.dir}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-sm" title={selected.dir}>
+                      {selected.dir}
+                    </span>
                     <Button size="sm" variant="ghost" onClick={onDeleteJob}>
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -689,7 +691,7 @@ export default function DeployPage() {
                       {log ? (
                         <pre
                           ref={logEndRef}
-                          className="max-h-72 overflow-auto rounded-lg bg-neutral-950 p-3 font-mono text-[11px] leading-relaxed text-neutral-200"
+                          className="max-h-72 overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-neutral-950 p-3 font-mono text-[11px] leading-relaxed text-neutral-200"
                         >
                           {log}
                         </pre>
@@ -729,7 +731,7 @@ export default function DeployPage() {
                                 )}
                               </div>
                               {run.output && (
-                                <pre className="mt-1.5 max-h-32 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10px]">
+                                <pre className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 font-mono text-[10px]">
                                   {run.output}
                                 </pre>
                               )}

@@ -188,7 +188,7 @@ export function GatewayLogDialog({ open, onOpenChange }: Props) {
                       // 日志行没有稳定 id，行号就是最自然的 key；尾部和行数变化时
                       // React 会重建，代价可以忽略。
                       key={i}
-                      className={cn('px-3.5 whitespace-pre', lineClass(line))}
+                      className={cn('px-3.5 whitespace-pre-wrap break-all', lineClass(line))}
                     >
                       {line || ' '}
                     </div>
