@@ -18,6 +18,8 @@ async fn static_handler(uri: Uri) -> Response {
     // index.html + **200**（路径里没有点号就走 SPA 兜底）。前端拿到 200 的 HTML，
     // JSON 解析失败后只当"响应不正常"，用户看到的是"点了没反应"，而真正的原因
     // ——路由不存在（比如少了/多了个斜杠）——被彻底吞掉。
+    // 顺带把带尾斜杠的 API 路径也在这里说清楚：axum 的 nest 只把内层 "/" 挂在
+    // 不带尾斜杠的路径上，`/api/ops/service/` 这种会落到这里。
     if path == "api" || path.starts_with("api/") {
         return (
             StatusCode::NOT_FOUND,
