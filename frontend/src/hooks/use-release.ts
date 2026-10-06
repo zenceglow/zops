@@ -14,6 +14,12 @@ export type UpdateStatus = {
   published_at: string;
   checked_at: string | null;
   install_command: string;
+  /** 上一次升级失败的原因（空串 = 没失败过）。失败只写 journald 的话，用户看到的就是"点了没反应"。 */
+  last_error: string;
+  /** 上一次成功换上的版本号。 */
+  last_applied: string | null;
+  /** 新版本已落在磁盘上、当前进程还是旧的 —— 只差一次重启。 */
+  pending_restart: boolean;
 };
 
 /** "别再提醒这个版本" —— 点了它就一直安静到下次真的发新版。 */

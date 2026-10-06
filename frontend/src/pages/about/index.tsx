@@ -212,6 +212,19 @@ export default function AboutPage() {
         {!fetched && (
           <p className="mt-2 text-[11px] text-amber-600">{t('about.check_failed')}</p>
         )}
+        {release?.pending_restart && (
+          <p className="mt-2 text-[11px] text-amber-600">
+            {t('update.pending', {
+              version: release.last_applied ?? release.latest ?? '',
+              current: release.current,
+            })}
+          </p>
+        )}
+        {!release?.pending_restart && release?.last_error && (
+          <p className="mt-2 text-[11px] text-destructive">
+            {t('update.last_error', { msg: release.last_error })}
+          </p>
+        )}
         {release?.has_update && release.notes && (
           <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{release.notes}</p>
         )}

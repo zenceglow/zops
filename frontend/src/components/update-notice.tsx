@@ -153,6 +153,24 @@ export function UpdateNotice() {
               </div>
             )}
 
+            {/* 新版本已经换到磁盘上了，只差重启 —— 这种时候再点"立即升级"没有意义，
+                该做的是重启面板。以前这种情况界面只会一直转圈。 */}
+            {!working && !error && status.pending_restart && (
+              <div className="space-y-2">
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  {t('update.pending', { version: latest, current: status.current })}
+                </p>
+                {commandRow}
+              </div>
+            )}
+
+            {/* 上一次升级失败的原因。以前它只写进 journald，界面上什么都看不到。 */}
+            {!working && !error && !status.pending_restart && status.last_error && (
+              <p className="text-xs text-destructive">
+                {t('update.last_error', { msg: status.last_error })}
+              </p>
+            )}
+
             {!working && !error && !status.can_apply && (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">{t('update.manual_hint')}</p>
@@ -168,7 +186,7 @@ export function UpdateNotice() {
               {t('update.later')}
             </Button>
           )}
-          {status.can_apply ? (
+          {status.can_apply && !status.pending_restart ? (
             <Button disabled={working || done} onClick={() => void applyNow()}>
               {working ? <Loader2 className="animate-spin" /> : <Download />}
               {busy === 'applying'

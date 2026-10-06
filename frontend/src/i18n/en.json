@@ -865,7 +865,9 @@
     "copy": "Copy upgrade command",
     "copy_now": "Copy upgrade command",
     "copied": "Copied",
-    "later": "Later"
+    "later": "Later",
+    "pending": "Version {{version}} is already on disk, but the panel still runs {{current}} — restart the panel to apply it",
+    "last_error": "Last upgrade failed: {{msg}}"
   },
   "common": {
     "cancel": "Cancel",

@@ -865,7 +865,9 @@
     "copy": "复制升级命令",
     "copy_now": "复制升级命令",
     "copied": "已复制",
-    "later": "稍后"
+    "later": "稍后",
+    "pending": "新版本 {{version}} 已经就位，但面板还在跑 {{current}} —— 重启面板即生效",
+    "last_error": "上次升级失败：{{msg}}"
   },
   "common": {
     "cancel": "取消",

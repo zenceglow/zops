@@ -27,6 +27,16 @@ const CHECKED_KEY: &str = "selfupdate.checked_at";
 
 /// 多久查一次。发布是周级别的事，查太勤只是白费流量。
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 3600);
+/// "正在升级"这个标记的最长寿命。到了就当成上一次已经死了。
+///
+/// 没有这一条，任何一个环节卡住（下载挂在慢线路上、校验时子进程不返回），界面上
+/// 就永远是"正在升级"，接口还一直回"已经在升级了，等一下" —— 用户唯一的出路
+/// 是 ssh 上去重启面板。升级流程里最不该有这种状态。
+const STUCK_AFTER: Duration = Duration::from_secs(20 * 60);
+/// 上一次升级的结果。失败只写进 journald 的话，用户看到的就是"点了没反应"。
+const LAST_ERROR_KEY: &str = "selfupdate.last_error";
+const LAST_APPLIED_KEY: &str = "selfupdate.last_applied";
+const LAST_MESSAGE_KEY: &str = "selfupdate.last_message";
 /// 缓存多久算过期（打开面板时用来决定要不要顺手刷一次）。
 ///
 /// 比后台那 6 小时短得多：后台的周期是"没人看的时候也要兜底"，而这里只发生在
@@ -66,6 +76,14 @@ pub struct UpdateStatus {
     pub checked_at: Option<String>,
     /// 一行升级命令，弹窗里直接给用户复制。
     pub install_command: String,
+    /// 上一次升级失败的原因（空串 = 没失败过）。界面直接把它显示出来 ——
+    /// "点了没反应"和"下载失败：xxx"对用户是天壤之别。
+    pub last_error: String,
+    /// 上一次成功换上的版本号。
+    pub last_applied: Option<String>,
+    /// 新版本已经落在磁盘上、但当前进程还是旧的 —— 这种时候只差一次重启。
+    /// 界面据此说"已就位，重启即生效"，而不是含糊的"再等等"。
+    pub pending_restart: bool,
 }
 
 /// 升级的结果。前端拿到 `restarting` 之后就该去轮询，等面板重新站起来。
@@ -82,7 +100,9 @@ pub struct SelfUpdateService {
     install_url: String,
     current: String,
     /// 正在升级。防止连点两下装两次 —— 两个下载写同一个临时文件会互相踩。
-    applying: std::sync::atomic::AtomicBool,
+    ///
+    /// 存的是**开始时间**而不是 bool：见 `STUCK_AFTER`。
+    applying: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 impl SelfUpdateService {
@@ -92,12 +112,16 @@ impl SelfUpdateService {
             manifest_url,
             install_url,
             current: env!("CARGO_PKG_VERSION").to_string(),
-            applying: std::sync::atomic::AtomicBool::new(false),
+            applying: std::sync::Mutex::new(None),
         }
     }
 
     pub fn is_applying(&self) -> bool {
-        self.applying.load(std::sync::atomic::Ordering::SeqCst)
+        self.applying
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .map(|t| t.elapsed() < STUCK_AFTER)
+            .unwrap_or(false)
     }
 
     pub fn status(&self) -> UpdateStatus {
@@ -120,7 +144,32 @@ impl SelfUpdateService {
                 .unwrap_or_default(),
             checked_at,
             install_command: format!("curl -fsSL {} | bash", self.install_url),
+            last_error: self
+                .db
+                .get_config(LAST_ERROR_KEY)
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+            last_applied: self.db.get_config(LAST_APPLIED_KEY).ok().flatten(),
+            pending_restart: self.pending_restart(),
         }
+    }
+
+    /// 磁盘上那份程序已经是新版本、但**当前进程**还是旧的。
+    ///
+    /// 判据是"跑一下磁盘上那份问版本" —— 和校验用的是同一个探针。只有在上一次
+    /// 换过、且换的版本不是现在跑的版本时才去问，避免每次轮询都起一个进程。
+    fn pending_restart(&self) -> bool {
+        let Some(applied) = self.db.get_config(LAST_APPLIED_KEY).ok().flatten() else {
+            return false;
+        };
+        if applied == self.current {
+            return false;
+        }
+        self.managed_bin()
+            .and_then(|p| probe_version(&p).ok())
+            .map(|v| v == applied)
+            .unwrap_or(false)
     }
 
     /// 就地升级：下载 → 校验 → 换掉自己 → 重启服务。
@@ -130,12 +179,29 @@ impl SelfUpdateService {
     /// 而面板起不来时用户手上就只剩一个 SSH。所以每一步都验，验不过就保持原样。
     pub async fn apply(&self) -> Result<ApplyOutcome, AppError> {
         // 连点两下会同时开两个下载，写同一个临时文件，互相踩。
-        if self.applying.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            return Err(AppError::bad_request("已经在升级了，等一下"));
+        // 超过 STUCK_AFTER 的上一次，当作已经死了，允许重来。
+        {
+            let mut guard = self.applying.lock().unwrap_or_else(|e| e.into_inner());
+            if guard.map(|t| t.elapsed() < STUCK_AFTER).unwrap_or(false) {
+                return Err(AppError::bad_request("已经在升级了，等一下"));
+            }
+            *guard = Some(std::time::Instant::now());
         }
-        // 无论走哪条失败路径都要把标记放掉，否则一次失败就把自动升级永久锁死。
         let result = self.apply_inner().await;
-        self.applying.store(false, std::sync::atomic::Ordering::SeqCst);
+        *self.applying.lock().unwrap_or_else(|e| e.into_inner()) = None;
+
+        // 成败都落一条：成功记下"换上的是哪一版"，失败记下原因。
+        // 界面靠这两条把"点了没反应"变成一句能读的话。
+        match &result {
+            Ok(out) => {
+                let _ = self.db.set_config(LAST_APPLIED_KEY, &out.version);
+                let _ = self.db.set_config(LAST_MESSAGE_KEY, &out.message);
+                let _ = self.db.set_config(LAST_ERROR_KEY, "");
+            }
+            Err(e) => {
+                let _ = self.db.set_config(LAST_ERROR_KEY, &e.message);
+            }
+        }
         result
     }
 
@@ -281,34 +347,48 @@ async fn fetch(url: &str) -> Option<Release> {
 /// 下载到指定路径。走 curl 而不是在进程里做 HTTP：要跟证书、重定向、代理设置
 /// 这些打交道的场合，curl 比我们自己写一遍靠谱得多。
 async fn download(url: &str, dest: &Path) -> Result<(), AppError> {
+    match curl_download(url, dest, true).await {
+        Ok(()) => Ok(()),
+        Err(first) => {
+            // 续传失败最常见的一种：目的文件其实已经**完整**了，服务端对 `Range`
+            // 回 416，curl 直接判失败 —— 于是"上次已经下好了"反而变成"再也下不动"，
+            // 而且每次都失败、每次都清不掉。删掉重来一次，这次不带 `-C`。
+            if !dest.exists() {
+                return Err(first);
+            }
+            let _ = std::fs::remove_file(dest);
+            curl_download(url, dest, false).await
+        }
+    }
+}
+
+async fn curl_download(url: &str, dest: &Path, resume: bool) -> Result<(), AppError> {
     let (url, dest) = (url.to_string(), dest.to_path_buf());
     let out = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("curl")
-            .args([
-                "-fsSL",
-                // 断点续传 + 重试：十几兆的东西，中间抖一下不该从头再来。
-                "-C",
-                "-",
-                "--retry",
-                "3",
-                "--retry-delay",
-                "2",
-                "--retry-all-errors",
-                // 慢到 30 秒都跑不满 10KB/s 就判死，不必干等十分钟；
-                // 但正常慢速（比如跨境线路只有几十 KB/s）仍然给足 10 分钟。
-                "--speed-limit",
-                "10240",
-                "--speed-time",
-                "30",
-                "--max-time",
-                "600",
-                "-A",
-                "ZOPS/self-update",
-                "-o",
-            ])
-            .arg(&dest)
-            .arg(&url)
-            .output()
+        let mut cmd = std::process::Command::new("curl");
+        cmd.args([
+            "-fsSL",
+            "--retry",
+            "3",
+            "--retry-delay",
+            "2",
+            "--retry-all-errors",
+            // 慢到 30 秒都跑不满 10KB/s 就判死，不必干等十分钟；
+            // 但正常慢速（比如跨境线路只有几十 KB/s）仍然给足 10 分钟。
+            "--speed-limit",
+            "10240",
+            "--speed-time",
+            "30",
+            "--max-time",
+            "600",
+            "-A",
+            "ZOPS/self-update",
+        ]);
+        // 断点续传：十几兆的东西，中间抖一下不该从头再来。
+        if resume {
+            cmd.args(["-C", "-"]);
+        }
+        cmd.arg("-o").arg(&dest).arg(&url).output()
     })
     .await
     .map_err(|e| AppError::internal(format!("下载任务没能启动：{e}")))?
@@ -355,18 +435,39 @@ fn verify(path: &Path, expect: &str) -> Result<(), AppError> {
             .map_err(|e| AppError::internal(format!("设置可执行权限失败：{e}")))?;
     }
 
-    let out = std::process::Command::new(path)
-        .arg("--version")
-        .output()
-        .map_err(|e| AppError::bad_request(format!("下载的程序跑不起来：{e}（架构对不对？）")))?;
-    let said = String::from_utf8_lossy(&out.stdout);
-    if !said.contains(expect) {
+    let said = probe_version(path)?;
+    if said != expect {
         return Err(AppError::bad_request(format!(
             "下载的程序报的是「{}」，清单说的是 {expect}，对不上，已放弃升级",
-            said.trim()
+            said
         )));
     }
     Ok(())
+}
+
+/// 跑一下这份程序问它的版本，**带超时**。返回版本号本身（`ZOPS 0.2.17` → `0.2.17`）。
+///
+/// 这是整条升级链路里唯一"跑一个刚下载下来的东西"的地方 —— 没有超时的话，一个
+/// 卡住的二进制会让 apply 永远不返回，"正在升级"就永远清不掉。超时后那个线程可能
+/// 还挂着，但我们已经拿到了要的结论，不再等它。
+fn probe_version(path: &Path) -> Result<String, AppError> {
+    let path = path.to_path_buf();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let out = std::process::Command::new(&path).arg("--version").output();
+        let _ = tx.send(out);
+    });
+    match rx.recv_timeout(Duration::from_secs(15)) {
+        Ok(Ok(out)) => Ok(String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .last()
+            .unwrap_or_default()
+            .to_string()),
+        Ok(Err(e)) => Err(AppError::bad_request(format!(
+            "下载的程序跑不起来：{e}（架构对不对？）"
+        ))),
+        Err(_) => Err(AppError::bad_request("下载的程序 15 秒没响应，已放弃升级")),
+    }
 }
 
 /// 安排一次重启。
