@@ -17,6 +17,11 @@ cd "$(dirname "$0")"
 TARGET="${TARGET:-x86_64-unknown-linux-gnu}"
 BUCKET="zenceglow"
 R2_PATH="app/ops/zenceglow-ops-amd64"
+# 版本化的副本：cdn 上的对象带 max-age=300，发布后 5 分钟内还是旧字节。
+# 面板按清单里的 url 下载，所以清单要指向**带版本号**的路径 —— 换版本就是换
+# 新 URL，缓存自然绕开。踩过的坑：发布后立刻 `zops update`，下回来的还是上一版，
+# 面板日志写着"已换成 0.2.28"（要换的其实是 0.2.29）。
+VERSIONED_PATH=""
 INSTALL_PATH="app/ops/install.sh"
 MANIFEST_PATH="app/ops/latest.json"
 # 版本清单是个临时文件：写在临时目录里，别把构建目录搞脏。
@@ -79,14 +84,25 @@ echo "  编译产物: $BIN"
 file "$BIN" || true
 ls -lh "$BIN"
 
+# 版本号从 Cargo.toml 读 —— 它是唯一的真相，别让人再手抄一遍。
+VER="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+VERSIONED_PATH="app/ops/zenceglow-ops-amd64-${VER}"
+
 # ---- 3. 上传到 R2 ----
 echo ""
 echo "========================================="
-echo " 3/3  上传到 R2 → $BUCKET/$R2_PATH"
+echo " 3/3  上传到 R2 → $BUCKET/$VERSIONED_PATH"
 echo "========================================="
 
 # `--remote` 不能省：wrangler 4 的 r2 命令默认打到**本地模拟器**，不加这个参数会
 # 打印 "Resource location: local" 然后说"上传完成" —— 远端什么都没变。
+# 传两份：稳定路径给老安装脚本/手工下载用，版本化路径给面板自动升级用。
+npx wrangler r2 object put "${BUCKET}/${VERSIONED_PATH}" \
+  --file "$BIN" \
+  --content-type application/octet-stream \
+  --cache-control "public, max-age=300" \
+  --remote
+
 npx wrangler r2 object put "${BUCKET}/${R2_PATH}" \
   --file "$BIN" \
   --content-type application/octet-stream \
@@ -102,8 +118,6 @@ npx wrangler r2 object put "${BUCKET}/${INSTALL_PATH}" \
   --remote
 
 # 版本清单：面板后台会定期拉它，比自己新就在界面上弹一次。
-# 版本号从 Cargo.toml 读 —— 它是唯一的真相，别让人再手抄一遍。
-VER="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 NOTES="$(git log -1 --pretty=%s 2>/dev/null || echo '')"
 # 用 node 生成，不要手拼 JSON：提交标题里出现一个 `"` 就会把清单拼成坏 JSON，
 # 而面板是**解析失败就不再提示更新**的 —— 症状是"检查不到新版本"，
@@ -114,7 +128,7 @@ node -e '
   const d = new Date();
   const at = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   process.stdout.write(JSON.stringify({ version: ver, notes, published_at: at, url }, null, 2) + "\n");
-' "$VER" "$NOTES" "https://cdn.zenceglow.com/${R2_PATH}" > "$TMP_MANIFEST"
+' "$VER" "$NOTES" "https://cdn.zenceglow.com/${VERSIONED_PATH}" > "$TMP_MANIFEST"
 node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))' "$TMP_MANIFEST" \
   || { echo "error: 生成的 latest.json 不是合法 JSON" >&2; exit 1; }
 npx wrangler r2 object put "${BUCKET}/${MANIFEST_PATH}" \
