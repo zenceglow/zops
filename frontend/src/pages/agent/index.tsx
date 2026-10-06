@@ -1,73 +1,78 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Check, ChevronDown, Copy, KeyRound, Plus, Puzzle, Trash2 } from 'lucide-react';
-import { Button } from '../../components/ui/button';
-import { Badge } from '../../components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../components/ui/select';
-import { toast } from '../../components/ui/sonner';
+  Check,
+  Copy,
+  KeyRound,
+  Link2,
+  MoreVertical,
+  Plus,
+  Trash2,
+} from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Badge } from '../../components/ui/badge';
+import { Card, CardContent } from '../../components/ui/card';
+import { Skeleton } from '../../components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
 import { cn } from '../../lib/utils';
 import { copyText } from '../../lib/clipboard';
+import { toast } from '../../components/ui/sonner';
+import useMcpConnections from '../../stores/mcp-connections.store';
 import { CapabilityGrid, type AgentTool } from './_components/capability-grid';
 import {
   createToken,
   getAgentTools,
-  getSkill,
   listTokens,
   revokeToken,
-  type ApiTokenCreated,
   type ApiTokenInfo,
 } from './_api';
 
-function CopyBlock({ label, value }: { label?: string; value: string }) {
-  const [done, setDone] = useState(false);
-  const copy = async () => {
-    // 走统一的复制实现：公网 http 下 navigator.clipboard 不存在，直接用它等于
-    // 点了没反应。失败时明确说"手动选中复制"，别让用户以为已经复制走了。
-    if (await copyText(value)) {
-      setDone(true);
-      setTimeout(() => setDone(false), 1600);
-    } else {
-      toast.error('复制失败，请手动选中这段文本复制');
-    }
-  };
-  return (
-    <div className="relative">
-      {label && <p className="mb-1.5 text-xs text-muted-foreground">{label}</p>}
-      <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-3 pr-20 font-mono text-xs leading-relaxed">
-        {value}
-      </pre>
-      <Button variant="secondary" size="sm" className="absolute right-2 bottom-2" onClick={copy}>
-        {done ? <Check /> : <Copy />}
-        {done ? '已复制' : '复制'}
-      </Button>
-    </div>
-  );
-}
-
 /**
- * MCP 接入。
+ * 接入 Codex / MCP。
  *
- * 这一页只回答三件事：用哪个令牌、把哪段配置粘给 agent、agent 装上之后能帮你做
- * 什么。最后那条用**图标清单**呈现 —— SKILL.md 是写给模型看的提示词，用户看不懂
- * 也不该看懂；用户要的是"它能帮我干什么、哪些动作会动我的服务器"。
+ * 一个**连接 = 一个令牌 = 一张卡**。卡片上就两件事：这个连接是什么权限、以及
+ * "复制连接方式"——复制出来的那段配置直接粘进 agent 就能用，里面已经带上这个
+ * 连接的令牌。要停掉就删卡。
+ *
+ * 令牌明文只在这台浏览器留底（加密存储，见 mcp-connections.store）：服务端存的
+ * 始终只有哈希，但卡片必须随时能复制 —— 否则刷新一次就得重建连接，那就又难用了。
  */
 export default function McpPage() {
-  const { t } = useTranslation();
   const [tokens, setTokens] = useState<ApiTokenInfo[]>([]);
   const [tools, setTools] = useState<AgentTool[]>([]);
-  const [skill, setSkill] = useState('');
-  const [scope, setScope] = useState('read');
-  const [created, setCreated] = useState<ApiTokenCreated | null>(null);
-  const [flavor, setFlavor] = useState<'codex' | 'json'>('codex');
+  const [loading, setLoading] = useState(true);
+
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [scope, setScope] = useState('write');
   const [busy, setBusy] = useState(false);
-  const [showSkill, setShowSkill] = useState(false);
+  /** 刚建好的连接：令牌只显示这一次，所以单独用一个弹窗接住它。 */
+  const [fresh, setFresh] = useState<ApiTokenInfo & { token: string } | null>(null);
+  const [viewing, setViewing] = useState<ApiTokenInfo | null>(null);
+
+  const remembered = useMcpConnections((s) => s.tokens);
+  const remember = useMcpConnections((s) => s.remember);
+  const forget = useMcpConnections((s) => s.forget);
+
+  const origin = window.location.origin;
+  const mcpUrl = `${origin}/api/ops/mcp`;
+  /** 本机留底里没有的（改版前建的），配置里用占位符，并提示删掉重建。 */
+  const tokenOf = (t: ApiTokenInfo) => remembered[t.id] ?? '';
 
   const refresh = useCallback(async () => {
     const res = await listTokens();
@@ -75,211 +80,347 @@ export default function McpPage() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-    void getSkill().then((r) => setSkill(r.content));
-    // 能力清单来自后端工具目录：跟 agent 实际拿到的工具是同一份，不会各说各话。
+    refresh()
+      .catch(() => toast.error('读取连接列表失败'))
+      .finally(() => setLoading(false));
     void getAgentTools()
       .then(setTools)
       .catch(() => setTools([]));
   }, [refresh]);
 
-  const origin = window.location.origin;
-  const mcpUrl = `${origin}/api/ops/mcp`;
-  const token = created?.token ?? 'ops_在此粘贴你的令牌';
-
-  const config = {
-    codex: `# ~/.codex/config.toml
-[mcp_servers.zops]
-url = "${mcpUrl}"
-http_headers = { Authorization = "Bearer ${token}" }`,
-    json: `{
-  "mcpServers": {
-    "zops": {
-      "url": "${mcpUrl}",
-      "headers": { "Authorization": "Bearer ${token}" }
-    }
-  }
-}`,
-  }[flavor];
-
-  // 先下到临时文件、成功再挪过去。直接 `curl ... > 目标文件` 的话，令牌写错时
-  // shell 已经把目标文件清空了，curl 再失败 —— 结果是 agent 读到一个空的 SKILL.md，
-  // 比没装还难查。
-  const skillCmd = `D=~/.agents/skills/zops
-mkdir -p "$D/references"
-curl -fsSL -H "Authorization: Bearer ${token}" \\
-  ${origin}/api/ops/skill/raw -o "$D/SKILL.md.new" && mv "$D/SKILL.md.new" "$D/SKILL.md"
-curl -fsSL -H "Authorization: Bearer ${token}" \\
-  ${origin}/api/ops/skill/references/troubleshooting \\
-  -o "$D/references/troubleshooting.md.new" \\
-  && mv "$D/references/troubleshooting.md.new" "$D/references/troubleshooting.md"
-curl -fsSL -H "Authorization: Bearer ${token}" \\
-  ${origin}/api/ops/skill/references/deploy \\
-  -o "$D/references/deploy.md.new" \\
-  && mv "$D/references/deploy.md.new" "$D/references/deploy.md"
-echo "已装到 $D"`;
-
   const create = async () => {
     setBusy(true);
     try {
-      const res = await createToken({ name: 'MCP agent', scope });
-      if (!res.success || !res.data) {
-        toast.error(res.message || '创建失败');
-        return;
-      }
-      setCreated(res.data);
+      const res = await createToken({ name: name.trim() || 'MCP 连接', scope });
+      if (!res.success || !res.data) throw new Error(res.message || '创建失败');
+      remember(res.data.id, res.data.token);
+      setCreating(false);
+      setName('');
+      setFresh(res.data);
       await refresh();
+    } catch (e) {
+      toast.error(String((e as Error).message));
     } finally {
       setBusy(false);
     }
   };
 
-  const revoke = async (id: string, label: string) => {
-    const res = await revokeToken(id);
-    if (!res.success) {
-      toast.error(res.message || '删除失败');
-      return;
+  const remove = async (t: ApiTokenInfo) => {
+    if (!window.confirm(`断开「${t.name}」这个连接？agent 那边会立刻失效。`)) return;
+    try {
+      const res = await revokeToken(t.id);
+      if (!res.success) throw new Error(res.message || '断开失败');
+      forget(t.id);
+      setViewing(null);
+      await refresh();
+      toast.success('连接已断开');
+    } catch (e) {
+      toast.error(String((e as Error).message));
     }
-    if (created?.id === id) setCreated(null);
-    toast.success(`已删除 ${label}`);
-    await refresh();
+  };
+
+  const copy = async (text: string, what: string) => {
+    if (await copyText(text)) toast.success(`${what}已复制`);
+    else toast.error('复制失败，请手动选中复制');
   };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">MCP</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          把这个面板作为 MCP 服务器接进 Codex、Workbuddy 等支持标准 MCP 的 agent，
-          它就能帮你运维这台服务器。
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">接入 Codex</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            一个连接就是一把给 agent 的钥匙。建好之后点「复制连接方式」，粘到 agent
+            的配置里即可；不想用了就断开。
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setCreating(true)}>
+          <Plus />
+          新建连接
+        </Button>
       </div>
 
-      {/* 1. 令牌 */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <KeyRound className="size-4" />
-            访问令牌
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Select value={scope} onValueChange={setScope}>
-              <SelectTrigger className="h-8 w-[104px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="read">只读</SelectItem>
-                <SelectItem value="write">可写</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button size="sm" onClick={create} disabled={busy}>
-              <Plus />
-              新建令牌
+      {loading ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Skeleton className="h-40" />
+          <Skeleton className="h-40" />
+        </div>
+      ) : tokens.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <Link2 className="size-6 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              还没有连接。建一个，把连接方式复制给 Codex / Workbuddy 就能用。
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+              新建连接
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {tokens.map((t) => {
+            const plain = tokenOf(t);
+            return (
+              <div
+                key={t.id}
+                className="flex flex-col rounded-2xl border border-border/60 p-4"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="size-3.5 shrink-0 text-muted-foreground" />
+                      <p className="truncate text-sm font-medium">{t.name}</p>
+                      <Badge
+                        variant={t.scope === 'write' ? 'default' : 'secondary'}
+                        className="h-4 px-1 text-[10px]"
+                      >
+                        {t.scope === 'write' ? '可写' : '只读'}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                      {t.prefix}…
+                    </p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="更多"
+                        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <MoreVertical className="size-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setViewing(t)}>
+                        查看连接方式
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!plain}
+                        onClick={() => void copy(plain, '令牌')}
+                      >
+                        复制令牌
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => void remove(t)}
+                      >
+                        <Trash2 className="size-3.5" />
+                        断开连接
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <pre className="mt-3 flex-1 overflow-hidden rounded-lg bg-muted/40 p-2.5 font-mono text-[10px] leading-relaxed text-muted-foreground">
+                  {`[mcp_servers.zops]
+url = "${mcpUrl}"
+Authorization = "Bearer ${plain ? `${plain.slice(0, 12)}…` : '（本机没留底）'}"`}
+                </pre>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    disabled={!plain}
+                    onClick={() => void copy(codexConfig(mcpUrl, plain), '连接方式')}
+                  >
+                    <Copy />
+                    复制连接方式
+                  </Button>
+                  <span className="text-[11px] text-muted-foreground">
+                    {t.last_used_at ? `用过 · ${t.last_used_at}` : '还没用过'}
+                  </span>
+                </div>
+                {!plain && (
+                  <p className="mt-2 text-[11px] text-amber-600">
+                    这个连接是在改版前建的吗？令牌无法再取出来 —— 断开重建一个，就能随时复制了。
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        连上就能用：技能包（怎么用这些工具、部署剧本、排障剧本）挂在 MCP 的 `resources`
+        上，agent 自己会读，不用另外装。
+      </p>
+
+      <div>
+        <h2 className="mb-3 text-sm font-medium">这个连接能让 agent 帮你做什么</h2>
+        <CapabilityGrid tools={tools} />
+      </div>
+
+      {/* 新建连接 */}
+      <Dialog open={creating} onOpenChange={setCreating}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>新建连接</DialogTitle>
+            <DialogDescription>
+              给它起个名字方便认（比如"Codex 桌面""Workbuddy"），选好权限。令牌只在
+              创建后显示一次，同时会留底在这台浏览器上，方便以后点卡片复制。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="conn-name">名字</Label>
+              <Input
+                id="conn-name"
+                value={name}
+                autoFocus
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Codex 桌面"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>权限</Label>
+              <div className="flex gap-2">
+                {[
+                  { id: 'read', label: '只读', desc: '只能看，不能改服务器' },
+                  { id: 'write', label: '可写', desc: '能启停容器、部署、改网关' },
+                ].map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setScope(s.id)}
+                    className={cn(
+                      'flex-1 rounded-xl border border-border/60 px-3 py-2 text-left transition-colors',
+                      scope === s.id && 'border-primary/50 bg-primary/5',
+                    )}
+                  >
+                    <span className="block text-sm">{s.label}</span>
+                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                      {s.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreating(false)}>
+              取消
+            </Button>
+            <Button onClick={create} disabled={busy}>
+              创建并复制
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 刚创建：令牌只显示这一次，让用户先把连接方式复制走 */}
+      <Dialog open={!!fresh} onOpenChange={(v) => !v && setFresh(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>连接已创建</DialogTitle>
+            <DialogDescription>
+              把下面这段贴进 agent 的配置里就能用。以后随时点卡片上的「复制连接方式」
+              也能再拿到。
+            </DialogDescription>
+          </DialogHeader>
+          {fresh && <ConfigBlock url={mcpUrl} token={fresh.token} onCopy={copy} />}
+          <DialogFooter>
+            <Button onClick={() => setFresh(null)}>
+              <Check />
+              好了
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 查看某个连接的连接方式 */}
+      <Dialog open={!!viewing} onOpenChange={(v) => !v && setViewing(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{viewing?.name}</DialogTitle>
+            <DialogDescription>
+              {viewing && tokenOf(viewing)
+                ? '这段配置直接贴给 agent 即可。'
+                : '这台浏览器上没有这个连接的令牌留底（改版前建的吧），断开重建一个就能复制。'}
+            </DialogDescription>
+          </DialogHeader>
+          {viewing && (
+            <ConfigBlock
+              url={mcpUrl}
+              token={tokenOf(viewing)}
+              onCopy={copy}
+              placeholder="ops_在此粘贴你的令牌"
+            />
+          )}
+          <DialogFooter>
+            {viewing && (
+              <Button variant="ghost" className="text-destructive" onClick={() => void remove(viewing)}>
+                断开连接
+              </Button>
+            )}
+            <Button onClick={() => setViewing(null)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function codexConfig(url: string, token: string): string {
+  return `# ~/.codex/config.toml
+[mcp_servers.zops]
+url = "${url}"
+http_headers = { Authorization = "Bearer ${token}" }`;
+}
+
+function jsonConfig(url: string, token: string): string {
+  return `{
+  "mcpServers": {
+    "zops": {
+      "url": "${url}",
+      "headers": { "Authorization": "Bearer ${token}" }
+    }
+  }
+}`;
+}
+
+/** 两种常见写法都摆出来，谁用什么复制什么。 */
+function ConfigBlock({
+  url,
+  token,
+  onCopy,
+  placeholder,
+}: {
+  url: string;
+  token: string;
+  onCopy: (text: string, what: string) => Promise<void>;
+  placeholder?: string;
+}) {
+  const value = token || placeholder || 'ops_在此粘贴你的令牌';
+  const blocks = [
+    { label: 'Codex（~/.codex/config.toml）', text: codexConfig(url, value) },
+    { label: '通用 JSON（Claude / Workbuddy 等）', text: jsonConfig(url, value) },
+  ];
+  return (
+    <div className="space-y-4">
+      {blocks.map((b) => (
+        <div key={b.label}>
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">{b.label}</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!token}
+              onClick={() => void onCopy(b.text, '连接方式')}
+            >
+              <Copy />
+              复制
             </Button>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {created && (
-            <div className="space-y-2 rounded-xl border border-primary/40 bg-primary/5 p-3">
-              <p className="text-sm font-medium">令牌只显示这一次，复制走再关掉</p>
-              <CopyBlock value={created.token} />
-            </div>
-          )}
-
-          {tokens.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {tokens.map((tk) => (
-                <span
-                  key={tk.id}
-                  className="inline-flex items-center gap-2 rounded-xl border border-border/60 py-1 pr-1 pl-2.5 text-xs"
-                >
-                  <Badge variant={tk.scope === 'write' ? 'default' : 'secondary'} className="h-5">
-                    {tk.scope === 'write' ? '可写' : '只读'}
-                  </Badge>
-                  <span className="font-mono text-muted-foreground">{tk.prefix}…</span>
-                  <button
-                    type="button"
-                    onClick={() => void revoke(tk.id, tk.name)}
-                    className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-                    aria-label={`删除 ${tk.name}`}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          {!created && tokens.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              还没有令牌 —— 先点「新建令牌」，下面的配置会自动带上它。
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 2. 配置 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">复制给 Agent</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="inline-flex rounded-xl bg-muted/60 p-0.5">
-            {(['codex', 'json'] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFlavor(f)}
-                className={cn(
-                  'rounded-lg px-3 py-1 text-xs transition-colors',
-                  flavor === f ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground',
-                )}
-              >
-                {f === 'codex' ? 'Codex' : '通用 JSON'}
-              </button>
-            ))}
-          </div>
-          <CopyBlock
-            label={flavor === 'codex' ? '~/.codex/config.toml' : 'Workbuddy / Cursor / Claude Desktop 等'}
-            value={config}
-          />
-          {!created && (
-            <p className="text-xs text-amber-600 dark:text-amber-500">
-              上面那段里还是占位令牌，直接粘给 agent 会连不上 —— 先点「新建令牌」，
-              配置会自动带上它。
-            </p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            新建令牌后这段会自动带上它；刷新页面就拿不到令牌原文了，那时得重新建一个。
-            走公网 IP 的 http 是明文传输，长期用建议配域名走 HTTPS。
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* 3. 能力清单 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Puzzle className="size-4" />
-            {t('mcp.skill')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            {t('mcp.skill_intro', { count: tools.length })}
-          </p>
-          {tools.length > 0 && <CapabilityGrid tools={tools} />}
-          <CopyBlock label={t('mcp.install_label')} value={skillCmd} />
-          <button
-            type="button"
-            onClick={() => setShowSkill((v) => !v)}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ChevronDown className={cn('size-3.5 transition-transform', showSkill && 'rotate-180')} />
-            {showSkill ? t('mcp.hide_source') : t('mcp.show_source')}
-          </button>
-          {showSkill && <CopyBlock value={skill || '（加载中…）'} />}
-        </CardContent>
-      </Card>
+          <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-3 font-mono text-xs leading-relaxed">
+            {b.text}
+          </pre>
+        </div>
+      ))}
     </div>
   );
 }
