@@ -470,6 +470,7 @@
       }
     },
     "nav.agent": "接入 Codex",
+    "nav.deploy": "部署",
     "ops.agent.manage": "管理 MCP 令牌与技能"
   },
   "home": {

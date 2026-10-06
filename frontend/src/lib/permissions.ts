@@ -34,6 +34,7 @@ export const Perm = {
   OPS_AUTOMATION_MANAGE: 'ops.automation.manage',
   OPS_AGENT_MANAGE: 'ops.agent.manage',
   OPS_NOTIFY_MANAGE: 'ops.notify.manage',
+  OPS_DEPLOY: 'ops.deploy',
 } as const;
 
 export type PermissionId = (typeof Perm)[keyof typeof Perm];

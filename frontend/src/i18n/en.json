@@ -470,6 +470,7 @@
       }
     },
     "nav.agent": "Connect Codex",
+    "nav.deploy": "Deploy",
     "ops.agent.manage": "Manage MCP tokens and skills"
   },
   "home": {

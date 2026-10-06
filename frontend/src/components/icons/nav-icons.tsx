@@ -27,6 +27,7 @@ import {
   HiCpuChip,
   HiChartBarSquare,
   HiBellAlert,
+  HiRocketLaunch,
 } from 'react-icons/hi2';
 import { SiDocker } from 'react-icons/si';
 import { cn } from '../../lib/utils';
@@ -74,3 +75,4 @@ export const NavLogViewerIcon = navIcon(HiDocumentText);
 export const NavTasksIcon = navIcon(HiPlayCircle);
 export const NavClockIcon = navIcon(HiClock);
 export const NavAgentIcon = navIcon(HiCpuChip);
+export const NavDeployIcon = navIcon(HiRocketLaunch);
