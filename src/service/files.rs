@@ -523,4 +523,72 @@ impl FilesService {
             .collect();
         self.trash_purge(&ids)
     }
+
+    pub fn list_stores(&self) -> Result<Vec<crate::infrastructure::db::ObjectStoreRow>, AppError> {
+        self.db
+            .list_object_stores()
+            .map_err(|e| AppError::internal(e.to_string()))
+    }
+
+    pub fn save_store(&self, row: &crate::infrastructure::db::ObjectStoreRow) -> Result<(), AppError> {
+        self.db
+            .insert_object_store(row)
+            .map_err(|e| AppError::internal(e.to_string()))
+    }
+
+    pub fn delete_store(&self, id: &str) -> Result<(), AppError> {
+        let ok = self
+            .db
+            .delete_object_store(id)
+            .map_err(|e| AppError::internal(e.to_string()))?;
+        if ok {
+            Ok(())
+        } else {
+            Err(AppError::bad_request("没有这个对象存储"))
+        }
+    }
+
+    /// 把本机上的一个文件 PUT 到已保存的桶。密钥不出这台机器。
+    pub fn upload_store(&self, id: &str, path: &str) -> Result<String, AppError> {
+        let store = self
+            .db
+            .get_object_store(id)
+            .map_err(|e| AppError::internal(e.to_string()))?
+            .ok_or_else(|| AppError::bad_request("没有这个对象存储"))?;
+        let abs = resolve(path);
+        let meta = std::fs::metadata(&abs).map_err(|_| AppError::bad_request("文件不存在"))?;
+        if !meta.is_file() {
+            return Err(AppError::bad_request("只能上传单个文件"));
+        }
+        const MAX: u64 = 512 * 1024 * 1024;
+        if meta.len() > MAX {
+            return Err(AppError::bad_request("文件超过 512MB，这一期不传"));
+        }
+        let bytes = std::fs::read(&abs).map_err(|e| AppError::internal(e.to_string()))?;
+        let name = abs
+            .file_name()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| AppError::bad_request("文件名不合法"))?;
+        let prefix = store.prefix.trim().trim_matches('/');
+        let key = if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        crate::infrastructure::s3::put_object(
+            &crate::infrastructure::s3::PutTarget {
+                endpoint: store.endpoint,
+                region: store.region,
+                bucket: store.bucket,
+                access_key: store.access_key,
+                secret_key: store.secret_key,
+                path_style: store.path_style,
+                key: key.clone(),
+            },
+            bytes,
+        )
+        .map_err(AppError::bad_request)?;
+        Ok(key)
+    }
 }

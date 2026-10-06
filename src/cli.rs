@@ -406,20 +406,13 @@ fn access(cmd: &str, args: &[&str]) -> i32 {
         return 0;
     }
 
-    if let Err(e) = set_unit_env(&ins.unit, BIND_KEY, &want) {
-        eprintln!("改 systemd 单元失败：{e}");
-        return 1;
-    }
-    if let Err(e) = systemctl(&["daemon-reload"]) {
-        eprintln!("daemon-reload 失败：{e}");
-    }
-    match systemctl(&["restart", SERVICE]) {
+    match crate::infrastructure::hostctl::apply_bind(&want) {
         Ok(()) => {
             println!("已生效：{}（{}）", label, want);
             0
         }
         Err(e) => {
-            eprintln!("单元改好了，但重启服务失败：{e}\n手动执行：systemctl restart {SERVICE}");
+            eprintln!("切换对外访问失败：{e}");
             1
         }
     }
@@ -453,38 +446,16 @@ fn uninstall(args: &[&str]) -> i32 {
         return 0;
     }
 
-    let mut failed = Vec::new();
-    for args in [["disable", "--now", SERVICE].as_slice(), ["daemon-reload"].as_slice()] {
-        if let Err(e) = systemctl(args) {
-            failed.push(format!("systemctl {}：{e}", args.join(" ")));
-        }
+    if let Err(e) = crate::infrastructure::hostctl::uninstall_now(purge) {
+        eprintln!("有一部分没做成：\n{e}");
+        return 1;
     }
-    for path in [&ins.unit, &ins.bin, &ins.bin.with_file_name("zops")] {
-        if path.exists() {
-            if let Err(e) = std::fs::remove_file(path) {
-                failed.push(format!("删除 {}：{e}", path.display()));
-            }
-        }
+    println!("已卸载。");
+    if !purge {
+        println!("数据留在 {}，要清掉直接删这个目录。", ins.data_dir.display());
     }
-    if purge {
-        if let Err(e) = std::fs::remove_dir_all(&ins.data_dir) {
-            failed.push(format!("删除 {}：{e}", ins.data_dir.display()));
-        }
-    }
-
-    if failed.is_empty() {
-        println!("已卸载。");
-        if !purge {
-            println!("数据留在 {}，要清掉直接删这个目录。", ins.data_dir.display());
-        }
-        0
-    } else {
-        eprintln!("有一部分没做成：");
-        for f in failed {
-            eprintln!("  · {f}");
-        }
-        1
-    }
+    println!("Docker、Caddy 和其他服务没有动。");
+    0
 }
 
 /// 解开登录锁定。
@@ -546,43 +517,12 @@ fn restart() -> i32 {
     }
 }
 
-/// 在 systemd 单元里设置 / 替换一个 `Environment=` 项。写前留一份 .bak。
 fn set_unit_env(unit: &Path, key: &str, value: &str) -> Result<(), String> {
-    let text = std::fs::read_to_string(unit).map_err(|e| e.to_string())?;
-    let line = format!("Environment={key}={value}");
-    let prefix = format!("Environment={key}=");
-    let mut replaced = false;
-    let mut out: Vec<String> = text
-        .lines()
-        .map(|l| {
-            if l.trim_start().starts_with(&prefix) {
-                replaced = true;
-                line.clone()
-            } else {
-                l.to_string()
-            }
-        })
-        .collect();
-    if !replaced {
-        // 放在 [Service] 段的末尾之前不现实（要解析 ini），直接追加在最后：
-        // systemd 允许 Environment 出现在 [Service] 段里的任意位置，而安装脚本
-        // 写出来的单元里 [Service] 是最后一段。
-        out.push(line);
-    }
-    std::fs::write(unit.with_extension("bak"), &text).map_err(|e| e.to_string())?;
-    std::fs::write(unit, out.join("\n") + "\n").map_err(|e| e.to_string())
+    crate::infrastructure::hostctl::set_unit_env(unit, key, value)
 }
 
 fn systemctl(args: &[&str]) -> Result<(), String> {
-    let out = std::process::Command::new("systemctl")
-        .args(args)
-        .output()
-        .map_err(|e| e.to_string())?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-    }
+    crate::infrastructure::hostctl::systemctl(args)
 }
 
 #[cfg(test)]

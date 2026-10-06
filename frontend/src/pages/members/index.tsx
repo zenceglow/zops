@@ -1,5 +1,5 @@
-import { MembersPanel } from './_components/members-panel';
+import { Navigate } from 'react-router-dom';
 
 export default function MembersPage() {
-  return <MembersPanel />;
+  return <Navigate to="/settings/panel?section=members" replace />;
 }

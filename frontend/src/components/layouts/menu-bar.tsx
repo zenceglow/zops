@@ -5,6 +5,7 @@ import { BrandLogo } from '../brand-logo';
 import { SIDEBAR_GROUPS } from '../../router/sider-menu';
 import { isParent, pathMatches } from '../../lib/sidebar-config';
 import useUserStore from '../../stores/user.store';
+import { usePanelPrefs } from '../../stores/panel-prefs';
 
 /**
  * 顶部细菜单栏（macOS 那种）。
@@ -51,6 +52,17 @@ export function MenuBar() {
   const { t } = useTranslation();
   const now = useClock();
   const section = useSectionLabel();
+  const title = usePanelPrefs((s) => s.title);
+  const loadPrefs = usePanelPrefs((s) => s.load);
+  const brand = title.trim() || 'ZOPS';
+
+  useEffect(() => {
+    void loadPrefs();
+  }, [loadPrefs]);
+
+  useEffect(() => {
+    document.title = brand;
+  }, [brand]);
 
   const pad = (n: number) => String(n).padStart(2, '0');
   const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -62,16 +74,13 @@ export function MenuBar() {
         'bg-background/70 px-3 text-[11px] backdrop-blur-xl'
       }
     >
-      {/* logo 点进关于页 —— 这是"这软件是什么"最自然的位置，也是桌面系统里
-          "关于本机"那一项的等价物。 */}
       <Link
-        to="/about"
-        title={t('about.title')}
+        to="/monitor"
+        title={t('nav.monitor')}
         className="flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors hover:bg-accent"
       >
         <BrandLogo className="size-4" />
-        {/* 品牌名不跟随语言切换：它是标识，不是文案。 */}
-        <span className="font-semibold tracking-wide">ZOPS</span>
+        <span className="font-semibold tracking-wide">{brand}</span>
       </Link>
       {section && (
         <>

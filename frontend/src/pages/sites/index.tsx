@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
@@ -35,9 +35,15 @@ import { GatewayLogDialog } from './_components/gateway-log-dialog';
 import { GatewayStatusCard } from './_components/gateway-status-card';
 import { SiteListItem } from './_components/site-list-item';
 import { VersionHistoryDialog } from './_components/version-history-dialog';
+import { isPanelHost, usePanelPrefs } from '../../stores/panel-prefs';
 
 export default function SitesPage() {
   const { t } = useTranslation();
+  const panelDomain = usePanelPrefs((s) => s.domain);
+  const loadPrefs = usePanelPrefs((s) => s.load);
+  useEffect(() => {
+    void loadPrefs();
+  }, [loadPrefs]);
   const s = useSites();
   const [showLogs, setShowLogs] = useState(false);
   /** 等着确认删除的那个域名。 */
@@ -133,7 +139,11 @@ export default function SitesPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('sites.delete_title', { addr: deleting ?? '' })}</DialogTitle>
-            <DialogDescription>{t('sites.delete_desc')}</DialogDescription>
+            <DialogDescription>
+              {deleting && isPanelHost(deleting, panelDomain)
+                ? t('sites.delete_panel_desc')
+                : t('sites.delete_desc')}
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDeleting(null)}>

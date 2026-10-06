@@ -61,6 +61,42 @@ impl SystemService {
             .map_err(AppError::bad_request)
     }
 
+    pub fn panel_title(&self) -> String {
+        self.db
+            .get_config("panel_title")
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    pub fn panel_domain(&self) -> String {
+        self.db
+            .get_config("panel_domain")
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    pub fn set_panel_title(&self, title: &str) -> Result<(), AppError> {
+        let title = title.trim();
+        if title.chars().count() > 40 {
+            return Err(AppError::bad_request("标题最多 40 个字"));
+        }
+        self.db
+            .set_config("panel_title", title)
+            .map_err(|e| AppError::internal(e.to_string()))
+    }
+
+    pub fn set_panel_domain(&self, domain: &str) -> Result<(), AppError> {
+        let domain = domain.trim().trim_end_matches('.').to_string();
+        if !domain.is_empty() && !domain_ok(&domain) {
+            return Err(AppError::bad_request("域名不合法"));
+        }
+        self.db
+            .set_config("panel_domain", &domain)
+            .map_err(|e| AppError::internal(e.to_string()))
+    }
+
     /// 修复指定的补丁包。动作本身有破坏性（装包、重启服务），所以由调用方负责确认。
     pub async fn apply_updates(&self, packages: Vec<String>) -> Result<String, AppError> {
         let out = tokio::task::spawn_blocking(move || updates::apply(&packages))
@@ -71,4 +107,15 @@ impl SystemService {
         let _ = self.check_updates().await;
         Ok(out)
     }
+}
+
+fn domain_ok(domain: &str) -> bool {
+    let host = domain.split(':').next().unwrap_or("");
+    !host.is_empty()
+        && host.len() <= 253
+        && !host.contains('/')
+        && !host.contains(' ')
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '*')
 }

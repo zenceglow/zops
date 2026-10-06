@@ -39,7 +39,10 @@ async fn ports(
 ///
 /// 故意**不**要 `ops.system.read`：这是"这个软件是什么、去哪提问题"，任何登录
 /// 用户都该看得到。主机的负载、补丁那些才是要权限的东西。
-async fn panel(Extension(_user): Extension<AuthUser>) -> Json<ApiResponse<serde_json::Value>> {
+async fn panel(
+    State(state): State<Arc<AppState>>,
+    Extension(_user): Extension<AuthUser>,
+) -> Json<ApiResponse<serde_json::Value>> {
     Json(ApiResponse::ok(serde_json::json!({
         "name": crate::shared::panel::NAME,
         "version": crate::shared::panel::VERSION,
@@ -48,6 +51,8 @@ async fn panel(Extension(_user): Extension<AuthUser>) -> Json<ApiResponse<serde_
         "uptime_seconds": crate::shared::panel::uptime_seconds(),
         // 和 MCP 报的是同一份指纹：人和 agent 各看一边就能对上号。
         "host": crate::shared::panel::identity(),
+        "title": state.system.panel_title(),
+        "domain": state.system.panel_domain(),
     })))
 }
 
@@ -186,9 +191,171 @@ async fn set_timezone(
     Ok(Json(ApiResponse::ok(serde_json::json!({ "via": via }))))
 }
 
+#[derive(Deserialize)]
+pub struct PanelPrefsBody {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    domain: Option<String>,
+}
+
+async fn set_prefs(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<PanelPrefsBody>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    if let Some(title) = body.title {
+        state.system.set_panel_title(&title)?;
+    }
+    if let Some(domain) = body.domain {
+        state.system.set_panel_domain(&domain)?;
+    }
+    Ok(Json(ApiResponse::ok(serde_json::json!({
+        "title": state.system.panel_title(),
+        "domain": state.system.panel_domain(),
+    }))))
+}
+
+async fn access_state(
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_READ)?;
+    let ins = crate::infrastructure::hostctl::detect();
+    Ok(Json(ApiResponse::ok(serde_json::json!({
+        "public": ins.is_public(),
+        "bind": ins.bind,
+        "manageable": ins.found,
+    }))))
+}
+
+#[derive(Deserialize)]
+pub struct AccessBody {
+    public: bool,
+}
+
+async fn set_access(
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<AccessBody>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    let bind = if body.public {
+        crate::infrastructure::hostctl::PUBLIC_BIND
+    } else {
+        crate::infrastructure::hostctl::LOCAL_BIND
+    };
+    let ins = crate::infrastructure::hostctl::detect();
+    if ins.bind == bind {
+        return Ok(Json(ApiResponse::ok(serde_json::json!({
+            "public": body.public,
+            "restarting": false,
+        }))));
+    }
+    crate::infrastructure::hostctl::prepare_bind(bind).map_err(AppError::bad_request)?;
+    Ok(Json(ApiResponse::ok(serde_json::json!({
+        "public": body.public,
+        "restarting": true,
+    }))))
+}
+
+async fn uninstall_panel(
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    crate::infrastructure::hostctl::schedule_uninstall().map_err(AppError::bad_request)?;
+    Ok(Json(ApiResponse::ok(serde_json::json!({ "started": true }))))
+}
+
+async fn dns_state(
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<crate::infrastructure::system::dns::DnsStatus>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_READ)?;
+    Ok(Json(ApiResponse::ok(crate::infrastructure::system::dns::status())))
+}
+
+#[derive(Deserialize)]
+pub struct DnsBody {
+    nameservers: Vec<String>,
+}
+
+async fn set_dns(
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<DnsBody>,
+) -> Result<Json<ApiResponse<crate::infrastructure::system::dns::DnsStatus>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    crate::infrastructure::system::dns::apply(&body.nameservers).map_err(AppError::bad_request)?;
+    Ok(Json(ApiResponse::ok(crate::infrastructure::system::dns::status())))
+}
+
+async fn vpn_state(
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<crate::infrastructure::system::vpn::WgStatus>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_READ)?;
+    Ok(Json(ApiResponse::ok(
+        tokio::task::spawn_blocking(crate::infrastructure::system::vpn::status)
+            .await
+            .map_err(|_| AppError::internal("vpn 任务异常"))?,
+    )))
+}
+
+#[derive(Deserialize)]
+pub struct VpnImportBody {
+    name: String,
+    config: String,
+}
+
+async fn vpn_import(
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<VpnImportBody>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    let path = crate::infrastructure::system::vpn::import(&body.name, &body.config)
+        .map_err(AppError::bad_request)?;
+    Ok(Json(ApiResponse::ok(serde_json::json!({ "path": path }))))
+}
+
+#[derive(Deserialize)]
+pub struct VpnNameBody {
+    name: String,
+}
+
+async fn vpn_up(
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<VpnNameBody>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    let name = body.name;
+    tokio::task::spawn_blocking(move || crate::infrastructure::system::vpn::up(&name))
+        .await
+        .map_err(|_| AppError::internal("vpn 任务异常"))?
+        .map_err(AppError::bad_request)?;
+    Ok(Json(ApiResponse::ok(serde_json::json!({ "ok": true }))))
+}
+
+async fn vpn_down(
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<VpnNameBody>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    let name = body.name;
+    tokio::task::spawn_blocking(move || crate::infrastructure::system::vpn::down(&name))
+        .await
+        .map_err(|_| AppError::internal("vpn 任务异常"))?
+        .map_err(AppError::bad_request)?;
+    Ok(Json(ApiResponse::ok(serde_json::json!({ "ok": true }))))
+}
+
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/panel", get(panel))
+        .route("/panel/prefs", post(set_prefs))
+        .route("/access", get(access_state).post(set_access))
+        .route("/uninstall", post(uninstall_panel))
+        .route("/dns", get(dns_state).post(set_dns))
+        .route("/vpn", get(vpn_state))
+        .route("/vpn/import", post(vpn_import))
+        .route("/vpn/up", post(vpn_up))
+        .route("/vpn/down", post(vpn_down))
         .route("/release", get(release))
         .route("/release/check", post(check_release))
         .route("/release/apply", post(apply_release))

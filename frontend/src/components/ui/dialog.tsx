@@ -49,6 +49,31 @@ function DialogOverlay({
   )
 }
 
+function isSlot(
+  child: React.ReactNode,
+  slot: typeof DialogHeader | typeof DialogFooter,
+) {
+  return React.isValidElement(child) && child.type === slot
+}
+
+/**
+ * 标题和底栏钉在弹窗框上，只有中间滚动。
+ *
+ * 以前 overflow 写在整块 DialogContent 上，内容一长，关闭按钮和底部操作会跟着
+ * 滚出屏幕。调用处不用改：直接子节点里的 Header / Footer 自动拆出去，其余进 body。
+ */
+function splitDialogChildren(children: React.ReactNode) {
+  const header: React.ReactNode[] = []
+  const footer: React.ReactNode[] = []
+  const body: React.ReactNode[] = []
+  React.Children.forEach(children, (child) => {
+    if (isSlot(child, DialogHeader)) header.push(child)
+    else if (isSlot(child, DialogFooter)) footer.push(child)
+    else body.push(child)
+  })
+  return { header, footer, body }
+}
+
 function DialogContent({
   className,
   children,
@@ -74,6 +99,8 @@ function DialogContent({
     [onPointerDownOutside],
   );
 
+  const { header, footer, body } = splitDialogChildren(children)
+
   return (
     <DialogPortal>
       <DialogOverlay className={overlayClassName} />
@@ -81,21 +108,26 @@ function DialogContent({
         data-slot="dialog-content"
         onPointerDownOutside={handlePointerDownOutside}
         className={cn(
-          // 20px 圆角 + 实阴影：之前只有一圈 10% 的描边、没有投影，浮在蒙层上像贴纸
-          // 而不是"盖在上面的一层"。
-          // max-h + overflow-y-auto：弹窗内容一多（比如"连接已创建"里两块配置）
-          // 就会顶出屏幕、上下都够不着。限高并让内容自己滚，弹窗框永远在视口里。
-          //
-          // overflow-x-hidden 不能省：CSS 里只要一个轴不是 visible，另一个轴就变成
-          // auto —— 只写 overflow-y-auto 时，弹窗里的长路径/长日志会把**整份弹窗**
-          // 撑出横向滚动条，看着像排版坏了。要横向滚的只有个别块（表格、代码编辑器），
-          // 它们自己在内部滚。
-          "fixed top-1/2 left-1/2 z-[100] grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-x-hidden overflow-y-auto overscroll-contain rounded-[20px] bg-popover p-4 text-sm text-popover-foreground shadow-2xl shadow-black/40 ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // 框本身不滚。中间的 body 才滚，标题和按钮始终留在视口里。
+          // overflow-x-hidden：只写 overflow-y 时，另一个轴会变成 auto，长路径会把
+          // 整窗撑出横向滚动条。要横滚的表格和代码自己在内部滚。
+          "fixed top-1/2 left-1/2 z-[100] flex max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[20px] bg-popover text-sm text-popover-foreground shadow-2xl shadow-black/40 ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
       >
-        {children}
+        {header.length > 0 && (
+          <div className="shrink-0 px-4 pt-4 pr-12">{header}</div>
+        )}
+        <div
+          data-slot="dialog-body"
+          className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4"
+        >
+          {body}
+        </div>
+        {footer.length > 0 && (
+          <div className="shrink-0 px-4 pb-4">{footer}</div>
+        )}
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
             <Button

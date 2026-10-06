@@ -94,3 +94,48 @@ export async function emptyTrash() {
   const res = await post('/files/trash/empty', {});
   if (!res.success) throw new Error(res.message || 'Failed');
 }
+
+export type ObjectStore = {
+  id: string;
+  name: string;
+  provider: 'aws' | 'oss' | 'r2' | string;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  prefix: string;
+  path_style: boolean;
+  access_key_hint: string;
+};
+
+export async function listStores() {
+  const res = await get<ObjectStore[]>('/files/stores');
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
+}
+
+export async function createStore(body: {
+  name: string;
+  provider: string;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  access_key: string;
+  secret_key: string;
+  prefix: string;
+  path_style: boolean;
+}) {
+  const res = await post<ObjectStore>('/files/stores', body);
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
+}
+
+export async function deleteStore(id: string) {
+  const res = await post('/files/stores/delete', { id });
+  if (!res.success) throw new Error(res.message || 'Failed');
+}
+
+export async function uploadStore(id: string, path: string) {
+  const res = await post<{ key: string }>('/files/stores/upload', { id, path });
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
+}

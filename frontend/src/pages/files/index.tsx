@@ -18,6 +18,7 @@ import {
   ListChecks,
   Copy,
   ClipboardPaste,
+  CloudUpload,
   Scissors,
   Search,
   Trash2,
@@ -40,6 +41,7 @@ import { toast } from '../../components/ui/sonner';
 import { cn } from '../../lib/utils';
 import { copyText } from '../../lib/clipboard';
 import { RowMenu, type RowAction } from './_components/row-menu';
+import { ObjectStorageDialog, UploadStoreDialog } from './_components/object-storage-dialog';
 import { addLogSource } from '../logs/_api';
 import {
   copyPaths,
@@ -146,6 +148,8 @@ export default function FilesPage() {
   const [logTarget, setLogTarget] = useState<FileEntry | null>(null);
   const [logName, setLogName] = useState('');
   const [logBusy, setLogBusy] = useState(false);
+  const [storesOpen, setStoresOpen] = useState(false);
+  const [uploadPath, setUploadPath] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // 前进/后退栈。用下标而不是两个数组，来回切换时才不会越走越乱。
@@ -450,6 +454,15 @@ export default function FilesPage() {
           },
         ]
       : []),
+    ...(entry.kind !== 'dir'
+      ? [
+          {
+            label: t('files.upload_object'),
+            icon: CloudUpload,
+            onSelect: () => setUploadPath(entry.path),
+          },
+        ]
+      : []),
     { label: t('files.copy_path'), icon: ClipboardCopy, separated: true, onSelect: () => void copyOnePath(entry.path) },
     { label: t('files.copy'), icon: Copy, onSelect: () => copyToClipboard([entry.path]) },
     { label: t('files.cut'), icon: Scissors, onSelect: () => cutToClipboard([entry.path]) },
@@ -591,19 +604,24 @@ export default function FilesPage() {
                     : t('files.clip_copy', { count: clipboard.paths.length })
                   : t('files.hint_row_menu')}
               </span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="ml-auto"
-                onClick={() => {
-                  setSelectMode(true);
-                  setSelected(new Set());
-                  setAnchor(null);
-                }}
-              >
-                <ListChecks />
-                {t('files.select')}
-              </Button>
+              <div className="ml-auto flex gap-1.5">
+                <Button size="sm" variant="outline" onClick={() => setStoresOpen(true)}>
+                  <CloudUpload />
+                  {t('files.object_storage')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSelectMode(true);
+                    setSelected(new Set());
+                    setAnchor(null);
+                  }}
+                >
+                  <ListChecks />
+                  {t('files.select')}
+                </Button>
+              </div>
             </>
           )
         ) : selectMode ? (
@@ -903,6 +921,14 @@ export default function FilesPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ObjectStorageDialog open={storesOpen} onOpenChange={setStoresOpen} />
+      <UploadStoreDialog
+        open={uploadPath !== null}
+        path={uploadPath ?? ''}
+        onOpenChange={(o) => !o && setUploadPath(null)}
+        onNeedSetup={() => setStoresOpen(true)}
+      />
 
       {/* 从文件直接建一张日志卡片。路径已经在手上，别再让人跑过去敲一遍。 */}
       <Dialog open={!!logTarget} onOpenChange={(o) => !o && setLogTarget(null)}>

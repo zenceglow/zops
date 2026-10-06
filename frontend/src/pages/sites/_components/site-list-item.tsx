@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ExternalLink, Trash2 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
@@ -7,6 +7,7 @@ import { SiteGlyph } from '../../../components/site-glyph';
 import type { SiteEntry } from '../_api';
 import { summarizeSite, type SiteFeature } from '../_lib/site-summary';
 import { DirectiveRow } from './directive-row';
+import { isPanelHost, usePanelPrefs } from '../../../stores/panel-prefs';
 
 /**
  * 站点列表里的一行 = 一个入口。
@@ -22,8 +23,15 @@ export function SiteListItem({
   onDelete: (addr: string) => void;
 }) {
   const { t } = useTranslation();
+  const domain = usePanelPrefs((s) => s.domain);
+  const loadPrefs = usePanelPrefs((s) => s.load);
   const [showDetail, setShowDetail] = useState(false);
   const info = summarizeSite(site);
+  const panel = isPanelHost(site.addr, domain);
+
+  useEffect(() => {
+    void loadPrefs();
+  }, [loadPrefs]);
 
   return (
     <div className="rounded-2xl border border-border/60 px-4 py-3.5 transition-colors hover:border-border">
@@ -38,7 +46,14 @@ export function SiteListItem({
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate font-mono text-sm font-medium">{site.addr}</p>
+          <p className="flex items-center gap-2 truncate font-mono text-sm font-medium">
+            <span className="truncate">{site.addr}</span>
+            {panel && (
+              <span className="shrink-0 rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-sans font-medium text-foreground">
+                {t('sites.panel_badge')}
+              </span>
+            )}
+          </p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {info.kind === 'other'
               ? t('sites.kind_other')

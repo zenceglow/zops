@@ -5,6 +5,14 @@ import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent } from '../../../components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../../../components/ui/table';
 import { ROLE_SUPER_ADMIN } from '../../../lib/permissions';
 import usePermissionCatalog from '../../../stores/permission.store';
 import { useMembers } from '../_hooks/use-members';
@@ -63,7 +71,7 @@ function PermPicker({
   );
 }
 
-export function MembersPanel() {
+export function MembersPanel({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation();
   const m = useMembers();
   const catalog = usePermissionCatalog((s) => s.catalog);
@@ -92,10 +100,18 @@ export function MembersPanel() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{t('members.title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t('members.subtitle')}</p>
-      </div>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{t('members.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('members.subtitle')}</p>
+        </div>
+      )}
+      {embedded && (
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{t('settings.section_members')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('members.subtitle')}</p>
+        </div>
+      )}
 
       <Card>
         <CardContent className="space-y-4 p-4 sm:p-5">
@@ -137,62 +153,72 @@ export function MembersPanel() {
         {m.loading && (
           <p className="text-sm text-muted-foreground">{t('app.loading')}</p>
         )}
-        <div className="divide-y divide-border rounded-lg border border-border">
-          {m.members.map((row) => (
-            <div key={row.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{row.username}</span>
-                  <Badge variant="secondary">
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('members.username')}</TableHead>
+                <TableHead>{t('members.role_member')}</TableHead>
+                <TableHead>{t('members.perm_nav')}</TableHead>
+                <TableHead className="text-right">{t('members.list')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {m.members.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium">{row.username}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">
+                      {row.role === ROLE_SUPER_ADMIN ? t('members.role_super') : t('members.role_member')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-64 truncate text-xs text-muted-foreground">
                     {row.role === ROLE_SUPER_ADMIN
-                      ? t('members.role_super')
-                      : t('members.role_member')}
-                  </Badge>
-                </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {row.role === ROLE_SUPER_ADMIN
-                    ? t('members.all_perms')
-                    : row.permissions.length
-                      ? row.permissions.join(', ')
-                      : t('members.no_perms')}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {row.role !== ROLE_SUPER_ADMIN && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8"
-                    onClick={() => {
-                      setEditingId(row.id);
-                      setEditPerms([...row.permissions]);
-                    }}
-                  >
-                    {t('members.edit_perms')}
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8"
-                  onClick={() => {
-                    setPwId(row.id);
-                    setNewPw('');
-                  }}
-                >
-                  {t('members.reset_pw')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-destructive"
-                  onClick={() => void m.remove(row.id)}
-                >
-                  {t('members.delete')}
-                </Button>
-              </div>
-            </div>
-          ))}
+                      ? t('members.all_perms')
+                      : row.permissions.length
+                        ? row.permissions.join(', ')
+                        : t('members.no_perms')}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {row.role !== ROLE_SUPER_ADMIN && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => {
+                            setEditingId(row.id);
+                            setEditPerms([...row.permissions]);
+                          }}
+                        >
+                          {t('members.edit_perms')}
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => {
+                          setPwId(row.id);
+                          setNewPw('');
+                        }}
+                      >
+                        {t('members.reset_pw')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-destructive"
+                        onClick={() => void m.remove(row.id)}
+                      >
+                        {t('members.delete')}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       </div>
 

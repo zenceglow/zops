@@ -239,14 +239,6 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
       {/* 品牌变量挂在最外层：光晕和色块是同级的兄弟节点，变量放在色块上光晕就取
           不到了（CSS 变量只向下继承，不横向继承）。 */}
       <span className="relative shrink-0" style={running ? brandStyle : undefined}>
-        {/* 运行中的呼吸光晕：静态图钉看不出死活，慢速涨落一眼就能分出哪些还活着。 */}
-        {running && (
-          <span
-            aria-hidden
-            className="absolute inset-0 animate-breathe rounded-2xl blur-[6px]"
-            style={{ backgroundColor: 'var(--brand)' }}
-          />
-        )}
         <span
           className={cn(
             // 浅色主题用品牌色铺底，深色主题回落到反色块 —— 品牌图标本身细节密
@@ -266,13 +258,6 @@ function ContainerTile({ c, now }: { c: ContainerInfo; now: number }) {
             running ? 'bg-emerald-500' : 'bg-red-500',
           )}
         />
-        {/* 绿点外扩一圈：常驻的扩散波是最省事的"在跑"信号，比让图标一直晃要克制。 */}
-        {running && (
-          <span
-            aria-hidden
-            className="absolute -right-0.5 -bottom-0.5 z-10 size-3 animate-ping rounded-full bg-emerald-500 [animation-duration:2.4s]"
-          />
-        )}
       </span>
       <div className="min-w-0 flex-1">
         <p

@@ -8,11 +8,8 @@ import {
 } from '../ui/dropdown-menu';
 import { NavFirewallIcon, NavLangIcon, NavSettingsIcon, NavUserIcon } from '../icons/nav-icons';
 import { SIDEBAR_GROUPS } from '../../router/sider-menu';
-import { isParent, pathMatches, type SidebarItem } from '../../lib/sidebar-config';
-import { Perm } from '../../lib/permissions';
-import { SettingsDialogs } from './settings-dialogs';
-import { SettingsMenu, type SettingsDialog } from './settings-menu';
-import { useState } from 'react';
+import { isParent, pathMatches } from '../../lib/sidebar-config';
+import { SettingsMenu } from './settings-menu';
 import useUserStore from '../../stores/user.store';
 import { useThemeStore } from '../../stores/theme-store';
 import { nextTheme, themeIcon, themeLabelKey } from '../../stores/theme-prefs';
@@ -32,33 +29,24 @@ import { cn } from '../../lib/utils';
 const DOCK_ORDER = [
   '/monitor',
   '/screen',
+  '/sites',
+  '/deploy',
+  '/network',
   '/ssh',
   '/files',
-  // 应用与服务的创建 / 管理（部署任务通道）。少这一行，页面就只能在地址栏里敲出来。
-  '/deploy',
   '/logs',
-  '/agent',
-  '/sites',
-  '/docker',
-  '/members',
   '/notify',
+  '/security',
 ];
 
-const ALL_ITEMS: SidebarItem[] = SIDEBAR_GROUPS.flatMap((g) => g.items);
-const byPath = (path: string) =>
-  ALL_ITEMS.find((i) =>
-    isParent(i) ? i.children.some((c) => c.path === path) : i.path === path,
-  );
+const ALL_LEAVES = SIDEBAR_GROUPS.flatMap((g) =>
+  g.items.flatMap((i) => (isParent(i) ? i.children : [i])),
+);
+const byPath = (path: string) => ALL_LEAVES.find((i) => i.path === path);
 
-/** Dock 上按固定顺序排的项目；安全中心是单独拎出来的顶层入口。 */
-function dockItems(): SidebarItem[] {
-  const ordered = DOCK_ORDER.map(byPath).filter((i): i is SidebarItem => !!i);
-  // 安全中心原来只是"系统"子菜单里的一个占位页（防火墙），现在直接上 Dock ——
-  // 查端口、看预警是会被频繁点开的东西。
-  const security = ALL_ITEMS.flatMap((i) => (isParent(i) ? i.children : [i])).find(
-    (c) => c.path === '/security',
-  );
-  return security ? [...ordered, security] : ordered;
+/** Dock 上按固定顺序排的项目。Docker、成员、接入 Codex 不占这一条。 */
+function dockItems() {
+  return DOCK_ORDER.map(byPath).filter((i): i is NonNullable<typeof i> => !!i);
 }
 
 function dockClass(active?: boolean) {
@@ -125,8 +113,6 @@ export function Dock() {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   const ThemeIcon = themeIcon(theme);
-  const [dialog, setDialog] = useState<SettingsDialog | null>(null);
-
   const visible = dockItems().filter((i) => hasPermission(i.perm));
   if (visible.length === 0) return null;
 
@@ -200,8 +186,6 @@ export function Dock() {
         })}
 
         <SettingsMenu
-          navSystem={hasPermission(Perm.NAV_SYSTEM)}
-          onDialog={setDialog}
           trigger={
             <button type="button" aria-label={t('settings.title')} className={dockClass(false)}>
               <DockGlyph label={t('settings.title')}>
@@ -228,8 +212,6 @@ export function Dock() {
           </DockGlyph>
         </NavLink>
       </nav>
-
-      <SettingsDialogs open={dialog} onOpenChange={setDialog} />
     </div>
   );
 }

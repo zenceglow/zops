@@ -1,48 +1,47 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Package, SlidersHorizontal } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import { Perm } from '../../lib/permissions';
+import useUserStore from '../../stores/user.store';
 
-/** 设置菜单里除了跳页面之外的几种弹窗。 */
+/** 设置菜单里除了跳页面之外的几种弹窗。面板设置页自己处理这些事，这里留着兼容旧入口。 */
 export type SettingsDialog = 'timezone' | 'bind-domain' | 'uninstall' | 'contact';
 
-export function SettingsMenu({
-  trigger,
-  onDialog,
-  navSystem,
-}: {
-  trigger: React.ReactNode;
-  onDialog: (which: SettingsDialog) => void;
-  /** 没有 system 权限就只留"面板设置"。 */
-  navSystem: boolean;
-}) {
-  const { t } = useTranslation();
+const item = 'rounded-lg px-3 py-2.5 text-sm';
 
-  const item = 'gap-2.5 text-sm';
+export function SettingsMenu({ trigger }: { trigger: React.ReactNode }) {
+  const { t } = useTranslation();
+  const hasPermission = useUserStore((s) => s.hasPermission);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="center" className="mb-3 min-w-44">
-        {/* 这里只放两个入口，具体设置进页面再摊开 —— 一个下拉里塞八九条等于没分组。 */}
-        {navSystem && (
+      <DropdownMenuContent side="top" align="center" className="mb-3 min-w-52 p-1.5">
+        {hasPermission(Perm.NAV_SYSTEM) && (
           <DropdownMenuItem asChild className={item}>
-            <Link to="/settings/system">
-              <SlidersHorizontal className="size-4" />
-              {t('settings.system')}
-            </Link>
+            <Link to="/settings/system">{t('settings.system')}</Link>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem asChild className={item}>
-          <Link to="/settings/panel">
-            <Package className="size-4" />
-            {t('settings.panel')}
-          </Link>
+          <Link to="/settings/panel">{t('settings.panel')}</Link>
+        </DropdownMenuItem>
+        {hasPermission(Perm.NAV_DOCKER) && (
+          <DropdownMenuItem asChild className={item}>
+            <Link to="/docker">{t('settings.docker')}</Link>
+          </DropdownMenuItem>
+        )}
+        {hasPermission(Perm.NAV_SITES) && (
+          <DropdownMenuItem asChild className={item}>
+            <Link to="/sites">{t('settings.caddy')}</Link>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem asChild className={item}>
+          <Link to="/about">{t('settings.about')}</Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

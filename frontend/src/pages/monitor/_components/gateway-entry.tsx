@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Globe } from 'lucide-react';
@@ -8,6 +9,7 @@ import { summarizeSite } from '../../sites/_lib/site-summary';
 import { siteUrl } from '../../../lib/site-url';
 import { cn } from '../../../lib/utils';
 import { SectionTitle } from './section-title';
+import { isPanelHost, usePanelPrefs } from '../../../stores/panel-prefs';
 
 /**
  * 站点入口区块。
@@ -75,8 +77,14 @@ export function GatewayEntry({
 /** 一条入口，解剖结构跟容器那条对齐：图标 + 名字 + 两行说明。 */
 function SiteEntryItem({ site }: { site: SiteEntry }) {
   const { t } = useTranslation();
+  const domain = usePanelPrefs((s) => s.domain);
+  const loadPrefs = usePanelPrefs((s) => s.load);
   const info = summarizeSite(site);
   const url = siteUrl(site.addr);
+  const panel = isPanelHost(site.addr, domain);
+  useEffect(() => {
+    void loadPrefs();
+  }, [loadPrefs]);
 
   const body = (
     <>
@@ -86,7 +94,14 @@ function SiteEntryItem({ site }: { site: SiteEntry }) {
         <SiteGlyph addr={site.addr} kind={info.kind} size={28} />
       </span>
       <div className="min-w-0 flex-1 text-left">
-        <p className="truncate font-mono text-sm">{site.addr}</p>
+        <p className="flex items-center gap-2 truncate font-mono text-sm">
+          <span className="truncate">{site.addr}</span>
+          {panel && (
+            <span className="shrink-0 rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-sans">
+              {t('sites.panel_badge')}
+            </span>
+          )}
+        </p>
         <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {info.kind === 'other'
             ? t('sites.kind_other')

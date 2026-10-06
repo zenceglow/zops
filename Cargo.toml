@@ -29,6 +29,8 @@ russh = "0.62"
 base64 = "0.22"
 cron = "0.12"
 sha2 = "0.10"
+hmac = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 portable-pty = "0.9.0"
 # IP 归属地查询要发一个 HTTP 请求。hyper 本来就在依赖树里（bollard 用它），
 # 提成直接依赖不增加编译量，也比再引一个完整的 HTTP 客户端轻。

@@ -131,6 +131,20 @@ impl Database {
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS object_stores (
+                id         TEXT PRIMARY KEY NOT NULL,
+                name       TEXT NOT NULL,
+                provider   TEXT NOT NULL,
+                endpoint   TEXT NOT NULL,
+                region     TEXT NOT NULL,
+                bucket     TEXT NOT NULL,
+                access_key TEXT NOT NULL,
+                secret_key TEXT NOT NULL,
+                prefix     TEXT NOT NULL DEFAULT '',
+                path_style INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             CREATE TABLE IF NOT EXISTS log_sources (
                 id    TEXT PRIMARY KEY NOT NULL,
                 path  TEXT NOT NULL,
@@ -804,6 +818,85 @@ impl Database {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    pub fn list_object_stores(&self) -> Result<Vec<ObjectStoreRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, provider, endpoint, region, bucket, access_key, secret_key, prefix, path_style
+             FROM object_stores ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ObjectStoreRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                provider: row.get(2)?,
+                endpoint: row.get(3)?,
+                region: row.get(4)?,
+                bucket: row.get(5)?,
+                access_key: row.get(6)?,
+                secret_key: row.get(7)?,
+                prefix: row.get(8)?,
+                path_style: row.get::<_, i64>(9)? != 0,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn get_object_store(&self, id: &str) -> Result<Option<ObjectStoreRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, provider, endpoint, region, bucket, access_key, secret_key, prefix, path_style
+             FROM object_stores WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(ObjectStoreRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                provider: row.get(2)?,
+                endpoint: row.get(3)?,
+                region: row.get(4)?,
+                bucket: row.get(5)?,
+                access_key: row.get(6)?,
+                secret_key: row.get(7)?,
+                prefix: row.get(8)?,
+                path_style: row.get::<_, i64>(9)? != 0,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn insert_object_store(&self, row: &ObjectStoreRow) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO object_stores(id, name, provider, endpoint, region, bucket, access_key, secret_key, prefix, path_style)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                row.id,
+                row.name,
+                row.provider,
+                row.endpoint,
+                row.region,
+                row.bucket,
+                row.access_key,
+                row.secret_key,
+                row.prefix,
+                if row.path_style { 1 } else { 0 },
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_object_store(&self, id: &str) -> Result<bool> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let n = conn.execute("DELETE FROM object_stores WHERE id = ?1", params![id])?;
+        Ok(n > 0)
     }
 
     // ── Log Sources ──
@@ -2306,6 +2399,20 @@ pub struct AccessEventRow {
     pub isp: String,
     pub lat: f64,
     pub lon: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectStoreRow {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub endpoint: String,
+    pub region: String,
+    pub bucket: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub prefix: String,
+    pub path_style: bool,
 }
 
 #[derive(Debug, Clone)]

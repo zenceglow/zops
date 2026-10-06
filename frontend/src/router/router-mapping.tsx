@@ -37,6 +37,7 @@ export const APP_ROUTES: RouteDef[] = [
   { path: '/docker/settings', lazy: page(() => import('../pages/docker/settings')) },
   { path: '/system/swap', lazy: page(() => import('../pages/system/swap')) },
   { path: '/system/network', lazy: page(() => import('../pages/system/network')) },
+  { path: '/network', lazy: page(() => import('../pages/network')) },
   { path: '/system/updates', lazy: page(() => import('../pages/system/updates')) },
 ];
 
