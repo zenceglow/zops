@@ -90,6 +90,14 @@ impl Database {
         }
         let conn = Connection::open(path)
             .with_context(|| format!("打开 SQLite 失败: {}", path.display()))?;
+        // 老库补列：登录锁定是后加的，`CREATE TABLE IF NOT EXISTS` 不会给已有表加列。
+        // SQLite 没有 ADD COLUMN IF NOT EXISTS，重复执行会报 duplicate column —— 忽略即可。
+        for stmt in [
+            "ALTER TABLE users ADD COLUMN login_attempts INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN locked_until TEXT",
+        ] {
+            let _ = conn.execute(stmt, []);
+        }
         conn.execute_batch(
             "
             PRAGMA journal_mode = WAL;
@@ -105,6 +113,9 @@ impl Database {
                 username      TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 role          TEXT NOT NULL DEFAULT 'member',
+                -- 登录撞库防护：连续失败计数 + 锁定截止（UTC）。
+                login_attempts INTEGER NOT NULL DEFAULT 0,
+                locked_until   TEXT,
                 created_at    TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -563,6 +574,94 @@ impl Database {
         } else {
             Ok(None)
         }
+    }
+
+    // ── 登录撞库防护 ──
+
+    /// 记一次失败，返回累计次数。用户名不存在时不影响任何行（返回 0）——
+    /// 顺带不泄露"这个账号存不存在"。
+    pub fn bump_login_failure(&self, username: &str) -> Result<i64> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "UPDATE users SET login_attempts = login_attempts + 1 WHERE username = ?1",
+            params![username],
+        )?;
+        Ok(conn
+            .query_row(
+                "SELECT login_attempts FROM users WHERE username = ?1",
+                params![username],
+                |r| r.get(0),
+            )
+            .unwrap_or(0))
+    }
+
+    /// 锁定还剩多少分钟。没锁 / 已经到期都返回 None（到期顺手把状态清掉）。
+    pub fn lock_minutes_left(&self, username: &str) -> Result<Option<i64>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let until: Option<String> = conn
+            .query_row(
+                "SELECT locked_until FROM users WHERE username = ?1",
+                params![username],
+                |r| r.get(0),
+            )
+            .unwrap_or(None);
+        let Some(until) = until else { return Ok(None) };
+        let Ok(at) = chrono::NaiveDateTime::parse_from_str(&until, "%Y-%m-%d %H:%M:%S") else {
+            return Ok(None);
+        };
+        let now = chrono::Utc::now().naive_utc();
+        if at <= now {
+            let _ = conn.execute(
+                "UPDATE users SET locked_until = NULL, login_attempts = 0 WHERE username = ?1",
+                params![username],
+            );
+            return Ok(None);
+        }
+        Ok(Some((at - now).num_minutes().max(1)))
+    }
+
+    /// 锁一段时间，并把失败计数清零（计数是"解锁后再撞"的起点）。
+    pub fn lock_user_for(&self, username: &str, minutes: i64) -> Result<String> {
+        let until = (chrono::Utc::now() + chrono::Duration::minutes(minutes))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "UPDATE users SET locked_until = ?1, login_attempts = 0 WHERE username = ?2",
+            params![until, username],
+        )?;
+        Ok(until)
+    }
+
+    /// 登录成功后清掉失败计数 / 锁定。
+    pub fn clear_login_state(&self, username: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "UPDATE users SET login_attempts = 0, locked_until = NULL WHERE username = ?1",
+            params![username],
+        )?;
+        Ok(())
+    }
+
+    /// `zops unlock`：解锁一个账号（`None` = 所有账号）。返回被解开的用户名。
+    pub fn unlock(&self, username: Option<&str>) -> Result<Vec<String>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        // 一条 SQL 覆盖"解一个 / 全解"：`?1 IS NULL` 就是全解。
+        let mut stmt = conn.prepare(
+            "SELECT username FROM users
+              WHERE (locked_until IS NOT NULL OR login_attempts > 0)
+                AND (?1 IS NULL OR username = ?1)",
+        )?;
+        let rows = stmt.query_map(params![username], |r| r.get::<_, String>(0))?;
+        let names: Vec<String> = rows.filter_map(|r| r.ok()).collect();
+        drop(stmt);
+        for name in &names {
+            conn.execute(
+                "UPDATE users SET login_attempts = 0, locked_until = NULL WHERE username = ?1",
+                params![name],
+            )?;
+        }
+        Ok(names)
     }
 
     pub fn list_user_permissions(&self, user_id: i64) -> Result<Vec<String>> {

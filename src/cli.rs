@@ -159,6 +159,8 @@ pub fn dispatch() -> Option<i32> {
         "resetpwd" | "reset-password" => Some(resetpwd(&rest)),
         "access" | "hide" | "open" => Some(access(cmd, &rest)),
         "uninstall" => Some(uninstall(&rest)),
+        "unlock" => Some(unlock(&rest)),
+        "restart" => Some(restart()),
         "help" | "--help" | "-h" => {
             usage();
             Some(0)
@@ -177,6 +179,8 @@ fn usage() {
            update | upgrade      检查并更新面板（--check 只检查）\n\
            resetpwd [用户名]     生成一个新的随机密码（交互确认）\n\
            access [local|public] 查看/切换对外访问（hide = local，open = public）\n\
+           unlock [用户名]       解开登录锁定（连错 3 次会被锁 1 小时；不填=全部）\n\
+           restart               重启面板服务\n\
            uninstall [--purge]   卸载面板（交互确认；--purge 连数据一起删）\n\
          \n\
          不带命令直接运行 = 启动面板服务（systemd 就是这么起的）。",
@@ -478,6 +482,65 @@ fn uninstall(args: &[&str]) -> i32 {
             eprintln!("  · {f}");
         }
         1
+    }
+}
+
+/// 解开登录锁定。
+///
+/// 连错 3 次锁 1 小时之后，面板本身是进不去的 —— 这条命令是唯一的出口，
+/// 所以它只要求"能登进这台机器"（和 `--reset-password` 同一档权限）。
+fn unlock(args: &[&str]) -> i32 {
+    let ins = Installed::detect();
+    let db = match ins.open_db() {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    let wanted = args.first().map(|s| s.trim()).filter(|s| !s.is_empty());
+    match db.unlock(wanted) {
+        Ok(list) if list.is_empty() => {
+            match wanted {
+                Some(w) => println!("「{w}」没有被锁定。"),
+                None => println!("没有需要解锁的账号。"),
+            }
+            0
+        }
+        Ok(list) => {
+            println!("已解锁：{}", list.join("、"));
+            println!("失败计数已清零，重新登录即可。");
+            0
+        }
+        Err(e) => {
+            eprintln!("解锁失败：{e}");
+            1
+        }
+    }
+}
+
+fn restart() -> i32 {
+    let ins = Installed::detect();
+    if !ins.found {
+        eprintln!(
+            "找不到 systemd 单元 {}。手动重启：systemctl restart {SERVICE}",
+            ins.unit.display()
+        );
+        return 1;
+    }
+    if !confirm("现在重启面板服务？登录会话不受影响，但页面会短暂断开。") {
+        println!("已取消。");
+        return 0;
+    }
+    match systemctl(&["restart", SERVICE]) {
+        Ok(()) => {
+            println!("面板已重启。");
+            0
+        }
+        Err(e) => {
+            eprintln!("重启失败：{e}");
+            1
+        }
     }
 }
 

@@ -17,6 +17,7 @@ pub const EVENTS: &[(&str, &str)] = &[
     ("deploy", "部署完成"),
     ("container", "容器掉线"),
     ("pressure", "压力告警"),
+    ("security", "登录安全（撞库锁定）"),
     ("test", "测试消息"),
 ];
 

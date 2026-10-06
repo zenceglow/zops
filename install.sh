@@ -154,7 +154,7 @@ msg() {
     f_firewall) [ "$L" = zh ] && printf ' · 若面板打不开，先放行端口：firewall-cmd --add-port=%s/tcp --permanent && firewall-cmd --reload' "$1" || printf ' · If the panel is unreachable, open the port: firewall-cmd --add-port=%s/tcp --permanent && firewall-cmd --reload' "$1" ;;
     f_codex)   [ "$L" = zh ] && printf ' · 打开面板 → 「接入 Codex」→ 生成令牌 → 复制配置贴给 Codex' || printf ' · Open the panel → "MCP" → create a token → paste the config into Codex' ;;
     f_service) [ "$L" = zh ] && printf ' · 管理服务：systemctl status %s / journalctl -u %s -f' "$1" "$2" || printf ' · Manage the service: systemctl status %s / journalctl -u %s -f' "$1" "$2" ;;
-    f_cli)     [ "$L" = zh ] && printf ' · 常用命令：zops info ｜ zops update ｜ zops resetpwd ｜ zops access local ｜ zops uninstall' || printf ' · Handy commands: zops info | zops update | zops resetpwd | zops access local | zops uninstall' ;;
+    f_cli)     [ "$L" = zh ] && printf ' · 常用命令：zops info ｜ zops update ｜ zops restart ｜ zops unlock ｜ zops resetpwd ｜ zops access local ｜ zops uninstall' || printf ' · Handy commands: zops info | zops update | zops restart | zops unlock | zops resetpwd | zops access local | zops uninstall' ;;
     f_private) [ "$L" = zh ] && printf '上面的地址是内网 IP（云主机 NAT）。对外访问还要在云控制台的安全组放行 TCP %s，' "$1" || printf 'That address is a private IP (cloud NAT). Open TCP %s in your cloud security group,' "$1" ;;
     f_private2) [ "$L" = zh ] && printf '或者跑一次：bash install.sh（第 2 步填一个指向本机的域名，会自动配好 HTTPS 反代）。' || printf 'or re-run the installer with a domain that resolves here to get HTTPS automatically.' ;;
     *) printf '' ;;
