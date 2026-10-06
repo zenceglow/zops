@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BrandLogo } from '../../../components/brand-logo';
@@ -8,6 +9,23 @@ import { useLogin } from '../_hooks/use-login';
 
 export function LoginForm() {
   const { t } = useTranslation();
+  // 登录页也报一下版本 —— 排障第一件事就是确认"你看的是哪个版本的面板"。
+  // 写死过一次 v0.1.0，之后每个版本都跟着错，所以从没鉴权的 /api/ops/version 读。
+  const [version, setVersion] = useState('');
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/ops/version')
+      .then((r) => r.json())
+      .then((d: { data?: { version?: string } }) => {
+        if (alive && d?.data?.version) setVersion(d.data.version);
+      })
+      .catch(() => {
+        /* 拿不到版本就不显示，别让登录页因为一行小字报错 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const {
     username,
     setUsername,
@@ -77,7 +95,7 @@ export function LoginForm() {
       </form>
 
       <p className="mt-10 text-center text-xs text-muted-foreground/80">
-        ZOPS · v0.1.0
+        ZOPS{version ? ` · v${version}` : ''}
       </p>
     </div>
   );
