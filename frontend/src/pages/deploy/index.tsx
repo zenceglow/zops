@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  ChevronRight,
   CheckCircle2,
   CircleDashed,
   Loader2,
@@ -103,6 +104,9 @@ export default function DeployPage() {
   const [services, setServices] = useState<ServiceContainer[]>([]);
   /** 点了没有部署任务的服务 —— 右侧显示"纳管"面板，而不是一片空白。 */
   const [adoptTarget, setAdoptTarget] = useState<{ name: string } | null>(null);
+  /** 服务可能很多，靠眼里在窄栏里找是不行的。 */
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'running' | 'stopped' | 'unmanaged'>('all');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newNote, setNewNote] = useState('');
@@ -124,7 +128,6 @@ export default function DeployPage() {
   const refresh = useCallback(async () => {
     const list = await listJobs();
     setJobs(list);
-    setSelectedId((cur) => cur ?? list[0]?.id ?? null);
     return list;
   }, []);
 
@@ -154,6 +157,25 @@ export default function DeployPage() {
       return a.name.localeCompare(b.name);
     });
   }, [services, jobs]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return apps.filter((a) => {
+      if (q && !a.name.toLowerCase().includes(q) && !(a.service?.image ?? '').toLowerCase().includes(q)) {
+        return false;
+      }
+      switch (filter) {
+        case 'running':
+          return a.service?.state === 'running';
+        case 'stopped':
+          return a.service !== undefined && a.service.state !== 'running';
+        case 'unmanaged':
+          return !a.job;
+        default:
+          return true;
+      }
+    });
+  }, [apps, query, filter]);
 
   useEffect(() => {
     if (!selected) return;
@@ -325,65 +347,115 @@ export default function DeployPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          {/* 左：应用列表。一个应用 = 一个服务（容器），有没有部署任务是它的一个属性，
-              而不是"能不能出现在这里"的条件。 */}
-          <div className="space-y-2">
-            {apps.map((app) => {
-              const job = app.job;
-              const active = app.job ? job!.id === selectedId : adoptTarget?.name === app.name;
-              return (
-              <button
-                key={app.name}
-                type="button"
-                onClick={() => {
-                  if (job) {
-                    setAdoptTarget(null);
-                    setSelectedId(job.id);
-                  } else {
-                    setAdoptTarget({ name: app.name });
-                  }
-                }}
-                className={cn(
-                  'w-full rounded-xl border border-border/60 p-3 text-left transition-colors hover:bg-muted/50',
-                  active && 'border-primary/50 bg-primary/5',
-                )}
+        <>
+          {/* 工具条：服务一多，靠肉眼在窄栏里找是不行的 */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('deploy.search')}
+              className="h-8 w-52 text-xs"
+            />
+            {(
+              [
+                { id: 'all', label: t('deploy.filter_all') },
+                { id: 'running', label: t('deploy.state_running') },
+                { id: 'stopped', label: t('deploy.state_stopped') },
+                { id: 'unmanaged', label: t('deploy.filter_unmanaged') },
+              ] as { id: typeof filter; label: string }[]
+            ).map((f) => (
+              <Button
+                key={f.id}
+                size="sm"
+                variant={filter === f.id ? 'default' : 'outline'}
+                onClick={() => setFilter(f.id)}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-mono text-sm">{app.name}</span>
-                  {job?.source === 'agent' && (
-                    <Badge variant="secondary" className="h-4 px-1 text-[10px]">
-                      agent
-                    </Badge>
-                  )}
-                </div>
-                <div className="mt-1.5">
-                  {job ? (
-                    <StatusBadge status={job.status} />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      {app.service?.state === 'running'
-                        ? t('deploy.state_running')
-                        : t('deploy.state_stopped')}
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-                  {app.service?.image ?? t('deploy.no_service')}
-                </p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {job
-                    ? job.last_run_at
-                      ? when(job.last_run_at, t)
-                      : t('deploy.never_deployed')
-                    : t('deploy.unmanaged')}
-                </p>
-              </button>
-              );
-            })}
+                {f.label}
+              </Button>
+            ))}
+            <span className="ml-auto text-xs text-muted-foreground">
+              {t('deploy.count', {
+                total: apps.length,
+                managed: apps.filter((a) => a.job).length,
+              })}
+            </span>
           </div>
 
-          {/* 右：三步走 + 记录 */}
+          {/* 列表：一行一个服务，行高固定 —— 三十个服务也就是三十行，不是一条滚不到头的窄栏。 */}
+          <Card>
+            <CardContent className="p-0">
+              <ul className="divide-y divide-border/60">
+                {filtered.map((app) => {
+                  const job = app.job;
+                  const running = app.service?.state === 'running';
+                  return (
+                    <li key={app.name}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (job) {
+                            setAdoptTarget(null);
+                            setSelectedId(job.id);
+                          } else {
+                            setSelectedId(null);
+                            setAdoptTarget({ name: app.name });
+                          }
+                        }}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                      >
+                        <span
+                          className={cn(
+                            'size-2 shrink-0 rounded-full',
+                            running ? 'bg-emerald-500' : 'bg-muted-foreground/40',
+                          )}
+                          title={running ? t('deploy.state_running') : t('deploy.state_stopped')}
+                        />
+                        <span className="w-44 shrink-0 truncate font-mono text-sm">
+                          {app.name}
+                        </span>
+                        <span className="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground sm:block">
+                          {app.service?.image ?? t('deploy.no_service')}
+                        </span>
+                        <span className="hidden w-24 shrink-0 truncate font-mono text-[11px] text-muted-foreground md:block">
+                          {app.service?.ports ?? ''}
+                        </span>
+                        <span className="shrink-0">
+                          {job ? (
+                            <StatusBadge status={job.status} />
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">
+                              {t('deploy.unmanaged')}
+                            </span>
+                          )}
+                        </span>
+                        <span className="hidden w-28 shrink-0 text-right text-[11px] text-muted-foreground sm:block">
+                          {job?.last_run_at ? when(job.last_run_at, t) : ''}
+                        </span>
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      </button>
+                    </li>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <li className="px-4 py-10 text-center text-xs text-muted-foreground">
+                    {t('deploy.no_match')}
+                  </li>
+                )}
+              </ul>
+            </CardContent>
+          </Card>
+
+          {/* 详情按需展开：列表占满宽度，三步走只在点开某个服务时出现。 */}
+          <Dialog
+            open={!!selected || !!adoptTarget}
+            onOpenChange={(v) => {
+              if (!v) {
+                setSelectedId(null);
+                setAdoptTarget(null);
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-3xl">
           {adoptTarget && !selected && (
             <Card>
               <CardContent className="space-y-3 py-10 text-center">
@@ -599,7 +671,9 @@ export default function DeployPage() {
               </Card>
             </div>
           )}
-        </div>
+            </DialogContent>
+          </Dialog>
+        </>
       )}
 
       <Dialog open={creating} onOpenChange={setCreating}>

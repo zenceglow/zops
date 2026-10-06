@@ -932,7 +932,13 @@
     "unmanaged": "unmanaged (no deploy job yet)",
     "adopt": "Adopt this service",
     "adopt_desc": "Create a deploy job for this running service: upload artifacts, write the deploy script, run it — every run is recorded, and you can see which container it is bound to.",
-    "adopted": "Adopted {{name}}"
+    "adopted": "Adopted {{name}}",
+    "search": "Search name / image",
+    "filter_all": "All",
+    "filter_unmanaged": "Unmanaged",
+    "no_match": "No matching service",
+    "count": "{{total}} services · {{managed}} managed",
+    "managed": "managed"
   },
   "security": {
     "title": "Security",

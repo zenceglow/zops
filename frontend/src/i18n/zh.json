@@ -932,7 +932,13 @@
     "unmanaged": "未纳管（还没建部署任务）",
     "adopt": "纳管这个服务",
     "adopt_desc": "给这个已经在跑的服务建一条部署任务：以后传产物、写部署脚本、执行，都会留下记录，也能看到它绑在哪个容器上。",
-    "adopted": "已纳管 {{name}}"
+    "adopted": "已纳管 {{name}}",
+    "search": "搜服务名 / 镜像",
+    "filter_all": "全部",
+    "filter_unmanaged": "未纳管",
+    "no_match": "没有匹配的服务",
+    "count": "{{total}} 个服务 · {{managed}} 个已纳管",
+    "managed": "已纳管"
   },
   "security": {
     "title": "安全中心",
