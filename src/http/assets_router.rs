@@ -8,11 +8,30 @@ use axum::{
 use crate::assets::Assets;
 
 pub fn assets_router(api_router: Router) -> Router {
+    // 前端兜底只服务页面；API 的特殊情况在下面各自处理（见 static_handler）。
+    
     api_router.fallback(static_handler)
 }
 
 async fn static_handler(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
+
+    // 多了个尾斜杠的 API 路径：308 重定向到去掉斜杠的那份，让请求回到真正的路由上。
+    // axum 的 nest 只把内层 "/" 挂在**不带**尾斜杠的路径上（`/api/ops/service` 能匹配，
+    // `/api/ops/service/` 不能），而浏览器里缓存的旧 bundle 就是按带斜杠发的 —— 用户看到
+    // 的是"删除没反应"。308 会保留方法（DELETE 还是 DELETE），浏览器和 fetch 都会自动跟。
+    if path.starts_with("api/") && path.ends_with('/') {
+        let trimmed = path.trim_end_matches('/');
+        let location = match uri.query() {
+            Some(q) => format!("/{trimmed}?{q}"),
+            None => format!("/{trimmed}"),
+        };
+        return Response::builder()
+            .status(StatusCode::PERMANENT_REDIRECT)
+            .header(header::LOCATION, location)
+            .body(Body::empty())
+            .unwrap_or_default();
+    }
 
     // /api/** 永远不该落到前端页面：以前任何没匹配上的 API 路径都会返回
     // index.html + **200**（路径里没有点号就走 SPA 兜底）。前端拿到 200 的 HTML，
