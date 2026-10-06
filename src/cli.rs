@@ -169,7 +169,8 @@ pub fn dispatch() -> Option<i32> {
     }
 }
 
-fn usage() {
+/// 用法。`main` 在"终端里敲了 zops 但没给子命令"时也要用它，所以是 pub。
+pub fn usage() {
     println!(
         "ZOPS {}\n\
          \n\
@@ -182,6 +183,7 @@ fn usage() {
            unlock [用户名]       解开登录锁定（连错 3 次会被锁 1 小时；不填=全部）\n\
            restart               重启面板服务\n\
            uninstall [--purge]   卸载面板（交互确认；--purge 连数据一起删）\n\
+           serve                 前台启动面板服务（调试用；正常由 systemd 拉起）\n\
          \n\
          不带命令直接运行 = 启动面板服务（systemd 就是这么起的）。",
         env!("CARGO_PKG_VERSION")

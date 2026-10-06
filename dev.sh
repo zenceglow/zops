@@ -29,7 +29,9 @@ echo "    (打开浏览器访问 http://localhost:5173)"
 echo "    按 Ctrl+C 停止所有"
 echo ""
 
-OPS_PORT=5200 cargo run &
+# OPS_SERVE=1：告诉它"这次就是要在前台起服务"。没有这个标记时，终端里跑起来
+# 只会打印用法 —— 免得有人误以为在调试，其实是在起第二实例。
+OPS_PORT=5200 OPS_SERVE=1 cargo run &
 BACKEND_PID=$!
 
 while true; do

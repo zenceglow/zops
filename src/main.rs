@@ -57,6 +57,22 @@ fn main() {
         std::process::exit(code);
     }
 
+    // 没有子命令时，"起服务"这件事只在**确实是被服务管理器拉起来**（或明确要求）时做。
+    //
+    // 在终端里敲 `zops` 也落进这条路径曾经是个坑：它会用默认端口 5000、当前目录下的
+    // ./data 起一份**第二实例**，还打印"尚未初始化"的初始化横幅 —— 看起来像安装坏了，
+    // 实际上是把面板又起了一遍。终端里的人要的是用法。
+    let explicit_serve = std::env::args().nth(1).as_deref() == Some("serve");
+    let managed = std::env::var_os("INVOCATION_ID").is_some()
+        || std::env::var_os("JOURNAL_STREAM").is_some()
+        || std::env::var_os("OPS_SERVE").is_some();
+    if !explicit_serve && !managed {
+        cli::usage();
+        eprintln!("\n这不是在起服务：面板由 systemd 管着（systemctl status zenceglow-ops）。");
+        eprintln!("要前台调试，用 `zops serve`（或 OPS_SERVE=1 zops）。");
+        std::process::exit(2);
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
