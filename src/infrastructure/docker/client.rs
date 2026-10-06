@@ -708,7 +708,15 @@ impl DockerClient {
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(output) => lines.push(output.to_string()),
-                Err(_) => break,
+                Err(e) => {
+                    // 一条都没读到就报错 = 容器不存在 / 引擎拒绝。以前这里直接 break，
+                    // 调用方拿到的是"空日志"，看起来像"容器在、只是没输出" —— 排障时
+                    // 最坑人的那种假信息。读了一半才断的（日志被轮转等）才当截断。
+                    if lines.is_empty() {
+                        return Err(AppError::not_found(format!("读取容器日志失败：{e}")));
+                    }
+                    break;
+                }
             }
         }
         Ok(lines)

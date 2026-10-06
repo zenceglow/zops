@@ -91,7 +91,10 @@ fn container_ports() -> Vec<(u16, String)> {
 /// `LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=812,fd=3))`
 fn parse_ss(text: &str) -> Vec<PortUsage> {
     let mut rows = Vec::new();
-    for line in text.lines().skip(1) {
+    // 命令是带 `-H` 调的（不打表头），所以不能无条件 `skip(1)`：没有表头时那一跳
+    // 会把第一条真实监听的整行吃掉，表现就是"端口明明在监听，面板上却没有"。
+    // 按内容判断更稳 —— 表头第一列是 `State`，数据行才是 `LISTEN`。
+    for line in text.lines() {
         let cols: Vec<&str> = line.split_whitespace().collect();
         if cols.len() < 4 || cols[0] != "LISTEN" {
             continue;
@@ -195,6 +198,20 @@ LISTEN 0      244    127.0.0.1:2019     0.0.0.0:*         users:((\"caddy\",pid=
         assert_eq!(rows[1].port, 80);
         assert_eq!(rows[1].address, "*");
         assert_eq!(rows[2].address, "127.0.0.1");
+    }
+
+    #[test]
+    fn 没表头的_ss_输出也不丢第一条() {
+        // `ss -tlnpH` 是不带表头的。以前这里 `skip(1)` 会把第一条监听整行吃掉，
+        // 表现就是某个端口（例如 redis 的 6379）明明在监听，却从列表里消失。
+        let text = "\
+LISTEN 0      244    127.0.0.1:6379     0.0.0.0:*         users:((\"redis-server\",pid=900,fd=6))
+LISTEN 0      128    0.0.0.0:22         0.0.0.0:*         users:((\"sshd\",pid=812,fd=3))";
+        let rows = parse_ss(text);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].port, 6379);
+        assert_eq!(rows[0].process, "redis-server");
+        assert_eq!(rows[1].port, 22);
     }
 
     #[test]

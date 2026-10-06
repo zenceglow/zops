@@ -39,8 +39,7 @@ impl TokenService {
         }
 
         let plain = generate_token();
-        let permissions = permissions_for_scope(scope);
-        let permissions_json = serde_json::to_string(&permissions).unwrap_or_else(|_| "[]".into());
+        let permissions_json = permissions_json(scope);
         let id = uuid::Uuid::new_v4().to_string();
 
         let row = self
@@ -79,7 +78,7 @@ impl TokenService {
             .db
             .find_api_token_by_hash(&hash_token(plain))
             .map_err(AppError::from)?;
-        Ok(row)
+        Ok(row.map(refresh_permissions))
     }
 
     /// Fire-and-forget usage stamp; never fails the request.
@@ -94,8 +93,56 @@ pub fn to_info(row: &ApiTokenRow) -> ApiTokenInfo {
         name: row.name.clone(),
         prefix: row.prefix.clone(),
         scope: row.scope.clone(),
-        permissions: serde_json::from_str(&row.permissions).unwrap_or_default(),
+        permissions: permissions_for_scope(&row.scope),
         created_at: row.created_at.clone(),
         last_used_at: row.last_used_at.clone(),
+    }
+}
+
+/// 权限按 scope 实时展开。
+///
+/// 库里 `permissions` 那一列是**创建当时的快照**：权限目录后来新增的项
+/// （`ops.deploy`、`ops.notify.manage` …）不会自己进旧令牌 —— 表现就是"write 令牌
+/// 在 `tools/list` 里看不到 `ops_deploy_apply`，调用别的写工具会报没有权限"。
+/// scope 才是唯一的真相，每次读出来重新展开一遍，旧令牌自然拿到新权限。
+fn permissions_json(scope: &str) -> String {
+    serde_json::to_string(&permissions_for_scope(scope)).unwrap_or_else(|_| "[]".into())
+}
+
+fn refresh_permissions(mut row: ApiTokenRow) -> ApiTokenRow {
+    row.permissions = permissions_json(&row.scope);
+    row
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::token::{generate_token, hash_token, token_prefix};
+    use std::path::Path;
+    use std::sync::Arc;
+
+    /// 旧令牌的权限是创建时快照的；之后新增的 `ops.deploy` 必须能按 scope 拿回来，
+    /// 否则 write 令牌调不动 `ops_deploy_apply`。
+    #[test]
+    fn 旧令牌按_scope_拿到新增的权限() {
+        let db = Arc::new(Database::open(Path::new(":memory:")).unwrap());
+        let svc = TokenService::new(db.clone());
+        let plain = generate_token();
+
+        // 直接写一条"老"记录：scope=write，但权限停在很久以前的那几项。
+        db.create_api_token(
+            "tok-old",
+            "老令牌",
+            &token_prefix(&plain),
+            &hash_token(&plain),
+            "write",
+            r#"["ops.system.read"]"#,
+        )
+        .unwrap();
+
+        let row = svc.verify(&plain).unwrap().expect("令牌应该校验得出来");
+        let perms: Vec<String> = serde_json::from_str(&row.permissions).unwrap();
+        assert!(perms.iter().any(|p| p == "ops.deploy"), "write 令牌必须能部署");
+        assert!(perms.iter().any(|p| p == "ops.notify.manage"));
     }
 }
