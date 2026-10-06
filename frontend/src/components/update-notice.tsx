@@ -37,9 +37,12 @@ export function UpdateNotice() {
   if (!show || !status?.latest) return null;
 
   const latest = status.latest;
-  const working = busy !== 'idle';
-  // 升级到一半不该被误关：点掉遮罩之后用户就不知道到底成没成。
-  const dismissible = !working && !done;
+  // 服务端说它正在升级，就按"正在升级"显示 —— 比如用户刷新了页面，前端的状态
+  // 没了，但后台的升级还在跑。
+  const working = busy !== 'idle' || status.applying;
+  // 提交那一下不该被误关（请求还在路上）；真开始下载之后随便关 —— 升级跑在服务端，
+  // 关掉这个窗口不影响它，没必要把人扣在这儿等几分钟。
+  const dismissible = busy !== 'applying' && !done;
 
   const copyCommand = async () => {
     if (await copyText(status.install_command)) {
@@ -54,8 +57,16 @@ export function UpdateNotice() {
   const applyNow = async () => {
     setError('');
     setBusy('applying');
-    const res = await post<{ version: string }>('/system/release/apply').catch(() => null);
-    if (!res?.success) {
+    // 区分两种"没成"：
+    //  - 服务端明确说不行（业务错误）→ 照原样给用户看，让他去处理；
+    //  - 请求本身没回来（十几兆的二进制在慢线路上要下好几分钟，浏览器/代理先超时）
+    //    → **不代表升级失败**，服务端还在下，下完会自己换掉并重启。
+    //    这时候该继续等，而不是弹一句假的"升级没成功"吓人。
+    // 服务端接了就返回（真正的下载在它自己的后台跑），所以这里不用等下载完。
+    const res = await post<{ started: boolean; latest: string | null }>(
+      '/system/release/apply',
+    ).catch(() => null as unknown as { success: boolean; message?: string });
+    if (res && !res.success) {
       setBusy('idle');
       setError(res?.message || t('update.apply_failed'));
       return;
@@ -63,7 +74,8 @@ export function UpdateNotice() {
 
     setBusy('restarting');
     // 面板重启会有一两秒连不上，这段时间的失败是**预期**的，不当错误处理。
-    const deadline = Date.now() + 120_000;
+    // 十分钟：正常几秒就好，但慢线路上光是下载就可能要好几分钟。
+    const deadline = Date.now() + 600_000;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 1500));
       const p = await get<{ version: string }>('/system/panel').catch(() => null);

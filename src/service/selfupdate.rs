@@ -59,6 +59,8 @@ pub struct UpdateStatus {
     /// `./target/debug/zenceglow-ops` 的时候，面板**绝不**该去替换自己旁边那个
     /// 文件，那是在改别人的东西。这种时候界面退回"复制命令"。
     pub can_apply: bool,
+    /// 正在下载/替换中。界面据此显示进度而不是重复触发。
+    pub applying: bool,
     pub notes: String,
     pub published_at: String,
     pub checked_at: Option<String>,
@@ -79,6 +81,8 @@ pub struct SelfUpdateService {
     manifest_url: String,
     install_url: String,
     current: String,
+    /// 正在升级。防止连点两下装两次 —— 两个下载写同一个临时文件会互相踩。
+    applying: std::sync::atomic::AtomicBool,
 }
 
 impl SelfUpdateService {
@@ -88,7 +92,12 @@ impl SelfUpdateService {
             manifest_url,
             install_url,
             current: env!("CARGO_PKG_VERSION").to_string(),
+            applying: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    pub fn is_applying(&self) -> bool {
+        self.applying.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn status(&self) -> UpdateStatus {
@@ -103,6 +112,7 @@ impl SelfUpdateService {
             latest: release.as_ref().map(|r| r.version.clone()),
             has_update,
             can_apply: has_update && self.managed_bin().is_some(),
+            applying: self.is_applying(),
             notes: release.as_ref().map(|r| r.notes.clone()).unwrap_or_default(),
             published_at: release
                 .as_ref()
@@ -119,22 +129,24 @@ impl SelfUpdateService {
     /// 的 amd64、清单和程序对不上版本 —— 这几种情况下换上去 = 面板直接起不来，
     /// 而面板起不来时用户手上就只剩一个 SSH。所以每一步都验，验不过就保持原样。
     pub async fn apply(&self) -> Result<ApplyOutcome, AppError> {
-        let bin = self.managed_bin().ok_or_else(|| {
-            AppError::bad_request("这个实例不是安装脚本部署的，自动升级不适用，请用命令行升级")
-        })?;
+        // 连点两下会同时开两个下载，写同一个临时文件，互相踩。
+        if self.applying.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return Err(AppError::bad_request("已经在升级了，等一下"));
+        }
+        // 无论走哪条失败路径都要把标记放掉，否则一次失败就把自动升级永久锁死。
+        let result = self.apply_inner().await;
+        self.applying.store(false, std::sync::atomic::Ordering::SeqCst);
+        result
+    }
 
+    async fn apply_inner(&self) -> Result<ApplyOutcome, AppError> {
+        self.preflight()?;
+        let bin = self
+            .managed_bin()
+            .ok_or_else(|| AppError::bad_request("这个实例不是安装脚本部署的"))?;
         let release = self
             .cached()
             .ok_or_else(|| AppError::bad_request("还没拿到版本清单，稍后再试"))?;
-        if !version_gt(&release.version, &self.current) {
-            return Err(AppError::bad_request(format!(
-                "当前已经是最新的 {}",
-                self.current
-            )));
-        }
-        if release.url.is_empty() {
-            return Err(AppError::bad_request("清单里没有下载地址"));
-        }
 
         // 先落到同目录的临时文件：同一分区才能最后一步用 rename 原子替换，
         // 跨设备 rename 会退化成"先删后拷"，中间那一瞬间面板就没了。
@@ -169,6 +181,31 @@ impl SelfUpdateService {
                 )
             },
         })
+    }
+
+    /// 能不能升级 —— 所有"立刻就能判断"的条件都在这儿。
+    ///
+    /// 放在进入后台任务之前跑：不然用户点了升级，接口回一句"已开始"，
+    /// 转头任务在日志里默默失败，界面上什么都不显示。
+    pub fn preflight(&self) -> Result<(), AppError> {
+        if self.managed_bin().is_none() {
+            return Err(AppError::bad_request(
+                "这个实例不是安装脚本部署的，自动升级不适用，请用命令行升级",
+            ));
+        }
+        let release = self
+            .cached()
+            .ok_or_else(|| AppError::bad_request("还没拿到版本清单，稍后再试"))?;
+        if !version_gt(&release.version, &self.current) {
+            return Err(AppError::bad_request(format!(
+                "当前已经是最新的 {}",
+                self.current
+            )));
+        }
+        if release.url.is_empty() {
+            return Err(AppError::bad_request("清单里没有下载地址"));
+        }
+        Ok(())
     }
 
     /// 当前进程是不是"安装脚本装的那个二进制"。不是就别动它。

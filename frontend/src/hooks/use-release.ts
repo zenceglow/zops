@@ -8,6 +8,8 @@ export type UpdateStatus = {
   has_update: boolean;
   /** 面板能不能自己升级（只有安装脚本装的那份二进制才行）。 */
   can_apply: boolean;
+  /** 服务端正在下载/替换中。刷新页面回来也要能看出来。 */
+  applying: boolean;
   notes: string;
   published_at: string;
   checked_at: string | null;

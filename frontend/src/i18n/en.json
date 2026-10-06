@@ -737,7 +737,7 @@
     "now": "Update now",
     "downloading": "Downloading and verifying the new version…",
     "downloading_short": "Downloading",
-    "restarting": "Restarting the panel — the page reloads in a few seconds…",
+    "restarting": "Upgrading and restarting — on a slow link the ~16 MB download can take a few minutes; the page reloads when it is done…",
     "restarting_short": "Restarting",
     "done": "Updated to {{version}}, reloading…",
     "apply_failed": "Update failed",

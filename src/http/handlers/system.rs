@@ -70,12 +70,29 @@ async fn release(
 /// 就地升级面板自己：下载新版本、换掉二进制、重启服务。
 ///
 /// 要 `OPS_SYSTEM_WRITE`：这一步会覆盖磁盘上的可执行文件，是真正会改主机的动作。
+///
+/// **任务丢到后台跑，请求立刻返回。** 这一步要下载十几兆，慢线路上好几分钟 ——
+/// 如果把它挂在请求上，"用户的浏览器/代理先超时断开"就会被 axum 当成取消，
+/// 后面的校验和替换再也不会执行：文件下完了，却没换上，面板停在旧版本上，
+/// 还留下一个十几兆的残骸。升级这种动作不该由"连接还在不在"决定。
 async fn apply_release(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
-) -> Result<Json<ApiResponse<crate::service::selfupdate::ApplyOutcome>>, AppError> {
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     require_perm(&user, OPS_SYSTEM_WRITE)?;
-    Ok(Json(ApiResponse::ok(state.selfupdate.apply().await?)))
+    let worker = state.selfupdate.clone();
+    if worker.is_applying() {
+        return Err(AppError::bad_request("已经在升级了，等一下"));
+    }
+    worker.preflight()?;
+    tokio::spawn(async move {
+        if let Err(e) = worker.apply().await {
+            tracing::warn!("面板自升级失败：{}", e.message);
+        }
+    });
+    Ok(Json(ApiResponse::ok(serde_json::json!({
+        "started": true,
+    }))))
 }
 
 async fn overview(
