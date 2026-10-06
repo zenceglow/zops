@@ -84,6 +84,46 @@ echo "  编译产物: $BIN"
 file "$BIN" || true
 ls -lh "$BIN"
 
+# ---- 2.5 冒烟：发布前先让它在本机真跑一次 ----
+#
+# 编译通过 ≠ 能启动。2026-10-07 我加了一条 `route("")`，axum 在**构建路由时**就 panic
+# （"Paths must start with a `/`"），编译和单测全过，二进制一上 CDN 两台面板同时崩，
+# 而面板一崩就没有任何远程通道能救它。所以现在发布前必须起一次：起得来、健康接口
+# 有响应、未匹配的 API 返回 JSON 404（而不是被前端页面兜住），才算能发。
+echo ""
+echo "========================================="
+echo " 2.5/3 冒烟：本机起一次，确认能启动"
+echo "========================================="
+SMOKE_DIR="$(mktemp -d -t zops-smoke)"
+SMOKE_PORT="${SMOKE_PORT:-38999}"
+cargo build --quiet
+OPS_PORT="$SMOKE_PORT" OPS_DATA_DIR="$SMOKE_DIR" OPS_SERVE=1 \
+  ./target/debug/zenceglow-ops >"$SMOKE_DIR/run.log" 2>&1 &
+SMOKE_PID=$!
+smoke_ok=0
+i=0
+while [ "$i" -lt 20 ]; do
+  sleep 1
+  if curl -fsS -m 2 "http://127.0.0.1:${SMOKE_PORT}/api/ops/version" 2>/dev/null | grep -q '"version"'; then
+    smoke_ok=1
+    break
+  fi
+  i=$((i + 1))
+done
+if [ "$smoke_ok" != "1" ]; then
+  echo "error: 二进制在本机起不来（panic / 端口没开），拒绝发布。日志：" >&2
+  tail -25 "$SMOKE_DIR/run.log" >&2
+  kill "$SMOKE_PID" 2>/dev/null || true
+  exit 1
+fi
+if ! curl -s -m 3 "http://127.0.0.1:${SMOKE_PORT}/api/ops/__smoke__" | grep -q '"code":404'; then
+  echo "error: 未匹配的 /api 路径没有返回 JSON 404（会被前端页面兜成 200），拒绝发布。" >&2
+  kill "$SMOKE_PID" 2>/dev/null || true
+  exit 1
+fi
+kill "$SMOKE_PID" 2>/dev/null || true
+echo "冒烟通过：能启动，健康接口正常，未匹配 API 返回 JSON 404"
+
 # 版本号从 Cargo.toml 读 —— 它是唯一的真相，别让人再手抄一遍。
 VER="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 VERSIONED_PATH="app/ops/zenceglow-ops-amd64-${VER}"

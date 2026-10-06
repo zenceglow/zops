@@ -234,7 +234,7 @@ impl SelfUpdateService {
         std::fs::rename(&tmp, &bin)
             .map_err(|e| AppError::internal(format!("替换二进制失败：{e}")))?;
 
-        let restarting = schedule_restart();
+        let restarting = schedule_restart(&bin);
         Ok(ApplyOutcome {
             version: release.version.clone(),
             restarting,
@@ -507,9 +507,42 @@ fn probe_version(path: &Path) -> Result<String, AppError> {
 /// 早就发出去了。
 ///
 /// 返回 false 表示两条路都没走通，此时界面应该提示用户手动重启。
-fn schedule_restart() -> bool {
+/// 换完二进制之后的重启脚本。
+///
+/// 「重启成功」不等于「新版本能起来」：启动时 panic（比如路由表写错）会让 systemd
+/// 一直重启、端口永远起不来 —— 而这时候人已经连不上面板了，只能上机器手动救
+/// （2026-10-07 就是这么挂的：一个 `route("")` 让两台面板同时崩）。
+/// 所以重启交给一段小脚本：起来就完事；20 秒还没起来就把上一版 `.bak` 换回去再重启，
+/// 并把这件事写进 journal —— 坏版本最坏也只是"这次升级没生效"，不会把面板关在门外。
+fn restart_script(bin: &std::path::Path) -> String {
+    let bak = bin.with_extension("bak");
+    let bin = bin.display();
+    let bak = bak.display();
+    format!(
+        r#"BIN="{bin}"; BAK="{bak}"
+PORT="$(systemctl show {SERVICE} -p Environment --value 2>/dev/null | tr ' ' '\n' | sed -n 's/^OPS_PORT=//p' | head -1)"
+systemctl restart {SERVICE}
+systemctl is-active --quiet {SERVICE} || true
+if [ -n "$PORT" ]; then
+  ok=0
+  i=0
+  while [ "$i" -lt 20 ]; do
+    sleep 1
+    if curl -fsS -m 2 "http://127.0.0.1:$PORT/api/ops/version" >/dev/null 2>&1; then ok=1; break; fi
+    i=$((i+1))
+  done
+  if [ "$ok" != "1" ] && [ -f "$BAK" ]; then
+    logger -t zops "self-update: 新版本 20 秒内没起来，回滚到上一版（$BAK）"
+    cp -f "$BAK" "$BIN" && systemctl restart {SERVICE}
+  fi
+fi"#
+    )
+}
+
+fn schedule_restart(bin: &std::path::Path) -> bool {
     let stamp = chrono::Local::now().format("%Y%m%d%H%M%S");
     let unit = format!("zops-selfupdate-{stamp}");
+    let script = restart_script(bin);
 
     // 首选：瞬时单元，和我们彻底解耦。
     let via_systemd_run = std::process::Command::new("systemd-run")
@@ -517,9 +550,9 @@ fn schedule_restart() -> bool {
             "--collect",
             "--on-active=2",
             &format!("--unit={unit}"),
-            "systemctl",
-            "restart",
-            SERVICE,
+            "sh",
+            "-c",
+            &script,
         ])
         .output()
         .map(|o| o.status.success())
@@ -532,7 +565,7 @@ fn schedule_restart() -> bool {
     // 就已经送到 PID 1 了，所以照样能重启起来。
     std::process::Command::new("sh")
         .arg("-c")
-        .arg(format!("sleep 2; systemctl restart {SERVICE} >/dev/null 2>&1"))
+        .arg(format!("sleep 2; {script} >/dev/null 2>&1"))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
