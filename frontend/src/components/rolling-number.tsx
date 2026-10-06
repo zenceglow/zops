@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { cn } from '../lib/utils';
 
 /**
@@ -35,7 +36,11 @@ function Digit({ value, className }: { value: number; className?: string }) {
   );
 }
 
-export function RollingNumber({
+/**
+ * memo 不是可选项：每个数字是十来个 span，大屏上有二十几个这样的数字。父组件
+ * 因为别的原因重绘时（比如同屏的另一个数变了），值没变的那些应当原地不动。
+ */
+export const RollingNumber = memo(function RollingNumber({
   value,
   decimals = 0,
   className,
@@ -79,4 +84,4 @@ export function RollingNumber({
       </span>
     </span>
   );
-}
+});

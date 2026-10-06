@@ -32,6 +32,28 @@ type Arc = { from: Vec3; to: Vec3; born: number; life: number };
 
 const DEG = Math.PI / 180;
 
+/**
+ * 陆地点的亮度档位。
+ *
+ * 原来是"每个点现算一条 `rgba(…)` 字符串再交给 fillStyle" —— 八千个点、每帧
+ * 八千次字符串拼接 + 八千次样式解析 + 八千次 fillRect。现在按深度分 6 档，
+ * 每档攒一条 Path2D，一帧只改 6 次颜色、只画 6 次。省下来的是实打实的主线程时间，
+ * 而 6 档明暗在屏幕上看不出和连续渐变的区别。
+ */
+const LAND_SHADES = 6;
+const LAND_STYLES = Array.from(
+  { length: LAND_SHADES },
+  (_, i) => `rgba(125, 211, 252, ${0.12 + ((i + 0.5) / LAND_SHADES) * 0.55})`,
+);
+
+/**
+ * 帧率上限。
+ *
+ * 这台屏是 24 小时开着的：30fps 的慢速自转看不出和 60fps 的区别，但主线程占用
+ * 直接减半 —— 少一半的发热和风扇声，也留出余量给真正要紧的事。
+ */
+const FRAME_MS = 1000 / 30;
+
 export function Globe({ points, self, latest }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /** 陆地点只算一次：每帧重算 8 千个点是白烧 CPU。 */
@@ -41,9 +63,26 @@ export function Globe({ points, self, latest }: Props) {
   const selfRef = useRef(self);
   const arcsRef = useRef<Arc[]>([]);
   const seenRef = useRef(new Set<number>());
+  /**
+   * 落点的球面坐标只跟经纬度有关，跟时间无关 —— 每帧再算一次 toVec3 是白算。
+   * 数据变了才重算，动画循环只读。
+   */
+  const geoRef = useRef<{ v: Vec3; point: GeoPoint }[]>([]);
+  const homeRef = useRef<Vec3 | null>(null);
 
   pointsRef.current = points;
   selfRef.current = self;
+
+  useEffect(() => {
+    geoRef.current = points.map((point) => ({
+      v: toVec3(point.lat, point.lon, 1.004),
+      point,
+    }));
+  }, [points]);
+
+  useEffect(() => {
+    homeRef.current = self ? toVec3(self.lat, self.lon, 1.006) : null;
+  }, [self]);
 
   // 新来的访问：如果它的落点有坐标，就从那儿划一条弧到服务器。
   useEffect(() => {
@@ -75,6 +114,7 @@ export function Globe({ points, self, latest }: Props) {
     let raf = 0;
     let width = 0;
     let height = 0;
+    let lastDraw = 0;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
 
     const resize = () => {
@@ -92,6 +132,9 @@ export function Globe({ points, self, latest }: Props) {
     const draw = (time: number) => {
       raf = requestAnimationFrame(draw);
       if (width === 0 || height === 0) return;
+      // 限帧：显示器是 60/120Hz，但地球 30 秒才转一圈，多出来的帧只是白烧 CPU。
+      if (time - lastDraw < FRAME_MS) return;
+      lastDraw = time;
 
       // 缓慢自转。0.02°/ms 大约 30 秒一圈 —— 大屏是长时间开着的，转快了晃眼。
       const spin = (time * 0.02) * DEG;
@@ -102,12 +145,19 @@ export function Globe({ points, self, latest }: Props) {
       // 所在的地方）。正对着赤道的球看起来像贴在墙上的圆，抬一点才有立体感。
       const tilt = 15 * DEG;
 
+      // 三角函数每帧只算一次。之前是写在 project 里面的 —— 八千个点 × 每帧
+      // 四个三角函数，等于每秒几百万次无谓调用，这是这块最贵的一行。
+      const cosSpin = Math.cos(spin);
+      const sinSpin = Math.sin(spin);
+      const cosTilt = Math.cos(tilt);
+      const sinTilt = Math.sin(tilt);
+
       const project = (v: Vec3) => {
         // 先绕 Y 轴自转，再绕 X 轴倾斜。
-        const x1 = v.x * Math.cos(spin) + v.z * Math.sin(spin);
-        const z1 = -v.x * Math.sin(spin) + v.z * Math.cos(spin);
-        const y2 = v.y * Math.cos(tilt) - z1 * Math.sin(tilt);
-        const z2 = v.y * Math.sin(tilt) + z1 * Math.cos(tilt);
+        const x1 = v.x * cosSpin + v.z * sinSpin;
+        const z1 = -v.x * sinSpin + v.z * cosSpin;
+        const y2 = v.y * cosTilt - z1 * sinTilt;
+        const z2 = v.y * sinTilt + z1 * cosTilt;
         // `facing` 是"这一点在球的哪一侧"：+1 正对观察者，-1 在球背面。
         //
         // 这里以前直接拿 z2 当"深度"用，而且判定写的是"z 大于阈值就跳过" ——
@@ -127,22 +177,30 @@ export function Globe({ points, self, latest }: Props) {
       ctx.arc(cx, cy, radius * 1.3, 0, Math.PI * 2);
       ctx.fill();
 
-      // 1. 陆地点阵
+      // 1. 陆地点阵：按深度分档攒路径，最后每档一次性填充。
+      const paths = Array.from({ length: LAND_SHADES }, () => new Path2D());
       for (const v of landRef.current!) {
-        const p = project(v);
+        // 就地展开，不调 project()：那会为每个点分配一个对象，八千个点就是每帧
+        // 八千次分配 —— 光 GC 就够把帧率啃掉一截。
+        const x1 = v.x * cosSpin + v.z * sinSpin;
+        const z1 = -v.x * sinSpin + v.z * cosSpin;
+        const y2 = v.y * cosTilt - z1 * sinTilt;
+        const z2 = v.y * sinTilt + z1 * cosTilt;
         // 只画正对观察者的那半边；留 0.15 的余量，边缘不至于缺一圈。
-        if (p.facing < 0.15) continue;
-        // 越靠近球心越亮，靠近边缘越暗 —— 明暗本身就是球体的立体感。
-        const depth = (p.facing - 0.15) / 0.85;
-        ctx.fillStyle = `rgba(125, 211, 252, ${0.12 + depth * 0.55})`;
-        const size = 0.9 + depth * 1.0;
-        ctx.fillRect(p.x, p.y, size, size);
+        if (z2 < 0.15) continue;
+        const depth = (z2 - 0.15) / 0.85;
+        const bucket = Math.min(LAND_SHADES - 1, (depth * LAND_SHADES) | 0);
+        const size = 0.9 + ((bucket + 0.5) / LAND_SHADES) * 1.0;
+        paths[bucket].rect(cx + x1 * radius, cy - y2 * radius, size, size);
+      }
+      for (let i = 0; i < LAND_SHADES; i++) {
+        ctx.fillStyle = LAND_STYLES[i];
+        ctx.fill(paths[i]);
       }
 
       // 2. 落点脉冲：常驻的小点 + 一圈随时间扩大的环。
-      for (const point of pointsRef.current) {
-        if (!point.lat && !point.lon) continue;
-        const p = project(toVec3(point.lat, point.lon, 1.004));
+      for (const { v, point } of geoRef.current) {
+        const p = project(v);
         if (p.facing < 0.15) continue;
         const weight = Math.min(1, 0.35 + Math.log10(point.count + 1) * 0.4);
         const phase = ((time / 1800) + point.lat * 0.01 + point.lon * 0.01) % 1;
@@ -161,8 +219,8 @@ export function Globe({ points, self, latest }: Props) {
 
       // 服务器所在的位置：一个方块，和访客的圆点区分开。
       const home = selfRef.current;
-      if (home && (home.lat || home.lon)) {
-        const p = project(toVec3(home.lat, home.lon, 1.006));
+      if (home && (home.lat || home.lon) && homeRef.current) {
+        const p = project(homeRef.current);
         if (p.facing >= 0.15) {
           ctx.fillStyle = 'rgba(248, 250, 252, 0.95)';
           ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
