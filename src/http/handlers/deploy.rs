@@ -46,4 +46,6 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/plan", post(plan))
         .route("/apply", post(apply))
         .route("/list", get(list))
+        // 部署任务通道（目录 + 产物 + 脚本 + 记录）挂在同一棵 /deploy 下面。
+        .merge(super::deploy_job::routes())
 }

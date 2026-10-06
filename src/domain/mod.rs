@@ -4,6 +4,7 @@ pub mod auth;
 pub mod automation;
 pub mod caddy;
 pub mod container;
+pub mod deploy_job;
 pub mod logs;
 pub mod mcp;
 pub mod permission;

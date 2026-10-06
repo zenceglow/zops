@@ -6,6 +6,7 @@ use crate::service::{
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     container::ContainerService,
     deploy::DeployService,
+    deploy_job::DeployJobService,
     files::FilesService,
     gateway::GatewayService, logs::LogService, member::MemberService,
     notify::NotifyService,
@@ -22,6 +23,8 @@ pub struct AppState {
     pub system: Arc<SystemService>,
     pub containers: Arc<ContainerService>,
     pub deploy: Arc<DeployService>,
+    /// 部署任务通道：目录 + 产物 + 脚本 + 记录。
+    pub deploy_jobs: Arc<DeployJobService>,
     pub files: Arc<FilesService>,
     pub gateway: Arc<GatewayService>,
     pub caddyfile: Arc<CaddyfileService>,

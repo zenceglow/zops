@@ -1,72 +1,59 @@
 # 部署剧本
 
-用户说"把这个项目部署上去"时照这个走。目标只有一个：**别再手写 Dockerfile 和
-compose** —— 这台机器上已经跑了二十来个服务，端口怎么分、网络怎么连、日志怎么
-转、反代怎么写，全都有既定习惯，照着抄一遍就行。
+用户说"把这个项目部署上去"时照这个走。目标：**别再手写一遍 Docker 配置** ——
+这台机器上跑了二十来个服务，端口怎么分、网络怎么连、日志怎么转、反代怎么写，
+都有既定习惯，照着抄一遍就行。
 
 ## 〇、铁律：所有操作都经过 ZOPS
 
 **不要 SSH 上去、不要在服务器上直接敲 docker、不要绕过面板改文件。**
 
-这不是洁癖：走 ZOPS 的动作会进审计日志（谁在什么时候把什么改成什么样），
-而绕过面板做的改动，出了问题没人查得到是从哪来的。面板已经把需要的能力都
-开出来了，用它就行：
+走 ZOPS 的动作会进审计日志（谁在什么时候把什么改成什么样）。绕过面板做的改动，
+出了问题没人查得到是从哪来的。工具不够用时，**停下来告诉用户缺什么**，不要自己
+想办法绕过去。
 
-| 要做的事 | 用哪个工具 |
+## 一、部署任务通道（推荐路径）
+
+部署 = **一个目录 + 产物 + 脚本 + 记录**。手动（用户在面板上点）和 agent 自动部署
+走的是同一批记录：`deploy_jobs` / `deploy_runs`，谁在什么时候部署了什么、结果如何、
+绑到哪个容器，事后都查得到。
+
+### 先判断项目属于哪种
+
+| 情况 | 怎么做 |
 |---|---|
-| 看端口占用、挑空端口 | `ops_port_list` |
-| 看已部署的服务、容器 | `ops_deploy_list` / `ops_container_list` |
-| 部署体检 | `ops_deploy_plan` |
-| 落地并起服务 | `ops_deploy_apply` |
-| 看日志排障 | `ops_container_logs` / `ops_gateway_logs` / `ops_log_tail` |
-| 启停重启 | `ops_container_start` / `_stop` / `_restart` |
-| 改网关配置 | `ops_caddyfile_get` → `ops_caddyfile_put` → `ops_gateway_reload` |
-| 通知一声 | `ops_notify_send` |
+| 项目自带完善的 Dockerfile / compose | 直接用，只补这台机器的习惯（端口、网络、日志轮转、时区） |
+| 没有 Docker 配置 | 照第四节写一份：Dockerfile + compose |
+| 产物是发布包（tgz / dmg / 二进制） | 用第四节的脚本模板：解包 → 构建镜像 → 起服务 |
 
-工具不够用（比如要跑一个 ZOPS 没有的动作），**停下来告诉用户缺什么**，不要
-自己想办法绕过去。
+### agent 的六步
 
-## 一、先看现状，别拍脑袋
+| 步骤 | 手段 |
+|---|---|
+| 1. 建任务（= 建 `/opt/docker-apps/<name>/`） | `ops_deploy_job_create` |
+| 2. 传文本产物（compose / Dockerfile / 配置） | `ops_deploy_job_put_file` |
+| 3. 传二进制产物（tgz / dmg） | HTTP 上传：<br>`curl -T package.tgz -H "Authorization: Bearer <令牌>" "<面板地址>/api/ops/deploy/job/upload?id=<name>&path=package.tgz"` |
+| 4. 写部署脚本 | `ops_deploy_job_put_script` |
+| 5. 执行（**先让用户确认**） | `ops_deploy_job_run` |
+| 6. 拉进度 | `ops_deploy_job_log`（带上次的 `offset` 接着拉，`finished=true` 就是跑完） |
 
-1. `ops_port_list` —— 谁占了哪些端口，还空着哪几个。**部署前必跑这一条**。
-2. `ops_deploy_list` + `ops_container_list` —— 已经部署过什么、跑着什么。
-3. `ops_caddyfile_get` —— 现有站点怎么写的。最新的那一段就是模板，别自创格式。
-4. `ops_system_overview` —— 磁盘还够不够。不够就先说，别部署到一半失败。
+部署脚本在 `/opt/docker-apps/<name>/` 里以 `sh -c` 执行（开头等于已经 `set -e`）。
+脚本要能重复跑：第二次部署是覆盖前一次的，不是从头来。
 
-## 二、体检：先 `ops_deploy_plan`，再 `ops_deploy_apply`
+### 手动部署（用户自己在面板做）
 
-`ops_deploy_plan` 会拿你准备写下去的那份 compose 做一遍检查，结论分三档：
+面板「部署」页三步走 —— ① 建任务并上传产物 ② 编辑部署脚本 ③ 点执行，页面实时显示
+日志。agent 要做的是把这三步准备到位，别替用户点执行。
 
-- **block** —— 必须先解决，`ops_deploy_apply` 会直接拒绝。目前有两类：端口被占、
-  服务名或文件路径不合法。端口冲突时它会给几个空端口，换了再提交。
-- **warn** —— 该处理，但不拦路：缺 `restart`、缺日志出口、缺 `TZ`、没接 `local`
-  网络、明文写死的凭据、没有 healthcheck。**每条都带了能直接抄的片段。**
-- **ok** —— 没问题。
+## 二、先看现状，别拍脑袋
 
-处理原则（用户明确要求过）：
+1. `ops_deploy_job_list` —— 这个服务是不是已经有部署任务了，别重复建。
+2. `ops_port_list` —— 谁占了哪些端口，还空着哪几个。**部署前必跑这一条**。
+3. `ops_container_list` / `ops_deploy_list` —— 已经跑着什么，命名和端口什么风格。
+4. `ops_caddyfile_get` —— 现有站点怎么写的。最新的那一段就是模板，别自创格式。
+5. `ops_system_overview` —— 磁盘够不够。不够先说，别部署到一半失败。
 
-> **能自己解决的不要问用户。** warn 里的 restart / 日志轮转 / 时区 / 网络这四项，
-> 按下面第三节的既有风格补上就行，不要为它们去打断用户。补完重新 plan 一次。
-
-## 三、生产必备要素：这些 ZOPS 看不到，归你
-
-体检工具只能看 compose 本身，看不到项目源码。下面这些要在**项目仓库里**确认，
-缺了要提醒用户 —— 但要说清"可以忽略"，决定权在他：
-
-| 要素 | 怎么判断 | 缺了怎么办 |
-|---|---|---|
-| 日志策略 | Java 看有没有 `logback-spring.xml`/`log4j2.xml` 里的滚动策略（`RollingFileAppender` + `maxHistory`）；Go/Node 看有没有按大小切分 | 提醒用户：容器 `json-file` 轮转只兜住 stdout，应用自己写的文件不轮转会撑爆磁盘。**能加就自己加一份合理的默认配置**，别只报问题 |
-| 生产配置 | 有没有 `config-prod.*` / `.env.production` / `application-prod.yml`，以及它是否被挂载进容器 | 提醒用户，并说明现在会跑默认（通常是 dev）配置 |
-| 数据库迁移 | 有没有 migration/seed 步骤需要先跑 | 提醒用户，别让服务起来后表不存在 |
-| 健康检查端点 | 有没有 `/health` 之类 | 有就写进 healthcheck；没有就在 warn 里说明，不硬造 |
-| 静态资源路径 | 前端构建产物目录对不对（`out` / `dist` / `.next/standalone`） | 自己确认，不用问 |
-| 密钥来源 | 是 `.env` 还是明文 | 明文一律改成 `${{VAR}}` + 同目录 `.env`，**这属于能自己解决的** |
-
-提醒用户时的说法要具体：**缺什么、会导致什么、可以忽略**。不要问"你要不要加日志
-策略"这种开放问题，直接说"没看到日志滚动配置，我按 100MB × 7 份加了一份，你要是有
-自己的规范覆盖掉就行"。
-
-## 四、这台机器的既有习惯
+## 三、这台机器的既有习惯
 
 | 事项 | 习惯 |
 |---|---|
@@ -84,16 +71,9 @@ compose** —— 这台机器上已经跑了二十来个服务，端口怎么分
 端口是这套部署里唯一会冲突的资源，所以**只从 `ops_port_list` 的 `suggested` 里挑**，
 不要自己编一个。8000-9999 是既有区间。
 
-## 五、步骤
+## 四、参考模板
 
-### 1. 定端口
-
-`ops_port_list` 的 `suggested` 就是空着的，直接取第一个。要把端口告诉用户 ——
-它是要写进网关配置的。
-
-### 2. 写 Dockerfile（项目里没有才写）
-
-后端二进制：
+### Dockerfile：后端二进制
 
 ```dockerfile
 FROM alpine:3.20
@@ -101,28 +81,49 @@ WORKDIR /app
 RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup \
     && mkdir -p /app/data && chown -R appuser:appgroup /app
 COPY <二进制名> .
+COPY configs ./configs
 USER appuser
 EXPOSE <端口>
 ENV PORT=<端口>
 CMD ["./<二进制名>"]
 ```
 
-Node 前端（静态导出）：
+### Dockerfile：按需构建的 Go 服务
+
+```dockerfile
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY . .
+RUN go build -o /out/app ./cmd/server
+
+FROM alpine:3.20
+WORKDIR /app
+COPY --from=build /out/app ./app
+COPY configs ./configs
+EXPOSE <端口>
+CMD ["./app", "-config", "configs/config.yaml"]
+```
+
+### Dockerfile：前端静态站
 
 ```dockerfile
 FROM caddy:alpine
-COPY ./out /srv
+COPY ./dist /srv
 COPY Caddyfile /etc/caddy/Caddyfile
 ```
 
-### 3. 写 docker-compose.yml
+（`caddy:alpine` 的默认站点根是 `/srv`；SPA 需要 fallback 时在 Caddyfile 里写
+`try_files {path} /index.html`。）
 
-后端：
+### docker-compose.yml：后端
 
 ```yaml
 services:
   <服务名>:
     image: <服务名>
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: <服务名>
     hostname: <服务名>
     restart: always
@@ -150,12 +151,15 @@ networks:
     name: local
 ```
 
-前端（静态）：
+### docker-compose.yml：前端静态
 
 ```yaml
 services:
   <服务名>:
     image: <服务名>
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: <服务名>
     hostname: <服务名>
     restart: always
@@ -169,57 +173,53 @@ networks:
     name: local
 ```
 
-### 4. 起服务
+### 部署脚本模板（有发布包时）
 
-**走 `ops_deploy_apply`**，别自己去服务器上敲 —— 它会把 compose 和附带文件写到
-`/opt/docker-apps/<服务名>/`，然后执行 `docker compose up -d --build`，把构建
-输出的最后一段回给你。体检有 block 项时它会被拒绝，先解决再来。
-
-它不接受任意命令，只认 compose 这一件事 —— 所以"帮我跑个脚本"这类需求要说清楚
-（那是 `ops_automation_task_run` 的活，属于破坏性操作，要用户确认）。
-
-只有在 ZOPS 本身不可用、且用户明确要求时，才考虑手动方式：
+在 `/opt/docker-apps/<服务名>/` 里执行，工作目录就是这个目录：
 
 ```sh
-docker network create local 2>/dev/null || true   # 已存在会报错，忽略
-cd /opt/docker-apps/<服务名>
+# 1. 解开产物
+tar zxvf package.tgz -C ./
+
+# 2. 摆成镜像要的样子（二进制直接摆在目录里 / 前端是 dist/）
+rm -rf ./bin
+mv -f ./<服务名>/* ./
+
+# 3. 构建镜像并起服务。compose 会自己重建同名容器，不需要先 docker rm
+docker build -t <服务名> .
 docker compose up -d --build
-docker compose ps
+
+# 4. 冒烟：有 /health 就探一下，别只看 compose 说了什么
+curl -fsS http://127.0.0.1:<端口>/health
 ```
 
-### 5. 验证，别只看 compose 说了什么
+## 五、体检与验证
 
-- `ops_container_logs`（tail 开到 100）看有没有报错退出
-- `ops_container_list` 确认 state 是 running
-- 起得来但功能不对，再 `ops_container_logs` 看具体报错
-- 发布了端口就直接 `curl -fsS http://127.0.0.1:<端口>/health`
+单个 compose 的体检还是走 `ops_deploy_plan`：端口撞车、缺 `restart` / 日志轮转 /
+时区 / `local` 网络、明文凭据，一次报全。
 
-### 6. 接入网关
+**能自己解决的不要问用户**：`restart` / 日志轮转 / 时区 / 网络 / 明文密钥改 `.env`
+这几项按第三节的风格补上就行，补完说一句。
 
-1. `ops_caddyfile_get` 先拿一份原文（要改之前必须有备份）
-2. 按现有站点的格式加一段，反代到 `localhost:<端口>`（后端）或 `<容器名>:80`（前端）
-3. **确认后**再 `ops_caddyfile_put` → `ops_gateway_reload`
-4. 实际访问一次域名，别只看 reload 返回成功
+跑完部署后：
 
-### 7. 告诉人
-
-`ops_notify_send`，`event` 用 `deploy`：
-
-```
-title: <服务名> 部署完成
-text:  端口 <端口>，健康检查通过，已接入 <域名>
-```
-
-没配通知渠道时会返回 `sent: 0`，那就在对话里直接说结果。
+1. `ops_deploy_job_log` 看到脚本退出码 0。
+2. `ops_container_list` 确认新容器 state 是 running、名字对得上。
+3. 起了但功能不对 → `ops_container_logs` 看具体报错。
+4. 发布了端口就 `curl -fsS http://127.0.0.1:<端口>/health`。
+5. 接网关：`ops_caddyfile_get` 先备份 → 加一段 → **确认后** `ops_caddyfile_put` →
+   `ops_gateway_reload` → 实际访问一次域名。
+6. `ops_notify_send`，`event` 用 `deploy`，说清端口、健康检查、域名。
 
 ## 六、几条别踩的
 
 - **别把密钥写进 compose**：用同目录 `.env` 加 `${VAR}`，compose 只管路径和端口。
 - **别动别人的容器**：这台机器上跑着好几个项目，`docker compose down` 只能在自己
   那个目录里执行。
+- **别用 `docker rm -f` 再起**：`docker compose up -d` 会自己重建变更过的容器；
+  先删容器反而会在重建失败时把服务留在地上。
 - **磁盘先看**：镜像构建很吃盘，`ops_system_overview` 里磁盘 90% 以上先跟用户说。
-- **端口报冲突**：`bind: address already in use` 就是端口被抢了，回第 1 步重挑一个，
+- **端口报冲突**：`bind: address already in use` 就是端口被抢了，回第一步重挑一个，
   不要 kill 掉占用它的进程。
-- **别为小事打断用户**：能按既有风格自己补的（restart / 日志轮转 / 时区 / 网络 /
-  明文密钥改 `.env`）直接补，补完说一句就行。只有"会导致生产事故"和"用户才有
-  决定权"的事才停下来问，而且要带上"可以忽略"这个选项。
+- **别为小事打断用户**：能按既有风格自己补的直接补；只有"会导致生产事故"和
+  "用户才有决定权"的事才停下来问，并且要带上"可以忽略"这个选项。

@@ -138,6 +138,13 @@ enum ToolId {
     DeployPlan,
     DeployApply,
     DeployList,
+    DeployJobList,
+    DeployJobGet,
+    DeployJobCreate,
+    DeployJobPutScript,
+    DeployJobPutFile,
+    DeployJobRun,
+    DeployJobLog,
 }
 
 struct ToolDef {
@@ -171,6 +178,23 @@ fn tool_level(t: &ToolDef) -> &'static str {
 
 fn empty_schema() -> Value {
     json!({ "type": "object", "properties": {}, "additionalProperties": false })
+}
+
+/// 这次调用是谁发起的。部署记录里要落下"谁部署的"，所以令牌也翻成人能认的名字。
+fn principal_actor(state: &AppState, principal: &Principal) -> (String, &'static str) {
+    match principal {
+        Principal::Token { id, .. } => {
+            let name = state
+                .tokens
+                .list()
+                .ok()
+                .and_then(|list| list.into_iter().find(|t| &t.id == id).map(|t| t.name))
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("token:{}", &id[..id.len().min(8)]));
+            (name, "agent")
+        }
+        Principal::User(u) => (u.username.clone(), "user"),
+    }
 }
 
 fn deploy_schema() -> Value {
@@ -436,6 +460,116 @@ fn tool_catalog() -> Vec<ToolDef> {
             schema: deploy_schema,
             id: ToolId::DeployApply,
         },
+        // ── 部署任务通道 ──
+        //
+        // 部署 = 一个目录 + 产物 + 脚本 + 记录。手动（面板三步走）和 agent 走的是
+        // 同一批记录，agent 照这个顺序来：create → put_file → put_script → run → log。
+        ToolDef {
+            name: "ops_deploy_job_list",
+            description: "列部署任务：服务名、部署目录、状态、绑定的容器、最近一次结果。",
+            permission: OPS_SYSTEM_READ,
+            schema: empty_schema,
+            id: ToolId::DeployJobList,
+        },
+        ToolDef {
+            name: "ops_deploy_job_get",
+            description: "看一个部署任务的详情：部署脚本、已上传的产物、最近几次执行记录。",
+            permission: OPS_SYSTEM_READ,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "服务名，例如 zenceglow-web" }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::DeployJobGet,
+        },
+        ToolDef {
+            name: "ops_deploy_job_create",
+            description: "建一个部署任务：创建 /opt/docker-apps/<name>/ 目录并落一条记录。先建任务，再传产物、写脚本。",
+            permission: OPS_DEPLOY,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "服务名，同时是目录名和容器名；只能用 a-z 0-9 - _" },
+                        "note": { "type": "string", "description": "这次部署是干什么的，一句话" }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::DeployJobCreate,
+        },
+        ToolDef {
+            name: "ops_deploy_job_put_script",
+            description: "写这个部署任务的部署脚本（在 /opt/docker-apps/<name>/ 里以 sh -c 执行，脚本开头等于加了 set -e）。",
+            permission: OPS_DEPLOY,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "script": { "type": "string", "description": "部署脚本正文" }
+                    },
+                    "required": ["name", "script"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::DeployJobPutScript,
+        },
+        ToolDef {
+            name: "ops_deploy_job_put_file",
+            description: "往部署目录里写一个文本产物（配置文件、小脚本、compose 等）。二进制产物（tgz/dmg/镜像包）走 HTTP：curl -T 文件 -H \"Authorization: Bearer <token>\" \"https://<面板>/api/ops/deploy/job/upload?id=<name>&path=<相对路径>\"。",
+            permission: OPS_DEPLOY,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "path": { "type": "string", "description": "部署目录内的相对路径，例如 docker-compose.yml 或 conf/app.yaml" },
+                        "content": { "type": "string", "description": "文件正文（文本）" }
+                    },
+                    "required": ["name", "path", "content"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::DeployJobPutFile,
+        },
+        ToolDef {
+            name: "ops_deploy_job_run",
+            description: "执行部署脚本。会改线上状态，执行前要让用户确认。返回 run_id 后用 ops_deploy_job_log 拉进度。",
+            permission: OPS_DEPLOY,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": { "name": { "type": "string" } },
+                    "required": ["name"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::DeployJobRun,
+        },
+        ToolDef {
+            name: "ops_deploy_job_log",
+            description: "增量拉一次部署的日志（部署进度）。传上一次返回的 offset 接着拉，finished=true 就是跑完了。",
+            permission: OPS_SYSTEM_READ,
+            schema: || {
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "run_id": { "type": "string", "description": "ops_deploy_job_run 返回的 run_id" },
+                        "offset": { "type": "integer", "description": "从哪个字节开始读，默认 0" }
+                    },
+                    "required": ["run_id"],
+                    "additionalProperties": false
+                })
+            },
+            id: ToolId::DeployJobLog,
+        },
     ]
 }
 
@@ -595,6 +729,57 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
         ToolId::DeployApply => {
             let input = deploy_input(args)?;
             Ok(serde_json::to_value(state.deploy.apply(input).await?).unwrap_or(Value::Null))
+        }
+        // ── 部署任务通道 ──
+        ToolId::DeployJobList => {
+            Ok(json!({ "jobs": state.deploy_jobs.list()? }))
+        }
+        ToolId::DeployJobGet => {
+            let name = require_str(args, "name").map_err(AppError::bad_request)?;
+            let job = state.deploy_jobs.get_by_ref(&name)?;
+            let runs = state.deploy_jobs.runs(&job.id, 10)?;
+            Ok(json!({ "job": job, "runs": runs }))
+        }
+        ToolId::DeployJobCreate => {
+            let name = require_str(args, "name").map_err(AppError::bad_request)?;
+            let note = args.get("note").and_then(Value::as_str).unwrap_or_default();
+            let (actor, kind) = principal_actor(state, principal);
+            let job = state
+                .deploy_jobs
+                .create(&name, note, "agent", &actor, kind)?;
+            Ok(json!({ "job": job }))
+        }
+        ToolId::DeployJobPutScript => {
+            let name = require_str(args, "name").map_err(AppError::bad_request)?;
+            let script = require_str(args, "script").map_err(AppError::bad_request)?;
+            let job = state.deploy_jobs.get_by_ref(&name)?;
+            Ok(json!({ "job": state.deploy_jobs.save_script(&job.id, &script)? }))
+        }
+        ToolId::DeployJobPutFile => {
+            let name = require_str(args, "name").map_err(AppError::bad_request)?;
+            let path = require_str(args, "path").map_err(AppError::bad_request)?;
+            let content = args.get("content").and_then(Value::as_str).unwrap_or_default();
+            let (actor, _) = principal_actor(state, principal);
+            let job = state.deploy_jobs.get_by_ref(&name)?;
+            Ok(json!({
+                "job": state.deploy_jobs.upload(&job.id, &path, content.as_bytes(), &actor)?
+            }))
+        }
+        ToolId::DeployJobRun => {
+            let name = require_str(args, "name").map_err(AppError::bad_request)?;
+            let (actor, kind) = principal_actor(state, principal);
+            let job = state.deploy_jobs.get_by_ref(&name)?;
+            let run = state.deploy_jobs.run(&job.id, &actor, kind).await?;
+            Ok(json!({
+                "run": run,
+                "note": "脚本在后台跑，用 ops_deploy_job_log 带上 run_id 拉进度"
+            }))
+        }
+        ToolId::DeployJobLog => {
+            let run_id = require_str(args, "run_id").map_err(AppError::bad_request)?;
+            let offset = args.get("offset").and_then(Value::as_u64).unwrap_or(0);
+            Ok(serde_json::to_value(state.deploy_jobs.run_log(&run_id, offset).await?)
+                .unwrap_or(Value::Null))
         }
         }
     }
@@ -831,20 +1016,8 @@ fn audit_tool_call(
         return;
     }
 
-    let (actor, kind) = match principal {
-        Principal::Token { id, .. } => {
-            // 日志里写令牌的名字而不是 id：出事时看的是"哪个 agent 干的"。
-            let name = state
-                .tokens
-                .list()
-                .ok()
-                .and_then(|list| list.into_iter().find(|t| &t.id == id).map(|t| t.name))
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("token:{}", &id[..id.len().min(8)]));
-            (name, "agent")
-        }
-        Principal::User(u) => (u.username.clone(), "user"),
-    };
+    // 日志里写令牌的名字而不是 id：出事时看的是"哪个 agent 干的"。
+    let (actor, kind) = principal_actor(state, principal);
 
     let failed = result.get("isError").and_then(Value::as_bool).unwrap_or(false);
     let detail = crate::service::audit::summarize_body(&serde_json::to_vec(args).unwrap_or_default());

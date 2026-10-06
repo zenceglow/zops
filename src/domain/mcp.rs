@@ -103,4 +103,8 @@ Caddy 网关、日志和计划任务，并在被授权时重启服务或改网�
 5. 每个工具返回 JSON。容器用名字或 ID 都可以，优先用名字（可读性更好）。
 6. 干活的细则在 resources 里，接上就能读，不用另外装技能包：skill://zops/SKILL.md 是技能正文，
    skill://zops/references/deploy 是部署剧本（部署新服务前先读它），
-   skill://zops/references/troubleshooting 是排障剧本（磁盘满 / 502 / 证书 / 内存）。";
+   skill://zops/references/troubleshooting 是排障剧本（磁盘满 / 502 / 证书 / 内存）。
+7. 要部署东西走部署任务通道：ops_deploy_job_create（建目录）→ ops_deploy_job_put_file
+   （文本产物；二进制用 curl -T 打 /api/ops/deploy/job/upload）→ ops_deploy_job_put_script
+   （部署脚本）→ 用户确认后 ops_deploy_job_run → ops_deploy_job_log 拉进度。
+   部署记录会自动落到 SQLite 并和容器绑定，面板「部署」页看到的是同一批记录。";

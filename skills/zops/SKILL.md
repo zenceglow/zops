@@ -45,6 +45,26 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 | `ops_member_list` | 面板成员与权限 | **write** |
 | `ops_notify_send` | 往订阅了该事件的渠道推一条通知 | **write** |
 | `ops_deploy_apply` | 写部署目录并 `docker compose up -d --build` | **write** |
+| `ops_deploy_job_list` / `_get` | 部署任务列表 / 详情（脚本、产物、记录） | read |
+| `ops_deploy_job_create` | 建部署任务（= 建 `/opt/docker-apps/<name>/` 目录） | **write** |
+| `ops_deploy_job_put_file` / `_put_script` | 写文本产物 / 写部署脚本 | **write** |
+| `ops_deploy_job_run` | 执行部署脚本 | **write** |
+| `ops_deploy_job_log` | 增量拉部署日志（进度） | read |
+
+## 部署任务通道
+
+要部署东西，**优先走部署任务通道**（`ops_deploy_job_*`），它和面板「部署」页是同一批
+记录：谁在什么时候部署了什么、结果如何、绑到哪个容器，事后都查得到。顺序是
+`create` → `put_file`（二进制产物用 `curl -T` 打 `/api/ops/deploy/job/upload`）→
+`put_script` → 用户确认 → `run` → `log` 拉进度。
+
+部署脚本的写法、端口/网络/日志/反代的既有习惯、以及 Dockerfile 与 compose 的参考
+模板，都在 `skill://zops/references/deploy`（resources 里可以直接读）。
+
+技能包本身挂在 MCP `resources` 上：`resources/list` 能看到
+`skill://zops/SKILL.md`、`skill://zops/references/deploy`、
+`skill://zops/references/troubleshooting`，`resources/read` 读正文 —— 建好连接就能读，
+不用另外装技能目录。
 
 ## 破坏性操作
 

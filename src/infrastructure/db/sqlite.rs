@@ -150,6 +150,67 @@ impl Database {
                 FOREIGN KEY (task_id) REFERENCES automation_tasks(id) ON DELETE CASCADE
             );
 
+            -- ── 部署任务通道 ────────────────────────────────────────────────
+            --
+            -- 一个「部署任务」就是 /opt/docker-apps/<name>/ 这个目录、一段部署脚本、
+            -- 外加若干上传的产物。手动部署（面板上三步走）和 agent 自动部署写的是
+            -- 同一张表，source 区分是谁发起的。
+            --
+            -- 为什么不让 agent 直接 compose up：走这条通道才有**记录** —— 谁在什么
+            -- 时候部署了什么、结果如何、绑到哪个容器上，事后能查。部署脚本和 compose
+            -- 的写法习惯也就能固定下来。
+            CREATE TABLE IF NOT EXISTS deploy_jobs (
+                id             TEXT PRIMARY KEY NOT NULL,
+                -- 同时是目录名、容器名、镜像名，所以唯一。
+                name           TEXT NOT NULL UNIQUE,
+                note           TEXT NOT NULL DEFAULT '',
+                script         TEXT NOT NULL DEFAULT '',
+                -- manual | agent
+                source         TEXT NOT NULL DEFAULT 'manual',
+                -- draft | running | success | failed
+                status         TEXT NOT NULL DEFAULT 'draft',
+                actor          TEXT NOT NULL DEFAULT '',
+                actor_kind     TEXT NOT NULL DEFAULT 'user',
+                -- 跑成功之后按名字对上的那个容器。
+                container_name TEXT,
+                container_id   TEXT,
+                last_run_at    TEXT,
+                last_exit_code INTEGER,
+                last_duration_ms INTEGER,
+                created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            -- 每次执行一条。部署记录就是按 job_id 排下来的这个列表。
+            CREATE TABLE IF NOT EXISTS deploy_runs (
+                id          TEXT PRIMARY KEY NOT NULL,
+                job_id      TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'running',
+                actor       TEXT NOT NULL DEFAULT '',
+                actor_kind  TEXT NOT NULL DEFAULT 'user',
+                -- 末尾输出（全量在 log_path 指向的文件里，边跑边追加）。
+                output      TEXT NOT NULL DEFAULT '',
+                log_path    TEXT NOT NULL DEFAULT '',
+                exit_code   INTEGER,
+                started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                finished_at TEXT,
+                duration_ms INTEGER,
+                FOREIGN KEY (job_id) REFERENCES deploy_jobs(id) ON DELETE CASCADE
+            );
+
+            -- 上传过的产物。磁盘上丢了、多了一层目录，这里能看出来。
+            CREATE TABLE IF NOT EXISTS deploy_files (
+                id          TEXT PRIMARY KEY NOT NULL,
+                job_id      TEXT NOT NULL,
+                -- 部署目录内的相对路径。
+                path        TEXT NOT NULL,
+                size        INTEGER NOT NULL DEFAULT 0,
+                uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+                uploaded_by TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (job_id) REFERENCES deploy_jobs(id) ON DELETE CASCADE,
+                UNIQUE (job_id, path)
+            );
+
             CREATE TABLE IF NOT EXISTS api_tokens (
                 id           TEXT PRIMARY KEY NOT NULL,
                 name         TEXT NOT NULL DEFAULT '',
@@ -1594,6 +1655,267 @@ impl Database {
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
+
+    // ── 部署任务 ─────────────────────────────────────────────────────────
+
+    const DEPLOY_JOB_COLS: &'static str = "id, name, note, script, source, status, actor, actor_kind, container_name, container_id, last_run_at, last_exit_code, last_duration_ms, created_at, updated_at";
+
+    fn map_deploy_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<DeployJobRow> {
+        Ok(DeployJobRow {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            note: row.get(2)?,
+            script: row.get(3)?,
+            source: row.get(4)?,
+            status: row.get(5)?,
+            actor: row.get(6)?,
+            actor_kind: row.get(7)?,
+            container_name: row.get(8)?,
+            container_id: row.get(9)?,
+            last_run_at: row.get(10)?,
+            last_exit_code: row.get(11)?,
+            last_duration_ms: row.get(12)?,
+            created_at: row.get(13)?,
+            updated_at: row.get(14)?,
+        })
+    }
+
+    pub fn list_deploy_jobs(&self) -> Result<Vec<DeployJobRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM deploy_jobs ORDER BY created_at DESC",
+            Self::DEPLOY_JOB_COLS
+        ))?;
+        let rows = stmt.query_map([], Self::map_deploy_job)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn get_deploy_job(&self, id: &str) -> Result<Option<DeployJobRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM deploy_jobs WHERE id = ?1",
+            Self::DEPLOY_JOB_COLS
+        ))?;
+        stmt.query_row(params![id], Self::map_deploy_job)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn find_deploy_job_by_name(&self, name: &str) -> Result<Option<DeployJobRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM deploy_jobs WHERE name = ?1",
+            Self::DEPLOY_JOB_COLS
+        ))?;
+        stmt.query_row(params![name], Self::map_deploy_job)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn create_deploy_job(
+        &self,
+        id: &str,
+        name: &str,
+        note: &str,
+        source: &str,
+        actor: &str,
+        actor_kind: &str,
+    ) -> Result<DeployJobRow> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO deploy_jobs(id, name, note, source, actor, actor_kind)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, name, note, source, actor, actor_kind],
+        )?;
+        drop(conn);
+        self.get_deploy_job(id)?
+            .ok_or_else(|| anyhow!("deploy job not found after insert"))
+    }
+
+    pub fn save_deploy_script(&self, id: &str, script: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "UPDATE deploy_jobs SET script = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![script, id],
+        )?;
+        Ok(())
+    }
+
+    /// 跑完一次之后回写任务状态。`container` 传 None 表示这一轮没对上容器
+    /// （部署的是静态前端、或者起在别的机器上），不清掉上一次的记录。
+    pub fn update_deploy_job_after_run(
+        &self,
+        id: &str,
+        status: &str,
+        exit_code: i64,
+        duration_ms: i64,
+        container: Option<(&str, &str)>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        match container {
+            Some((name, cid)) => conn.execute(
+                "UPDATE deploy_jobs
+                    SET status = ?1, last_exit_code = ?2, last_duration_ms = ?3,
+                        last_run_at = datetime('now'), container_name = ?4, container_id = ?5,
+                        updated_at = datetime('now')
+                  WHERE id = ?6",
+                params![status, exit_code, duration_ms, name, cid, id],
+            )?,
+            None => conn.execute(
+                "UPDATE deploy_jobs
+                    SET status = ?1, last_exit_code = ?2, last_duration_ms = ?3,
+                        last_run_at = datetime('now'), updated_at = datetime('now')
+                  WHERE id = ?4",
+                params![status, exit_code, duration_ms, id],
+            )?,
+        };
+        Ok(())
+    }
+
+    pub fn delete_deploy_job(&self, id: &str) -> Result<bool> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let n = conn.execute("DELETE FROM deploy_jobs WHERE id = ?1", params![id])?;
+        Ok(n > 0)
+    }
+
+    pub fn create_deploy_run(
+        &self,
+        id: &str,
+        job_id: &str,
+        actor: &str,
+        actor_kind: &str,
+        log_path: &str,
+    ) -> Result<DeployRunRow> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO deploy_runs(id, job_id, actor, actor_kind, log_path)
+             VALUES(?1, ?2, ?3, ?4, ?5)",
+            params![id, job_id, actor, actor_kind, log_path],
+        )?;
+        drop(conn);
+        self.get_deploy_run(id)?
+            .ok_or_else(|| anyhow!("deploy run not found after insert"))
+    }
+
+    pub fn finish_deploy_run(
+        &self,
+        id: &str,
+        status: &str,
+        exit_code: i64,
+        output: &str,
+        duration_ms: i64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "UPDATE deploy_runs
+                SET status = ?1, exit_code = ?2, output = ?3, duration_ms = ?4,
+                    finished_at = datetime('now')
+              WHERE id = ?5",
+            params![status, exit_code, output, duration_ms, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_deploy_run(&self, id: &str) -> Result<Option<DeployRunRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, job_id, status, actor, actor_kind, output, log_path, exit_code,
+                    started_at, finished_at, duration_ms
+               FROM deploy_runs WHERE id = ?1",
+        )?;
+        stmt.query_row(params![id], Self::map_deploy_run)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn list_deploy_runs(&self, job_id: &str, limit: i64) -> Result<Vec<DeployRunRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, job_id, status, actor, actor_kind, output, log_path, exit_code,
+                    started_at, finished_at, duration_ms
+               FROM deploy_runs WHERE job_id = ?1
+              ORDER BY started_at DESC, rowid DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![job_id, limit], Self::map_deploy_run)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    fn map_deploy_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<DeployRunRow> {
+        Ok(DeployRunRow {
+            id: row.get(0)?,
+            job_id: row.get(1)?,
+            status: row.get(2)?,
+            actor: row.get(3)?,
+            actor_kind: row.get(4)?,
+            output: row.get(5)?,
+            log_path: row.get(6)?,
+            exit_code: row.get(7)?,
+            started_at: row.get(8)?,
+            finished_at: row.get(9)?,
+            duration_ms: row.get(10)?,
+        })
+    }
+
+    pub fn upsert_deploy_file(
+        &self,
+        id: &str,
+        job_id: &str,
+        path: &str,
+        size: i64,
+        uploaded_by: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute(
+            "INSERT INTO deploy_files(id, job_id, path, size, uploaded_by)
+             VALUES(?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(job_id, path) DO UPDATE SET
+                size = excluded.size,
+                uploaded_by = excluded.uploaded_by,
+                uploaded_at = datetime('now')",
+            params![id, job_id, path, size, uploaded_by],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_deploy_files(&self, job_id: &str) -> Result<Vec<DeployFileRow>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, job_id, path, size, uploaded_at, uploaded_by
+               FROM deploy_files WHERE job_id = ?1 ORDER BY path ASC",
+        )?;
+        let rows = stmt.query_map(params![job_id], |row| {
+            Ok(DeployFileRow {
+                id: row.get(0)?,
+                job_id: row.get(1)?,
+                path: row.get(2)?,
+                size: row.get(3)?,
+                uploaded_at: row.get(4)?,
+                uploaded_by: row.get(5)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn delete_deploy_file(&self, job_id: &str, path: &str) -> Result<bool> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let n = conn.execute(
+            "DELETE FROM deploy_files WHERE job_id = ?1 AND path = ?2",
+            params![job_id, path],
+        )?;
+        Ok(n > 0)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1705,4 +2027,50 @@ pub struct ExecutionRow {
     pub started_at: String,
     pub finished_at: Option<String>,
     pub retry_count: i64,
+}
+
+/// 一个部署任务。`name` 同时是 `/opt/docker-apps/<name>/` 目录名和容器名。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeployJobRow {
+    pub id: String,
+    pub name: String,
+    pub note: String,
+    pub script: String,
+    pub source: String,
+    pub status: String,
+    pub actor: String,
+    pub actor_kind: String,
+    pub container_name: Option<String>,
+    pub container_id: Option<String>,
+    pub last_run_at: Option<String>,
+    pub last_exit_code: Option<i64>,
+    pub last_duration_ms: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 一次部署执行。部署记录列表就是按 job 排下来的这些行。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeployRunRow {
+    pub id: String,
+    pub job_id: String,
+    pub status: String,
+    pub actor: String,
+    pub actor_kind: String,
+    pub output: String,
+    pub log_path: String,
+    pub exit_code: Option<i64>,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub duration_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeployFileRow {
+    pub id: String,
+    pub job_id: String,
+    pub path: String,
+    pub size: i64,
+    pub uploaded_at: String,
+    pub uploaded_by: String,
 }
