@@ -9,13 +9,21 @@ export type Token = { text: string; cls: string };
  * 为了这点东西拉进来一个几百 KB 的编辑器（还得自带主题适配）不划算。
  */
 
+/**
+ * 只给**颜色**，不给字重、不给斜体、不给字距。
+ *
+ * 高亮层是"透明 textarea 盖在带色 pre 上"，两层的字形宽度必须逐像素一致：
+ * `font-semibold` 让站点地址在 pre 里变宽，`italic` 再把注释斜过去，于是你看到的
+ * 位置和光标实际所在的位置差开几个像素 —— 点一行想选它，选中的其实是隔壁字符，
+ * 删就删错。层次感交给颜色和亮度，别动字形。
+ */
 const CLASS = {
-  comment: 'text-muted-foreground/70 italic',
+  comment: 'text-muted-foreground/70',
   string: 'text-emerald-600 dark:text-emerald-400',
   placeholder: 'text-violet-600 dark:text-violet-400',
   matcher: 'text-amber-600 dark:text-amber-400',
   directive: 'text-sky-700 dark:text-sky-400',
-  address: 'text-foreground font-semibold',
+  address: 'text-blue-700 dark:text-sky-300',
   brace: 'text-muted-foreground',
   plain: '',
 } as const;

@@ -1,10 +1,15 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Container, Server } from 'lucide-react';
+import { Container, Play, RotateCw, Server, Square, Trash2 } from 'lucide-react';
 import { PageHeader } from './_components/page-header';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent } from '../../../components/ui/card';
 import { Skeleton } from '../../../components/ui/skeleton';
+import { toast } from '../../../components/ui/sonner';
+import { ConfirmDialog } from '../_components/confirm-dialog';
+import { containerAction } from '../_api';
+import type { ContainerInfo } from '../../../pages/monitor/_api/types';
 import {
   Table,
   TableBody,
@@ -23,7 +28,21 @@ import { useContainers } from './_hooks';
  */
 export default function Page() {
   const { t } = useTranslation();
-  const { containers, docker, loading } = useContainers();
+  const { containers, docker, loading, reload } = useContainers();
+  const [pending, setPending] = useState<ContainerInfo | null>(null);
+
+  const act = async (id: string, action: 'start' | 'stop' | 'restart') => {
+    try {
+      await containerAction(id, action);
+      // 状态变化不是瞬时的，等一拍再读，看到的才是新状态。
+      setTimeout(reload, 800);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const iconBtn =
+    'rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground';
 
   return (
     <div>
@@ -68,6 +87,7 @@ export default function Page() {
                 <TableHead>{t('docker.image')}</TableHead>
                 <TableHead>{t('docker.status')}</TableHead>
                 <TableHead>{t('docker.ports')}</TableHead>
+                <TableHead className="w-28" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -90,12 +110,72 @@ export default function Page() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{c.ports || '-'}</TableCell>
+                  {/* 行内操作：启停重启是日常，删除会确认。 */}
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-0.5">
+                      {c.state === 'running' ? (
+                        <>
+                          <button
+                            type="button"
+                            title={t('sites.stop')}
+                            aria-label={t('sites.stop')}
+                            className={iconBtn}
+                            onClick={() => void act(c.id, 'stop')}
+                          >
+                            <Square className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title={t('docker.restart')}
+                            aria-label={t('docker.restart')}
+                            className={iconBtn}
+                            onClick={() => void act(c.id, 'restart')}
+                          >
+                            <RotateCw className="size-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          title={t('sites.start')}
+                          aria-label={t('sites.start')}
+                          className={iconBtn}
+                          onClick={() => void act(c.id, 'start')}
+                        >
+                          <Play className="size-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        title={t('docker.delete_container')}
+                        aria-label={t('docker.delete_container')}
+                        className={iconBtn}
+                        onClick={() => setPending(c)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={pending !== null}
+        onOpenChange={(o) => !o && setPending(null)}
+        title={t('docker.confirm_container_title')}
+        description={t('docker.confirm_container_desc', { name: pending?.name ?? '' })}
+        confirmLabel={t('common.delete')}
+        onConfirm={async () => {
+          if (!pending) return;
+          await containerAction(pending.id, 'remove');
+          toast.success(t('docker.removed', { name: pending.name }));
+          reload();
+        }}
+      />
     </div>
   );
 }

@@ -9,7 +9,9 @@ use serde::Deserialize;
 
 use crate::domain::auth::AuthUser;
 use crate::domain::container::{ContainerList, DockerInfo, DockerStatus, ImageList, NetworkList};
-use crate::domain::permission::{OPS_SERVICE_CONTROL, OPS_SERVICE_LOG, OPS_SERVICE_READ};
+use crate::domain::permission::{
+    OPS_SERVICE_CONTROL, OPS_SERVICE_LOG, OPS_SERVICE_READ, OPS_SYSTEM_WRITE,
+};
 use crate::http::middleware::auth::require_perm;
 use crate::http::AppState;
 use crate::shared::{ApiResponse, AppError};
@@ -124,6 +126,55 @@ async fn logs(
     Ok(Json(ApiResponse::ok(data)))
 }
 
+#[derive(Deserialize)]
+struct RemoveImageQuery {
+    /// 镜像 id 或 name:tag —— 两者 docker 都认。
+    reference: String,
+    #[serde(default)]
+    force: bool,
+}
+
+/// 删镜像。`force` 会连带删掉正在用它的容器，所以前端必须先确认过再带上它。
+async fn remove_image(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(q): Query<RemoveImageQuery>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    require_perm(&user, OPS_SERVICE_CONTROL)?;
+    let output = state.containers.remove_image(&q.reference, q.force).await?;
+    Ok(Json(ApiResponse::ok(serde_json::json!({ "output": output }))))
+}
+
+/// 引擎配置（daemon.json）。只读要 service.read 就够。
+async fn daemon_get(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<ApiResponse<crate::domain::container::DaemonFile>>, AppError> {
+    require_perm(&user, OPS_SERVICE_READ)?;
+    Ok(Json(ApiResponse::ok(state.containers.daemon_read())))
+}
+
+#[derive(Deserialize)]
+struct DaemonBody {
+    content: String,
+}
+
+/// 改引擎配置。
+///
+/// 要 `ops.system.write` 而不是 `ops.service.control`：这一步会重启 Docker 守护
+/// 进程，**这台机器上所有容器都会跟着重启**，比启停单个容器重得多。写之前先校验
+/// JSON、先备份，任何一步不过就不落盘。
+async fn daemon_put(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Json(body): Json<DaemonBody>,
+) -> Result<Json<ApiResponse<crate::domain::container::DaemonWriteResult>>, AppError> {
+    require_perm(&user, OPS_SYSTEM_WRITE)?;
+    Ok(Json(ApiResponse::ok(
+        state.containers.daemon_write(&body.content).await?,
+    )))
+}
+
 /// 扫描可清理项。前端弹窗"扫描"那一步的数据来源。
 async fn junk(
     State(state): State<Arc<AppState>>,
@@ -148,7 +199,8 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/list", get(list))
         .route("/status", get(status))
-        .route("/images", get(images))
+        .route("/images", get(images).delete(remove_image))
+        .route("/daemon", get(daemon_get).put(daemon_put))
         .route("/networks", get(networks))
         .route("/info", get(info))
         .route("/start", post(start))

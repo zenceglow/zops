@@ -8,17 +8,27 @@ import {
   HardDrive,
   Network,
   Package,
+  Pencil,
+  Play,
+  RotateCw,
   ScrollText,
+  Square,
+  Trash2,
 } from 'lucide-react';
 import { Skeleton } from '../../components/ui/skeleton';
+import { toast } from '../../components/ui/sonner';
 import { cn } from '../../lib/utils';
 import { SectionTitle } from '../monitor/_components/section-title';
 import { CleanupDialog } from '../monitor/_components/cleanup-dialog';
+import { ConfirmDialog } from './_components/confirm-dialog';
+import { DaemonDialog } from './_components/daemon-dialog';
 import {
+  containerAction,
   fetchContainers,
   fetchDockerInfo,
   fetchImages,
   fetchNetworks,
+  removeImage,
   type ContainerInfo,
   type DockerInfo,
   type DockerNetwork,
@@ -60,6 +70,13 @@ export default function DockerPage() {
   const [networks, setNetworks] = useState<DockerNetwork[]>([]);
   const [info, setInfo] = useState<DockerInfo | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [daemonOpen, setDaemonOpen] = useState(false);
+  // 待确认的破坏性动作。null = 没在确认任何东西。
+  const [pending, setPending] = useState<
+    | { kind: 'container'; id: string; label: string; action: 'remove' }
+    | { kind: 'image'; id: string; label: string; action: 'remove' }
+    | null
+  >(null);
 
   const load = useCallback(async () => {
     const [c, i, n, d] = await Promise.allSettled([
@@ -107,6 +124,16 @@ export default function DockerPage() {
       </div>
     );
   }
+
+  /** 不删东西的那些动作（启停重启）直接就做 —— 它们是可逆的，不该也要确认。 */
+  const act = async (id: string, action: 'start' | 'stop' | 'restart') => {
+    try {
+      await containerAction(id, action);
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const running = containers.filter((c) => c.state === 'running');
   const engine = (info?.info ?? {}) as Record<string, unknown>;
@@ -158,30 +185,18 @@ export default function DockerPage() {
           </Link>
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {running.length === 0 && <Empty text={t('docker.no_containers')} />}
-          {running.map((c) => (
-            <Link
-              key={c.id}
-              to={`/docker/containers/${c.id}`}
-              className="flex items-center gap-3 rounded-xl border border-border/60 px-3.5 py-2.5 transition-colors hover:border-border hover:bg-muted/40"
-            >
-              <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm">{c.name}</span>
-                <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                  {c.image}
-                </span>
-              </span>
-              {/* 端口串可能很长（一个容器映射七八个端口），必须能截断 —— 不然它会
-                  顶出卡片、压到旁边那一格上。完整内容放进 title。 */}
-              <span
-                className="ml-auto max-w-[42%] shrink truncate text-right font-mono text-[11px] text-muted-foreground"
-                title={c.ports}
-              >
-                {c.ports || '—'}
-              </span>
-            </Link>
-          ))}
+          {containers.length === 0 && <Empty text={t('docker.no_containers')} />}
+          {/* 运行中的排前面：停掉的容器是"待处理项"，不该跟正在跑的抢位置。 */}
+          {[...containers]
+            .sort((a, b) => Number(b.state === 'running') - Number(a.state === 'running'))
+            .map((c) => (
+            <ContainerCard key={c.id} c={c} onAct={act} onDelete={() => setPending({
+              kind: 'container',
+              id: c.id,
+              label: c.name,
+              action: 'remove',
+            })} />
+            ))}
         </div>
       </section>
 
@@ -197,7 +212,7 @@ export default function DockerPage() {
           </div>
           <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
             {images.map((i) => (
-              <div key={i.id} className="flex items-center gap-3 py-1 text-xs">
+              <div key={i.id} className="group flex items-center gap-3 py-1 text-xs">
                 <span
                   className={cn(
                     'min-w-0 flex-1 truncate font-mono',
@@ -218,6 +233,22 @@ export default function DockerPage() {
                 <span className="w-10 shrink-0 text-right text-muted-foreground">
                   {i.created > 0 ? ago(Math.floor(Date.now() / 1000) - i.created) : '—'}
                 </span>
+                <button
+                  type="button"
+                  aria-label={t('docker.delete_image')}
+                  title={t('docker.delete_image')}
+                  onClick={() =>
+                    setPending({
+                      kind: 'image',
+                      id: i.tags[0] ?? i.id,
+                      label: i.tags[0] ?? i.id.slice(7, 19),
+                      action: 'remove',
+                    })
+                  }
+                  className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
               </div>
             ))}
           </div>
@@ -277,6 +308,14 @@ export default function DockerPage() {
             >
               {showConfig ? t('docker.hide') : t('docker.show')}
             </button>
+            <button
+              type="button"
+              onClick={() => setDaemonOpen(true)}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Pencil className="size-3.5" />
+              {t('docker.daemon_edit')}
+            </button>
           </div>
           {showConfig ? (
             <pre className="mt-3 max-h-72 overflow-auto rounded-xl border border-border/60 bg-muted/30 p-3 font-mono text-[11px] leading-5">
@@ -303,6 +342,122 @@ export default function DockerPage() {
           )}
         </div>
       </section>
+
+      <ConfirmDialog
+        open={pending !== null}
+        onOpenChange={(o) => !o && setPending(null)}
+        title={
+          pending?.kind === 'image'
+            ? t('docker.confirm_image_title')
+            : t('docker.confirm_container_title')
+        }
+        description={
+          pending?.kind === 'image'
+            ? t('docker.confirm_image_desc', { name: pending.label })
+            : t('docker.confirm_container_desc', { name: pending?.label ?? '' })
+        }
+        confirmLabel={t('common.delete')}
+        onConfirm={async () => {
+          if (!pending) return;
+          if (pending.kind === 'image') await removeImage(pending.id);
+          else await containerAction(pending.id, 'remove');
+          toast.success(t('docker.removed', { name: pending.label }));
+          await load();
+        }}
+      />
+
+      <DaemonDialog open={daemonOpen} onOpenChange={setDaemonOpen} onSaved={() => void load()} />
+    </div>
+  );
+}
+
+/**
+ * 一个容器。
+ *
+ * 操作放在悬停才出现的一排图标里，而不是常驻按钮：这一排卡片是"扫一眼知道有
+ * 哪些服务"，常驻三个按钮会让它变成控制台。停掉的容器压暗，绿色小点换成红色。
+ */
+function ContainerCard({
+  c,
+  onAct,
+  onDelete,
+}: {
+  c: ContainerInfo;
+  onAct: (id: string, action: 'start' | 'stop' | 'restart') => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const running = c.state === 'running';
+  const iconBtn =
+    'rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground';
+
+  return (
+    <div
+      className={cn(
+        'group flex items-center gap-3 rounded-xl border border-border/60 py-2.5 pr-2 pl-3.5 transition-colors hover:border-border hover:bg-muted/40',
+        !running && 'opacity-60',
+      )}
+    >
+      <span
+        className={cn('size-2 shrink-0 rounded-full', running ? 'bg-emerald-500' : 'bg-red-500')}
+      />
+      <Link to={`/docker/containers/${c.id}`} className="min-w-0 flex-1">
+        <span className="block truncate text-sm">{c.name}</span>
+        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+          {c.image}
+        </span>
+      </Link>
+      {/* 端口串可能很长（一个容器映射七八个端口），必须能截断 —— 不然它会
+          顶出卡片、压到旁边那一格上。完整内容放进 title。 */}
+      <span
+        className="max-w-[34%] shrink truncate text-right font-mono text-[11px] text-muted-foreground"
+        title={c.ports}
+      >
+        {c.ports || '—'}
+      </span>
+      <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        {running ? (
+          <>
+            <button
+              type="button"
+              title={t('sites.stop')}
+              aria-label={t('sites.stop')}
+              className={iconBtn}
+              onClick={() => onAct(c.id, 'stop')}
+            >
+              <Square className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              title={t('docker.restart')}
+              aria-label={t('docker.restart')}
+              className={iconBtn}
+              onClick={() => onAct(c.id, 'restart')}
+            >
+              <RotateCw className="size-3.5" />
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            title={t('sites.start')}
+            aria-label={t('sites.start')}
+            className={iconBtn}
+            onClick={() => onAct(c.id, 'start')}
+          >
+            <Play className="size-3.5" />
+          </button>
+        )}
+        <button
+          type="button"
+          title={t('docker.delete_container')}
+          aria-label={t('docker.delete_container')}
+          className={iconBtn}
+          onClick={onDelete}
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </span>
     </div>
   );
 }

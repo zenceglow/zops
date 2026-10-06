@@ -713,4 +713,182 @@ impl DockerClient {
         }
         Ok(lines)
     }
+
+    /// 删一个镜像。
+    ///
+    /// 走 CLI 而不是 bollard：删不掉的时候 dockerd 会明确说"被某个容器用着"，
+    /// bollard 的 remove_image 只会丢出一个 409，用户看到的就是"操作失败"。
+    pub async fn remove_image(&self, reference: &str, force: bool) -> Result<String, AppError> {
+        let reference = reference.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut args: Vec<&str> = vec!["image", "rm"];
+            if force {
+                args.push("-f");
+            }
+            args.push(&reference);
+            let out = std::process::Command::new("docker")
+                .args(&args)
+                .output()
+                .map_err(|e| AppError::internal(format!("调不动 docker：{e}")))?;
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !out.status.success() {
+                let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                return Err(AppError::bad_request(if err.is_empty() {
+                    stdout
+                } else {
+                    err
+                }));
+            }
+            Ok(stdout)
+        })
+        .await
+        .map_err(|e| AppError::internal(format!("删除任务没能启动：{e}")))?
+    }
+
+    /// 引擎配置文件的路径。默认 `/etc/docker/daemon.json`，本地开发可以指别处。
+    pub fn daemon_path() -> std::path::PathBuf {
+        std::env::var("OPS_DOCKER_DAEMON_JSON")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("/etc/docker/daemon.json"))
+    }
+
+    /// 读引擎配置。文件不存在不是错误 —— 全新装的 Docker 就没有这个文件，
+    /// 那时候界面该给一个空表单让人填镜像加速器，而不是报错。
+    pub fn daemon_read() -> crate::domain::container::DaemonFile {
+        use crate::domain::container::DaemonFile;
+
+        let path = Self::daemon_path();
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+        let list = |key: &str| -> Vec<String> {
+            parsed
+                .get(key)
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+
+        DaemonFile {
+            path: path.display().to_string(),
+            exists: path.exists(),
+            content,
+            can_write: can_write(&path),
+            mirrors: list("registry-mirrors"),
+            insecure_registries: list("insecure-registries"),
+        }
+    }
+
+    /// 写引擎配置：校验 → 备份 → 原子写 → 重启 docker。
+    ///
+    /// 顺序不能反。daemon.json 少一个逗号，dockerd 就起不来 —— 而一台机器上所有
+    /// 容器都跟着停在那一刻。所以先解析一遍 JSON，再把老文件备份走，最后才落盘。
+    pub async fn daemon_write(
+        &self,
+        content: &str,
+    ) -> Result<crate::domain::container::DaemonWriteResult, AppError> {
+        use crate::domain::container::DaemonWriteResult;
+
+        let path = Self::daemon_path();
+        let text = content.trim();
+        if text.is_empty() {
+            return Err(AppError::bad_request("配置不能是空的"));
+        }
+        serde_json::from_str::<serde_json::Value>(text)
+            .map_err(|e| AppError::bad_request(format!("JSON 不合法，没敢写：{e}")))?;
+        if !can_write(&path) {
+            return Err(AppError::bad_request(format!(
+                "改不了 {} —— 面板得用 root 跑才能动这个文件",
+                path.display()
+            )));
+        }
+
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+
+        // 备份：文件名带时间戳，改错了能直接 cp 回去。
+        let backup = if path.exists() {
+            let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            let dest = path.with_extension(format!("json.bak-{stamp}"));
+            std::fs::copy(&path, &dest).ok().map(|_| dest)
+        } else {
+            None
+        };
+
+        // 先写临时文件再 rename：dockerd 读到的永远是完整的一份。
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, format!("{text}\n"))
+            .map_err(|e| AppError::internal(format!("写临时文件失败：{e}")))?;
+        std::fs::rename(&tmp, &path)
+            .map_err(|e| AppError::internal(format!("替换配置失败：{e}")))?;
+
+        let restarted = Self::restart_engine();
+        Ok(DaemonWriteResult {
+            path: path.display().to_string(),
+            backup: backup.map(|p| p.display().to_string()),
+            restarted,
+            message: if restarted {
+                "配置已写入，Docker 正在重启".into()
+            } else {
+                "配置已写入，但没重启成 Docker —— 手动执行 systemctl restart docker"
+                    .into()
+            },
+        })
+    }
+
+    /// 重启 Docker 引擎。这一步会连带重启**这台机器上所有容器**，所以界面那边
+    /// 必须先跟用户确认过再调到这里。
+    fn restart_engine() -> bool {
+        let attempts: [&[&str]; 3] = [
+            &["systemctl", "restart", "docker"],
+            &["service", "docker", "restart"],
+            &["systemctl", "restart", "docker.service"],
+        ];
+        attempts.iter().any(|args| {
+            std::process::Command::new(args[0])
+                .args(&args[1..])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        })
+    }
+}
+
+/// 这个进程能不能写目标文件。
+///
+/// 不猜权限位：直接开一次 / 往目录里试建一个临时文件。权限位在 ACL、容器里挂的
+/// 卷、只读挂载这些情况下都和实际能不能写对不上。
+fn can_write(path: &std::path::Path) -> bool {
+    if path.exists() {
+        return std::fs::OpenOptions::new().append(true).open(path).is_ok();
+    }
+    let Some(dir) = path.parent() else {
+        return false;
+    };
+    if !dir.exists() {
+        // 目录本身还不存在（比如全新机器上 /etc/docker 没建）：只有 root 才敢说能。
+        return is_root();
+    }
+    let probe = dir.join(".zops-write-probe");
+    match std::fs::write(&probe, b"") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn is_root() -> bool {
+    std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim() == "0")
+        .unwrap_or(false)
 }

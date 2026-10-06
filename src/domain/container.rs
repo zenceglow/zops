@@ -79,3 +79,29 @@ pub struct DockerInfo {
     pub info: serde_json::Value,
     pub version: serde_json::Value,
 }
+
+/// 引擎配置文件（daemon.json）的当前样子。
+///
+/// 单独把 registry-mirrors / insecure-registries 拎出来，是因为这两个是**真正会
+/// 被改**的字段 —— 国内拉不动 Docker Hub 时第一件事就是加镜像加速器，而"手写
+/// JSON 再 scp 上去"是这块最烦的一步。其余字段照原文给，编辑时不会丢。
+#[derive(Serialize)]
+pub struct DaemonFile {
+    pub path: String,
+    pub exists: bool,
+    /// 原文。文件不在就是空串。
+    pub content: String,
+    /// 当前进程能不能写它（不是 root 就写不了）。
+    pub can_write: bool,
+    pub mirrors: Vec<String>,
+    pub insecure_registries: Vec<String>,
+}
+
+/// 写完的结果。备份路径一定回给用户 —— 改错了得能退回去。
+#[derive(Serialize)]
+pub struct DaemonWriteResult {
+    pub path: String,
+    pub backup: Option<String>,
+    pub restarted: bool,
+    pub message: String,
+}

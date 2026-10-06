@@ -222,7 +222,28 @@
     "junk_hint": "scans first, then asks",
     "config_json": "Engine config",
     "show": "Show JSON",
-    "hide": "Hide"
+    "hide": "Hide",
+    "daemon_edit": "Edit config",
+    "daemon_title": "Docker engine config",
+    "daemon_mirrors": "Registry mirrors",
+    "daemon_mirrors_hint": "One per line, tried in order. This is the first thing to set when Docker Hub is slow or blocked.",
+    "daemon_insecure": "Insecure registries",
+    "daemon_readonly": "This file is not writable — the panel has to run as root to change daemon.json.",
+    "daemon_raw_hint": "Edit the file directly. The JSON is validated before saving, and the current file is backed up first.",
+    "daemon_use_raw": "Advanced: edit the JSON",
+    "daemon_use_form": "Back to the form",
+    "daemon_restart_warning": "Saving restarts Docker — every container on this machine restarts with it.",
+    "daemon_save": "Save and restart Docker",
+    "daemon_saved": "Saved. Docker is restarting.",
+    "daemon_saved_no_restart": "Saved, but Docker could not be restarted automatically — run systemctl restart docker",
+    "daemon_backup": "Previous config backed up to {{path}}",
+    "delete_container": "Delete container",
+    "delete_image": "Delete image",
+    "confirm_container_title": "Delete this container?",
+    "confirm_container_desc": "{{name}} will be removed, along with anything it stored outside a mounted volume.",
+    "confirm_image_title": "Delete this image?",
+    "confirm_image_desc": "{{name}} will be removed and will have to be pulled again. Images in use by a container cannot be deleted.",
+    "removed": "Deleted {{name}}"
   },
   "system": {
     "title": "System",
@@ -726,5 +747,10 @@
     "copy_now": "Copy upgrade command",
     "copied": "Copied",
     "later": "Later"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete"
   }
 }

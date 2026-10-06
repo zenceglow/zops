@@ -222,7 +222,28 @@
     "junk_hint": "清理前会先扫描，确认后才动手",
     "config_json": "引擎配置",
     "show": "展开 JSON",
-    "hide": "收起"
+    "hide": "收起",
+    "daemon_edit": "编辑配置",
+    "daemon_title": "Docker 引擎配置",
+    "daemon_mirrors": "镜像仓库（加速器）",
+    "daemon_mirrors_hint": "一行一个，按顺序尝试。国内拉不动镜像时先配这里，改完由 Docker 自动生效。",
+    "daemon_insecure": "不安全的仓库（insecure-registries）",
+    "daemon_readonly": "这个文件现在改不了 —— 面板需要以 root 运行才能写 daemon.json。",
+    "daemon_raw_hint": "直接编辑原文。保存前后端会先校验 JSON，不合法就不写，原文件也会先备份。",
+    "daemon_use_raw": "高级：直接编辑 JSON",
+    "daemon_use_form": "回到表单",
+    "daemon_restart_warning": "保存后会重启 Docker —— 这台机器上的所有容器都会跟着重启。",
+    "daemon_save": "保存并重启 Docker",
+    "daemon_saved": "配置已保存，Docker 正在重启",
+    "daemon_saved_no_restart": "配置已保存，但没能自动重启 Docker，请手动执行 systemctl restart docker",
+    "daemon_backup": "原配置已备份到 {{path}}",
+    "delete_container": "删除容器",
+    "delete_image": "删除镜像",
+    "confirm_container_title": "删除这个容器？",
+    "confirm_container_desc": "{{name}} 会被删掉，容器里没挂到卷上的数据会一起消失。",
+    "confirm_image_title": "删除这个镜像？",
+    "confirm_image_desc": "{{name}} 会被删掉，下次用到得重新拉。正在被容器使用的镜像删不掉。",
+    "removed": "已删除 {{name}}"
   },
   "system": {
     "title": "系统",
@@ -726,5 +747,10 @@
     "copy_now": "复制升级命令",
     "copied": "已复制",
     "later": "稍后"
+  },
+  "common": {
+    "cancel": "取消",
+    "confirm": "确认",
+    "delete": "删除"
   }
 }

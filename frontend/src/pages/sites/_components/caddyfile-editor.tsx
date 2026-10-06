@@ -20,7 +20,15 @@ export function CaddyfileEditor({
 }) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
-  const tokens = useMemo(() => highlightCaddyfile(value), [value]);
+  const tokens = useMemo(() => {
+    const list = highlightCaddyfile(value);
+    // 末尾补一个零宽字符：`white-space: pre` 下，**最后一个换行不产生行盒**，
+    // 于是高亮层比 textarea 少一行。少这一行本身看不出来，代价在滚动上 ——
+    // 滚到文件底部时两层的 scrollHeight 差 24px，高亮层先滚到底，底下那几行
+    // 就整整错开一行：你看着选中了某一行，实际选中的是上一行。
+    // 补一个不占宽的字符，让那个换行不再是"最后一个字符"，行盒就补回来了。
+    return [...list, { text: '\u200b', cls: '' }];
+  }, [value]);
 
   // 两层各自滚动会错位，所以只让 textarea 滚，再把偏移量抄给高亮层。
   const syncScroll = () => {

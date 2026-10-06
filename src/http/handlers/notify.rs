@@ -87,10 +87,16 @@ async fn test(
         .send_to(&channel, "test", "ZOPS 测试消息", "这条是面板发出来的测试消息，收到就说明配好了。")
         .await?;
     if !delivery.ok {
-        return Err(AppError::bad_request(format!(
-            "对方拒绝了这条消息（HTTP {}）：{}",
-            delivery.status, delivery.detail
-        )));
+        // status 0 = 请求根本没发出去（DNS、连不上、超时、证书）。这时候说
+        // "对方拒绝了"是错的 —— 对方什么都没收到，用户该去看网络或地址。
+        return Err(AppError::bad_request(if delivery.status == 0 {
+            format!("消息没发出去：{}", delivery.detail)
+        } else {
+            format!(
+                "对方拒绝了这条消息（HTTP {}）：{}",
+                delivery.status, delivery.detail
+            )
+        }));
     }
     Ok(Json(ApiResponse::ok(serde_json::json!({
         "status": delivery.status,

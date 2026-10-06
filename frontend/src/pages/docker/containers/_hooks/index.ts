@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchContainers, type ContainerInfo, type DockerStatus } from '../_api';
 
 export function useContainers() {
@@ -6,7 +6,8 @@ export function useContainers() {
   const [docker, setDocker] = useState<DockerStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  /** 动作之后要重新读一遍 —— 启停是新状态，不重读界面会停在旧的那一版。 */
+  const reload = useCallback(() => {
     fetchContainers()
       .then((d) => {
         setContainers(d.containers);
@@ -16,5 +17,9 @@ export function useContainers() {
       .finally(() => setLoading(false));
   }, []);
 
-  return { containers, docker, loading };
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { containers, docker, loading, reload };
 }

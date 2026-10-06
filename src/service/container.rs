@@ -55,6 +55,23 @@ impl ContainerService {
         self.docker.remove(id).await
     }
 
+    /// 删镜像。`force` 会连带删掉用它的容器 —— 界面上必须问过再传 true。
+    pub async fn remove_image(&self, reference: &str, force: bool) -> Result<String, AppError> {
+        self.docker.remove_image(reference, force).await
+    }
+
+    pub fn daemon_read(&self) -> crate::domain::container::DaemonFile {
+        DockerClient::daemon_read()
+    }
+
+    /// 写引擎配置。会重启 Docker，也就是重启这台机器上的所有容器。
+    pub async fn daemon_write(
+        &self,
+        content: &str,
+    ) -> Result<crate::domain::container::DaemonWriteResult, AppError> {
+        self.docker.daemon_write(content).await
+    }
+
     pub async fn logs(&self, id: &str, tail: usize) -> Result<serde_json::Value, AppError> {
         let logs = self.docker.logs(id, tail).await?;
         Ok(serde_json::json!({ "logs": logs }))
