@@ -363,27 +363,56 @@ async fn download(url: &str, dest: &Path) -> Result<(), AppError> {
 }
 
 async fn curl_download(url: &str, dest: &Path, resume: bool) -> Result<(), AppError> {
+    match run_curl(url, dest, resume, true).await {
+        Ok(()) => Ok(()),
+        // 老 curl 不认识新选项就整套降级再试一次。
+        //
+        // 这台机器就踩过：RHEL8 / 阿里云 Linux 带的是 curl 7.61，没有
+        // `--retry-all-errors`（7.71 才有）—— 整个自动升级就卡在一个**可选参数**上，
+        // 而且报错只进 journald，界面上看起来就是"点了没反应"。
+        // 参数是"让下载更稳"的，不是"能不能下载"的前提，缺了它也得能升上去。
+        Err(e) if is_unknown_option(&e.message) => run_curl(url, dest, resume, false).await,
+        Err(e) => Err(e),
+    }
+}
+
+/// `curl: option --retry-all-errors: is unknown` 这类报错。
+fn is_unknown_option(stderr: &str) -> bool {
+    let s = stderr.to_lowercase();
+    let unknown = ["unknown", "unrecognized", "unrecognised", "not recognized", "not recognised"]
+        .iter()
+        .any(|k| s.contains(k));
+    unknown && s.contains("option")
+}
+
+/// 跑一次 curl。`fancy` = 带上"更稳但不是所有版本都有"的选项。
+async fn run_curl(
+    url: &str,
+    dest: &Path,
+    resume: bool,
+    fancy: bool,
+) -> Result<(), AppError> {
     let (url, dest) = (url.to_string(), dest.to_path_buf());
     let out = tokio::task::spawn_blocking(move || {
         let mut cmd = std::process::Command::new("curl");
-        cmd.args([
-            "-fsSL",
-            "--retry",
-            "3",
-            "--retry-delay",
-            "2",
-            "--retry-all-errors",
-            // 慢到 30 秒都跑不满 10KB/s 就判死，不必干等十分钟；
-            // 但正常慢速（比如跨境线路只有几十 KB/s）仍然给足 10 分钟。
-            "--speed-limit",
-            "10240",
-            "--speed-time",
-            "30",
-            "--max-time",
-            "600",
-            "-A",
-            "ZOPS/self-update",
-        ]);
+        // `-fsSL`：失败要报错、跟着重定向、安静模式、出错时别把错误页写进文件。
+        cmd.args(["-fsSL"]);
+        if fancy {
+            // 这几个 2013 年前后的 curl 就有，正常发行版都带得动。
+            cmd.args([
+                "--retry",
+                "3",
+                "--retry-delay",
+                "2",
+                // 慢到 30 秒都跑不满 10KB/s 就判死，不必干等十分钟；
+                // 但正常慢速（比如跨境线路只有几十 KB/s）仍然给足 10 分钟。
+                "--speed-limit",
+                "10240",
+                "--speed-time",
+                "30",
+            ]);
+        }
+        cmd.args(["--max-time", "600", "-A", "ZOPS/self-update"]);
         // 断点续传：十几兆的东西，中间抖一下不该从头再来。
         if resume {
             cmd.args(["-C", "-"]);
@@ -542,6 +571,28 @@ pub fn version_gt(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 老 curl 的报错长得就是这几种，别漏判 —— 漏一个就是"升级永远失败"。
+    #[test]
+    fn 认得出老_curl_的_unknown_option() {
+        for msg in [
+            "curl: option --retry-all-errors: is unknown\ncurl: try 'curl --help' or 'curl --manual' for more information",
+            "curl: option --retry-all-errors: is unrecognized",
+            "download failed：curl: option --speed-time: is not recognized",
+            "curl: option -Z: is not recognised",
+        ] {
+            assert!(is_unknown_option(msg), "应该认得：{msg}");
+        }
+        // 正常的下载失败（连不上、404）不该被当成"参数不支持"，否则会白降级重试一次，
+        // 而且把真正的错误藏起来。
+        for msg in [
+            "curl: (6) Could not resolve host: cdn.zenceglow.com",
+            "curl: (22) The requested URL returned error: 404",
+            "curl: (28) Operation timed out after 600001 milliseconds",
+        ] {
+            assert!(!is_unknown_option(msg), "不该误判：{msg}");
+        }
+    }
 
     #[test]
     fn 版本比较按段比数字() {
