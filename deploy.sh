@@ -105,14 +105,18 @@ npx wrangler r2 object put "${BUCKET}/${INSTALL_PATH}" \
 # 版本号从 Cargo.toml 读 —— 它是唯一的真相，别让人再手抄一遍。
 VER="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 NOTES="$(git log -1 --pretty=%s 2>/dev/null || echo '')"
-cat > "$TMP_MANIFEST" <<JSON
-{
-  "version": "$VER",
-  "notes": "$NOTES",
-  "published_at": "$(date '+%Y-%m-%d %H:%M')",
-  "url": "https://cdn.zenceglow.com/${R2_PATH}"
-}
-JSON
+# 用 node 生成，不要手拼 JSON：提交标题里出现一个 `"` 就会把清单拼成坏 JSON，
+# 而面板是**解析失败就不再提示更新**的 —— 症状是"检查不到新版本"，
+# 但 CDN 上明明躺着新二进制。生成用的 node 一定在（上面 wrangler 就是它）。
+node -e '
+  const [ver, notes, url] = process.argv.slice(1);
+  const p = (n) => String(n).padStart(2, "0");
+  const d = new Date();
+  const at = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  process.stdout.write(JSON.stringify({ version: ver, notes, published_at: at, url }, null, 2) + "\n");
+' "$VER" "$NOTES" "https://cdn.zenceglow.com/${R2_PATH}" > "$TMP_MANIFEST"
+node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))' "$TMP_MANIFEST" \
+  || { echo "error: 生成的 latest.json 不是合法 JSON" >&2; exit 1; }
 npx wrangler r2 object put "${BUCKET}/${MANIFEST_PATH}" \
   --file "$TMP_MANIFEST" \
   --content-type "application/json; charset=utf-8" \
