@@ -34,6 +34,8 @@ const DOCK_ORDER = [
   '/screen',
   '/ssh',
   '/files',
+  // 应用与服务的创建 / 管理（部署任务通道）。少这一行，页面就只能在地址栏里敲出来。
+  '/deploy',
   '/logs',
   '/agent',
   '/sites',

@@ -8,10 +8,12 @@ import { summarizeSite } from '../../sites/_lib/site-summary';
 import { cn } from '../../../lib/utils';
 
 const W = 1000;
-const H = 380;
-const GLOBE = { x: 108, y: H / 2, r: 64 };
+const GLOBE = { x: 108, r: 64 };
 const ENTRY_X = 400;
 const CONTAINER_X = 790;
+/** 一行节点占的高度（节点盒 30 + 间隙）。画布高度按行数算，不再写死。 */
+const ROW = 46;
+const PAD_Y = 44;
 
 type Node = { key: string; label: string; sub: string };
 
@@ -81,9 +83,11 @@ export function Topology({
   const reducedMotion = useReducedMotion();
 
   // —— 数据：入口 → 它代理的每一个目标 → 容器 / 本机进程 / 外部服务 ——
-  const entryNodes: (Node & { targets: string[]; url: string | null })[] = entries
-    .slice(0, 6)
-    .map((s) => {
+  // 不再截前 N 个。以前 `slice(0, 6)`：站点一多，第 7 个之后的链路**整条消失**，
+  // 而且看起来"图是完整的" —— 那是这张图最不该犯的错。现在有几个画几个，
+  // 画布高度按行数算，装不下就让卡片自己滚。
+  const entryNodes: (Node & { targets: string[]; url: string | null })[] = entries.map(
+    (s) => {
       const info = summarizeSite(s);
       return {
         key: s.addr,
@@ -92,28 +96,35 @@ export function Topology({
         targets: info.targets,
         url: info.url,
       };
-    });
-
-  const running = containers.filter((c) => c.state === 'running').slice(0, 6);
-  const containerNodes: RightNode[] = running.map((c) => {
-    const host = c.ports.match(/:(\d+)-\d+/)?.[1] ?? null;
-    return {
-      key: c.id,
-      label: c.image,
-      sub: host ? `: ${host}` : '—',
-      kind: 'container',
-      to: `/docker/containers/${c.id}`,
-    };
-  });
+    },
+  );
 
   // 端口 → 容器、容器名 → 容器，两张表用来把上游地址翻译成节点。
+  //
+  // 表建在**全部**容器上，而不是"准备画的那些"。以前先 `slice(0, 6)` 再拿截过的
+  // 表去匹配：这台机器上跑着 8 个容器时，第 7、8 个明明在跑，却因为"表里没有"
+  // 被画成外部服务 —— 这张图是拿来顺着排 502 的，标错比不画还糟。
   const byPort = new Map<string, number>();
   const byName = new Map<string, number>();
-  running.forEach((c, i) => {
+  containers.forEach((c, i) => {
     const port = c.ports.match(/:(\d+)-\d+/)?.[1];
     if (port) byPort.set(port, i);
     byName.set(c.name, i);
   });
+
+  const containerNodeOf = (c: ContainerInfo): RightNode => {
+    const host = c.ports.match(/:(\d+)-\d+/)?.[1] ?? null;
+    const stopped = c.state !== 'running';
+    return {
+      key: c.id,
+      // 用容器名而不是镜像名：Caddyfile 里写的就是名字（`paober-web:80`），
+      // 两边对得上，图上才能一眼认出是哪一条链路。
+      label: c.name || c.image,
+      sub: host ? `: ${host}` : stopped ? t('topology.stopped') : c.image,
+      kind: 'container',
+      to: `/docker/containers/${c.id}`,
+    };
+  };
 
   /**
    * 一个上游地址落在哪儿。
@@ -125,43 +136,89 @@ export function Topology({
    * - 域名 / 非回环 IP → **外部服务**，请求出了这台机器，图上就该有个出口。
    */
   const extras: RightNode[] = [];
-  const resolve = (raw: string): { kind: RightNode['kind']; index: number } => {
-    const { host, port, label } = parseTarget(raw);
-    const container = (port ? byPort.get(port) : undefined) ?? byName.get(host);
-    if (container !== undefined) return { kind: 'container', index: container };
-
-    const isLoopback = LOOPBACK.has(host);
-    const key = `${isLoopback ? 'host' : 'ext'}:${label}`;
-    let index = extras.findIndex((n) => n.key === key);
-    if (index < 0 && extras.length < 3) {
-      extras.push({
-        key,
-        label,
-        sub: isLoopback ? t('topology.host_process') : t('topology.external'),
-        kind: isLoopback ? 'host' : 'external',
-      });
-      index = extras.length - 1;
-    }
-    const kind: RightNode['kind'] = isLoopback ? 'host' : 'external';
-    return { kind, index: index < 0 ? -1 : containerNodes.length + index };
+  type RawEdge = {
+    entryIndex: number;
+    kind: RightNode['kind'];
+    /** 命中的容器在 containers 里的下标。 */
+    containerIndex?: number;
+    /** 落在 extras 里的下标。 */
+    extraIndex?: number;
+    key: string;
   };
 
-  // 每个入口的每一条出边。一个站点分流到 N 个后端就有 N 条。
-  const edges = entryNodes.flatMap((e, ei) =>
-    e.targets.map((raw) => {
-      const { kind, index } = resolve(raw);
-      return { entryIndex: ei, kind, nodeIndex: index, key: `${e.key}->${raw}` };
-    }),
-  );
+  // 第一遍：每条出边先解析成"哪个容器"或"哪个额外节点"，先不算坐标 ——
+  // 右边该画哪几个容器，得等所有边都看过才知道。
+  const rawEdges: RawEdge[] = [];
+  entryNodes.forEach((e, ei) => {
+    e.targets.forEach((raw) => {
+      const { host, port, label } = parseTarget(raw);
+      const ci = (port ? byPort.get(port) : undefined) ?? byName.get(host);
+      if (ci !== undefined) {
+        rawEdges.push({
+          entryIndex: ei,
+          kind: 'container',
+          containerIndex: ci,
+          key: `${e.key}->${raw}`,
+        });
+        return;
+      }
+      const isLoopback = LOOPBACK.has(host);
+      const key = `${isLoopback ? 'host' : 'ext'}:${label}`;
+      let xi = extras.findIndex((n) => n.key === key);
+      if (xi < 0) {
+        extras.push({
+          key,
+          label,
+          sub: isLoopback ? t('topology.host_process') : t('topology.external'),
+          kind: isLoopback ? 'host' : 'external',
+        });
+        xi = extras.length - 1;
+      }
+      rawEdges.push({
+        entryIndex: ei,
+        kind: isLoopback ? 'host' : 'external',
+        extraIndex: xi < 0 ? undefined : xi,
+        key: `${e.key}->${raw}`,
+      });
+    });
+  });
+
+  // 第二遍：只画真正被引用到的容器（按容器列表顺序），再接上额外节点。
+  const usedIdx: number[] = [];
+  rawEdges.forEach((e) => {
+    if (e.containerIndex !== undefined && !usedIdx.includes(e.containerIndex)) {
+      usedIdx.push(e.containerIndex);
+    }
+  });
+  usedIdx.sort((a, b) => a - b);
+  const containerNodes: RightNode[] = usedIdx.map((i) => containerNodeOf(containers[i]));
+  const slotOf = new Map(usedIdx.map((ci, ni) => [ci, ni]));
+  const edges = rawEdges.map((e) => ({
+    entryIndex: e.entryIndex,
+    kind: e.kind,
+    nodeIndex:
+      e.containerIndex !== undefined
+        ? (slotOf.get(e.containerIndex) ?? -1)
+        : e.extraIndex !== undefined
+          ? containerNodes.length + e.extraIndex
+          : -1,
+    key: e.key,
+  }));
 
   const rightNodes: RightNode[] = [...containerNodes, ...extras];
 
+  // 画布高度按"最多的那一列"算，节点之间至少留 ROW。
+  const rows = Math.max(entryNodes.length, rightNodes.length, 1);
+  const H = Math.max(320, PAD_Y * 2 + (rows - 1) * ROW);
+  const globeY = H / 2;
   const spread = (count: number) => {
     if (count <= 0) return [];
     if (count === 1) return [H / 2];
-    const top = 64;
-    const step = (H - top * 2) / (count - 1);
-    return Array.from({ length: count }, (_, i) => top + step * i);
+    const usable = H - PAD_Y * 2;
+    const step = Math.max(ROW, usable / (count - 1));
+    const total = step * (count - 1);
+    const start = (H - total) / 2;
+    return Array.from({ length: count }, (_, i) => start + step * i);
   };
   const entryY = spread(entryNodes.length);
   const containerY = spread(rightNodes.length);
@@ -173,7 +230,15 @@ export function Topology({
 
   return (
     <div className="rounded-2xl border border-border/60 px-4 py-4">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-[300px] w-full sm:h-[340px]" role="img" aria-label={t('topology.title')}>
+      {/* 图高按内容走；节点太多就自己滚，不把整页撑长，也不裁掉任何一条链路。 */}
+      <div className="max-h-[70vh] overflow-y-auto">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        style={{ minHeight: 300 }}
+        role="img"
+        aria-label={t('topology.title')}
+      >
         <defs>
           <radialGradient id="globe-fill" cx="38%" cy="32%">
             <stop offset="0%" stopColor="currentColor" stopOpacity="0.28" />
@@ -183,13 +248,13 @@ export function Topology({
 
         {/* 地球：一圈本体 + 会呼吸的光晕 + 转动的经络 */}
         <g className="text-sky-500">
-          <circle cx={GLOBE.x} cy={GLOBE.y} r={GLOBE.r + 10} className="fill-sky-500/5 animate-breathe" />
-          <circle cx={GLOBE.x} cy={GLOBE.y} r={GLOBE.r} fill="url(#globe-fill)" className="stroke-sky-500/40" />
+          <circle cx={GLOBE.x} cy={globeY} r={GLOBE.r + 10} className="fill-sky-500/5 animate-breathe" />
+          <circle cx={GLOBE.x} cy={globeY} r={GLOBE.r} fill="url(#globe-fill)" className="stroke-sky-500/40" />
           {[0.9, 0.6, 0.28].map((k, i) => (
             <ellipse
               key={k}
               cx={GLOBE.x}
-              cy={GLOBE.y}
+              cy={globeY}
               ry={GLOBE.r}
               className="fill-none stroke-sky-500/50"
               strokeWidth="1"
@@ -211,9 +276,9 @@ export function Topology({
             <line
               key={k}
               x1={GLOBE.x - GLOBE.r * Math.sqrt(1 - k * k)}
-              y1={GLOBE.y + GLOBE.r * k}
+              y1={globeY + GLOBE.r * k}
               x2={GLOBE.x + GLOBE.r * Math.sqrt(1 - k * k)}
-              y2={GLOBE.y + GLOBE.r * k}
+              y2={globeY + GLOBE.r * k}
               className="stroke-sky-500/35"
               strokeWidth="1"
             />
@@ -222,7 +287,7 @@ export function Topology({
 
         {/* 地球 → 入口 */}
         {entryNodes.map((e, i) => {
-          const d = curve(GLOBE.x + GLOBE.r - 6, GLOBE.y, ENTRY_X - 6, entryY[i]);
+          const d = curve(GLOBE.x + GLOBE.r - 6, globeY, ENTRY_X - 6, entryY[i]);
           return (
             <g key={e.key}>
               <path d={d} className="topology-edge fill-none stroke-sky-500/50" strokeWidth="1.2" />
@@ -346,6 +411,7 @@ export function Topology({
           );
         })}
       </svg>
+      </div>
 
       {/* 空状态不能只是一句话：告诉用户"还没有"却不告诉他去哪儿加，等于把死路摆出来。 */}
       {entryNodes.length === 0 && (

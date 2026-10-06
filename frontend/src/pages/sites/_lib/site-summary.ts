@@ -49,11 +49,23 @@ function collectKeys(list: Directive[], into: Set<string>) {
   }
 }
 
-/** 递归收集所有 `reverse_proxy` 的目标，按出现顺序去重。 */
+/**
+ * 递归收集所有 `reverse_proxy` 的上游，按出现顺序去重。
+ *
+ * 两种"一对多"都要收全：
+ * - 一个站点按路径分流到多个后端（`handle` / `route` 里各写一个 reverse_proxy）；
+ * - 一个 reverse_proxy 自己挂多个上游做负载均衡（`reverse_proxy a:8080 b:8080`）——
+ *   以前只取 `args[0]`，另一半上游在链路图上是断的。
+ *
+ * 参数里的匹配器（`*`、`@name`、`/path/*`）不是上游，跳过。
+ */
 function collectProxies(list: Directive[], into: string[]) {
   for (const d of list) {
-    if (d.key === 'reverse_proxy' && d.args[0] && !into.includes(d.args[0])) {
-      into.push(d.args[0]);
+    if (d.key === 'reverse_proxy') {
+      for (const arg of d.args) {
+        const isMatcher = arg === '*' || arg.startsWith('@') || arg.startsWith('/');
+        if (!isMatcher && !into.includes(arg)) into.push(arg);
+      }
     }
     collectProxies(d.sub, into);
   }
@@ -72,9 +84,10 @@ export function summarizeSite(site: SiteEntry): SiteSummary {
   const targets: string[] = [];
   if (proxy) {
     kind = 'proxy';
-    // `reverse_proxy localhost:8081 { ... }` —— 目标就是第一个参数。
-    target = proxy.args[0] ?? '';
     collectProxies(site.directives, targets);
+    // 列表页那一行只写得下一个，用它。注意不能直接用 args[0]：
+    // `reverse_proxy * localhost:3000` 的第一个参数是匹配器，不是目标。
+    target = targets[0] ?? '';
   } else if (isStatic) {
     kind = 'static';
     // `root * /var/www` —— 第一个参数是匹配符，路径在第二个。

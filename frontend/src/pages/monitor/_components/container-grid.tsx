@@ -1,7 +1,7 @@
 import { useEffect, useState, type ComponentType, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Database, Globe, Package, Server, Terminal } from 'lucide-react';
+import { ChevronRight, Database, Globe, Package, Server, Terminal } from 'lucide-react';
 import {
   SiCaddy,
   SiClickhouse,
@@ -314,7 +314,18 @@ export function ContainerGrid({ containers }: { containers: ContainerInfo[] }) {
 
   return (
     <section>
-      <SectionTitle icon={Server} title={t('docker.apps_services')} />
+      {/* 和「站点入口」那块对齐：标题右边也放一个去管理的入口，
+          免得这一节只有只读的卡片、想动手还得回 Dock 上找。 */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <SectionTitle icon={Server} title={t('docker.apps_services')} />
+        <Link
+          to="/deploy"
+          className="group ml-auto inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {t('docker.manage_apps')}
+          <ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      </div>
       {/* 三列：再宽下去，每格里"图标 + 三行字"只占左边一半，右半边空着反而更散。
           ~340px 刚好盛下最长的镜像名加一行占用，容器变多就自然往下续行。 */}
       <div className="mt-6 grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">

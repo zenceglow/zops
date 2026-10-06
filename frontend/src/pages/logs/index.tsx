@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   FileText,
   Loader2,
@@ -107,6 +108,7 @@ function baseName(path: string): string {
 }
 
 export default function LogsPage() {
+  const { t } = useTranslation();
   const [sources, setSources] = useState<LogSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -122,7 +124,7 @@ export default function LogsPage() {
 
   useEffect(() => {
     refresh()
-      .catch(() => toast.error('读取日志来源失败'))
+      .catch(() => toast.error(t('logs.load_failed')))
       .finally(() => setLoading(false));
   }, [refresh]);
 
@@ -131,12 +133,12 @@ export default function LogsPage() {
     setBusy(true);
     try {
       const res = await addLogSource(newPath.trim(), newLabel.trim());
-      if (!res.success) throw new Error(res.message || '添加失败');
+      if (!res.success) throw new Error(res.message || t('logs.add_failed'));
       setAdding(false);
       setNewLabel('');
       setNewPath('');
       await refresh();
-      toast.success('日志来源已保存');
+      toast.success(t('logs.saved'));
     } catch (e) {
       toast.error(String((e as Error).message));
     } finally {
@@ -145,34 +147,37 @@ export default function LogsPage() {
   };
 
   const onRemove = async (source: LogSource) => {
-    if (!window.confirm(`删除「${source.label || baseName(source.path)}」这张卡片？`)) return;
+    if (
+      !window.confirm(
+        t('logs.delete_confirm', { name: source.label || baseName(source.path) }),
+      )
+    )
+      return;
     try {
       const res = await removeLogSource(source.id);
-      if (!res.success) throw new Error(res.message || '删除失败');
+      if (!res.success) throw new Error(res.message || t('logs.delete_failed'));
       await refresh();
-      toast.success('已删除');
+      toast.success(t('logs.deleted'));
     } catch (e) {
       toast.error(String((e as Error).message));
     }
   };
 
-  const copy = async (text: string, what: string) => {
-    if (await copyText(text)) toast.success(`${what}已复制`);
+  const copy = async (text: string) => {
+    if (await copyText(text)) toast.success(t('logs.copied'));
+    else toast.error(t('mcp.copy_failed'));
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">日志</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            把常看的日志存成卡片，下次进来点一下就看 —— 等价于
-            <span className="mx-1 font-mono text-xs">tail -n 200 -f &lt;文件&gt;</span>。
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('logs.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('logs.subtitle')}</p>
         </div>
         <Button size="sm" onClick={() => setAdding(true)}>
           <Plus />
-          添加日志来源
+          {t('logs.add_source')}
         </Button>
       </div>
 
@@ -185,11 +190,9 @@ export default function LogsPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <FileText className="size-6 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              还没有日志来源。加一个文件路径，它会存进 SQLite，下次直接点卡片看。
-            </p>
+            <p className="text-sm text-muted-foreground">{t('logs.empty')}</p>
             <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
-              添加日志来源
+              {t('logs.add_source')}
             </Button>
           </CardContent>
         </Card>
@@ -219,7 +222,7 @@ export default function LogsPage() {
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      aria-label="更多"
+                      aria-label={t('logs.more')}
                       onClick={(e) => e.stopPropagation()}
                       className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     >
@@ -228,15 +231,15 @@ export default function LogsPage() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                     <DropdownMenuItem onClick={() => setWatching(source)}>
-                      查看实时日志
+                      {t('logs.view')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => void copy(tailCommand(source.path), '命令')}
+                      onClick={() => void copy(tailCommand(source.path))}
                     >
-                      复制 tail 命令
+                      {t('logs.copy_cmd')}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => void copy(source.path, '路径')}>
-                      复制路径
+                    <DropdownMenuItem onClick={() => void copy(source.path)}>
+                      {t('logs.copy_path')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -244,7 +247,7 @@ export default function LogsPage() {
                       onClick={() => void onRemove(source)}
                     >
                       <Trash2 className="size-3.5" />
-                      删除卡片
+                      {t('logs.delete')}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -260,31 +263,28 @@ export default function LogsPage() {
       <Dialog open={adding} onOpenChange={setAdding}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>添加日志来源</DialogTitle>
-            <DialogDescription>
-              填服务器上的绝对路径，存进 SQLite，下次点卡片就能看。允许的目录：
-              /opt/docker-apps/、/var/log/、./logs/、/app/logs/。
-            </DialogDescription>
+            <DialogTitle>{t('logs.add_source')}</DialogTitle>
+            <DialogDescription>{t('logs.add_hint')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="log-path">日志文件路径</Label>
+              <Label htmlFor="log-path">{t('logs.path')}</Label>
               <Input
                 id="log-path"
                 value={newPath}
                 autoFocus
                 onChange={(e) => setNewPath(e.target.value)}
-                placeholder="/opt/docker-apps/yueqixing-front-server/logs/front-server.json.log"
+                placeholder={t('logs.path_placeholder')}
                 className="font-mono text-xs"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="log-label">名字（可选）</Label>
+              <Label htmlFor="log-label">{t('logs.name')}</Label>
               <Input
                 id="log-label"
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
-                placeholder="悦骑行前端"
+                placeholder={t('logs.name_placeholder')}
               />
             </div>
             {newPath.trim() && (
@@ -295,10 +295,10 @@ export default function LogsPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAdding(false)}>
-              取消
+              {t('deploy.cancel')}
             </Button>
             <Button onClick={onAdd} disabled={busy || !newPath.trim()}>
-              保存
+              {t('deploy.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -316,6 +316,7 @@ export default function LogsPage() {
  * 是一片空白，得等下一个请求进来才有东西 —— 排障的人第一眼看到空白只会以为坏了。
  */
 function LogMonitor({ source, onClose }: { source: LogSource; onClose: () => void }) {
+  const { t } = useTranslation();
   const [lines, setLines] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -415,7 +416,7 @@ function LogMonitor({ source, onClose }: { source: LogSource; onClose: () => voi
               </p>
               {problems > 0 && (
                 <span className="rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] text-destructive">
-                  {problems} 条异常
+                  {t('logs.problems', { n: problems })}
                 </span>
               )}
             </div>
@@ -426,7 +427,7 @@ function LogMonitor({ source, onClose }: { source: LogSource; onClose: () => voi
           <button
             type="button"
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t('logs.close')}
             className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <X className="size-4" />
@@ -437,7 +438,7 @@ function LogMonitor({ source, onClose }: { source: LogSource; onClose: () => voi
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索 / 高亮关键词"
+            placeholder={t('logs.search_placeholder')}
             className="h-8 w-48 text-xs"
           />
           <Button
@@ -445,24 +446,24 @@ function LogMonitor({ source, onClose }: { source: LogSource; onClose: () => voi
             variant={onlyProblems ? 'default' : 'outline'}
             onClick={() => setOnlyProblems((v) => !v)}
           >
-            只看 ERROR/WARN
+            {t('logs.only_problems')}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setPaused((v) => !v)}>
             {paused ? <Play /> : <Pause />}
-            {paused ? '继续' : '暂停'}
+            {paused ? t('logs.resume') : t('logs.pause')}
           </Button>
           <Button
             size="sm"
             variant={autoScroll ? 'default' : 'outline'}
             onClick={() => setAutoScroll((v) => !v)}
           >
-            自动滚动
+            {t('logs.auto_scroll')}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setLines([])}>
-            清空
+            {t('logs.clear')}
           </Button>
           <span className="ml-auto text-[11px] text-muted-foreground">
-            {visible.length} / {lines.length} 行
+            {t('logs.rows', { visible: visible.length, total: lines.length })}
           </span>
         </div>
 
@@ -478,11 +479,11 @@ function LogMonitor({ source, onClose }: { source: LogSource; onClose: () => voi
           {!seeded ? (
             <div className="flex items-center gap-2 p-4 text-neutral-400">
               <Loader2 className="size-3.5 animate-spin" />
-              读取中…
+              {t('logs.reading')}
             </div>
           ) : visible.length === 0 ? (
             <p className="p-4 text-neutral-500">
-              {lines.length === 0 ? '这个文件暂时没有内容（或读不到）' : '没有匹配的行'}
+              {lines.length === 0 ? t('logs.no_content') : t('logs.no_match')}
             </p>
           ) : (
             visible.map((line, i) => {

@@ -41,6 +41,25 @@ export async function getAgentTools() {
   return res.data.tools;
 }
 
+/** agent 在这个面板上干过什么。数据来自审计日志（actor_kind = agent）。 */
+export type AgentOp = {
+  id: number;
+  at: string;
+  /** 令牌名 —— 哪个 agent 干的。 */
+  actor: string;
+  tool: string;
+  level: 'read' | 'write';
+  ok: boolean;
+  summary: string;
+  detail: string;
+};
+
+export async function getAgentOps(limit = 120): Promise<AgentOp[]> {
+  const res = await get<AgentOp[]>('/agent/ops', { limit });
+  if (!res.success || !res.data) throw new Error(res.message || 'Failed');
+  return res.data;
+}
+
 /**
  * 技能原文。
  *
@@ -51,4 +70,3 @@ export async function getSkill(): Promise<SkillInfo> {
   const res = (await get<SkillInfo>('/skill')) as unknown as SkillInfo;
   return { name: res?.name ?? '', filename: res?.filename ?? '', content: res?.content ?? '' };
 }
-

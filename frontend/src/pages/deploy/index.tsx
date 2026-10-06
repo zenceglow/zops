@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   CheckCircle2,
   CircleDashed,
@@ -41,13 +42,17 @@ import {
   type DeployRun,
 } from './_api';
 
-const SCRIPT_TEMPLATE = `# 在 /opt/docker-apps/<服务名>/ 里执行（工作目录就是这个目录，开头等于已经 set -e）
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+/** 部署脚本的参考模板。第一行注释跟着界面语言走，其余是 shell。 */
+function scriptTemplate(t: TFunc): string {
+  return `${t('deploy.template_head')}
 tar zxvf package.tgz -C ./
 rm -rf ./bin
-mv -f ./服务名/* ./
-docker build -t 服务名 .
-docker compose up -d --build
-`;
+mv -f ./<name>/* ./
+docker build -t <name> .
+docker compose up -d --build`;
+}
 
 function human(bytes: number): string {
   if (bytes >= 1 << 30) return `${(bytes / (1 << 30)).toFixed(1)} GB`;
@@ -56,24 +61,25 @@ function human(bytes: number): string {
   return `${bytes} B`;
 }
 
-function when(iso?: string | null): string {
+function when(iso: string | null | undefined, t: TFunc): string {
   if (!iso) return '—';
   // SQLite 给的是 UTC 的 "YYYY-MM-DD HH:MM:SS"，补上 Z 再本地化。
   const d = new Date(iso.replace(' ', 'T') + 'Z');
   if (Number.isNaN(d.getTime())) return iso;
   const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 60) return '刚刚';
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+  if (diff < 60) return t('deploy.just_now');
+  if (diff < 3600) return t('deploy.minutes_ago', { n: Math.floor(diff / 60) });
+  if (diff < 86400) return t('deploy.hours_ago', { n: Math.floor(diff / 3600) });
   return d.toLocaleString();
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const map: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-    success: { label: '成功', className: 'text-emerald-600', icon: CheckCircle2 },
-    failed: { label: '失败', className: 'text-destructive', icon: XCircle },
-    running: { label: '部署中', className: 'text-amber-600', icon: Loader2 },
-    draft: { label: '待部署', className: 'text-muted-foreground', icon: CircleDashed },
+    success: { label: t('deploy.status_success'), className: 'text-emerald-600', icon: CheckCircle2 },
+    failed: { label: t('deploy.status_failed'), className: 'text-destructive', icon: XCircle },
+    running: { label: t('deploy.status_running'), className: 'text-amber-600', icon: Loader2 },
+    draft: { label: t('deploy.status_draft'), className: 'text-muted-foreground', icon: CircleDashed },
   };
   const it = map[status] ?? map.draft;
   const Icon = it.icon;
@@ -86,6 +92,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function DeployPage() {
+  const { t } = useTranslation();
   const [jobs, setJobs] = useState<DeployJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -147,7 +154,9 @@ export default function DeployPage() {
           await refresh();
           if (selected) setRuns(await listRuns(selected.id));
           toast[chunk.exit_code === 0 ? 'success' : 'error'](
-            chunk.exit_code === 0 ? '部署完成' : `部署失败（退出码 ${chunk.exit_code ?? '?'}）`,
+            chunk.exit_code === 0
+              ? t('deploy.done')
+              : t('deploy.run_failed', { code: chunk.exit_code ?? '?' }),
           );
         }
       } catch {
@@ -169,7 +178,7 @@ export default function DeployPage() {
       setNewNote('');
       await refresh();
       setSelectedId(job.id);
-      toast.success(`已创建 ${job.name}，目录 ${job.dir}`);
+      toast.success(t('deploy.created', { name: job.name, dir: job.dir }));
     } catch (e) {
       toast.error(String((e as Error).message));
     } finally {
@@ -185,7 +194,7 @@ export default function DeployPage() {
         await uploadFile(selected.id, file.name, file, (loaded, total) =>
           setUploadPct(Math.round((loaded / total) * 100)),
         );
-        toast.success(`已上传 ${file.name}`);
+        toast.success(t('deploy.uploaded', { name: file.name }));
       } catch (e) {
         toast.error(`${file.name}：${(e as Error).message}`);
       } finally {
@@ -201,7 +210,7 @@ export default function DeployPage() {
     try {
       await saveScript(selected.id, script);
       await refresh();
-      toast.success('部署脚本已保存');
+      toast.success(t('deploy.saved'));
     } catch (e) {
       toast.error(String((e as Error).message));
     } finally {
@@ -224,12 +233,12 @@ export default function DeployPage() {
 
   const onDeleteJob = async () => {
     if (!selected) return;
-    if (!window.confirm(`删除部署任务「${selected.name}」？目录和产物会留在服务器上。`)) return;
+    if (!window.confirm(t('deploy.confirm_delete', { name: selected.name }))) return;
     try {
       await deleteJob(selected.id);
       setSelectedId(null);
       await refresh();
-      toast.success('已删除记录');
+      toast.success(t('deploy.deleted'));
     } catch (e) {
       toast.error(String((e as Error).message));
     }
@@ -238,7 +247,7 @@ export default function DeployPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight">部署</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t('deploy.title')}</h1>
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-48 w-full" />
       </div>
@@ -249,15 +258,12 @@ export default function DeployPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">部署</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            一个部署任务 = <span className="font-mono">/opt/docker-apps/&lt;服务名&gt;/</span> 目录 +
-            产物 + 部署脚本。三步走：传产物 → 写脚本 → 执行；每次执行都留记录。
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('deploy.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('deploy.subtitle')}</p>
         </div>
         <Button size="sm" onClick={() => setCreating(true)}>
           <Plus />
-          新建部署任务
+          {t('deploy.new')}
         </Button>
       </div>
 
@@ -265,11 +271,9 @@ export default function DeployPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Rocket className="size-6 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              还没有部署任务。新建一个，它会替你在服务器上建好专属目录。
-            </p>
+            <p className="text-sm text-muted-foreground">{t('deploy.empty')}</p>
             <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
-              新建部署任务
+              {t('deploy.new')}
             </Button>
           </CardContent>
         </Card>
@@ -299,7 +303,9 @@ export default function DeployPage() {
                   <StatusBadge status={job.status} />
                 </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  {job.last_run_at ? when(job.last_run_at) : '还没部署过'}
+                  {job.last_run_at
+                    ? when(job.last_run_at, t)
+                    : t('deploy.never_deployed')}
                 </p>
               </button>
             ))}
@@ -320,11 +326,11 @@ export default function DeployPage() {
                     <p className="text-xs text-muted-foreground">{selected.note}</p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    创建人 {selected.actor}
+                    {t('deploy.created_by', { who: selected.actor })}
                     {selected.container_name && (
                       <>
-                        {' · 容器 '}
-                        <span className="font-mono">{selected.container_name}</span>
+                        {' · '}
+                        {t('deploy.container', { name: selected.container_name })}
                       </>
                     )}
                   </p>
@@ -338,7 +344,7 @@ export default function DeployPage() {
                     <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[11px]">
                       1
                     </span>
-                    上传产物
+                    {t('deploy.step1')}
                   </div>
                   <label
                     onDragOver={(e) => e.preventDefault()}
@@ -350,7 +356,7 @@ export default function DeployPage() {
                   >
                     <Upload className="size-4 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">
-                      拖文件进来，或点击选择（产物、compose、配置都行）
+                      {t('deploy.step1_hint')}
                     </span>
                     <input
                       type="file"
@@ -360,7 +366,9 @@ export default function DeployPage() {
                     />
                   </label>
                   {uploadPct !== null && (
-                    <p className="text-xs text-muted-foreground">上传中 {uploadPct}%</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('deploy.uploading', { pct: uploadPct })}
+                    </p>
                   )}
                   {selected.files.length > 0 && (
                     <ul className="divide-y divide-border/60 text-xs">
@@ -369,11 +377,11 @@ export default function DeployPage() {
                           <span className="flex-1 truncate font-mono">{f.path}</span>
                           <span className="text-muted-foreground">{human(f.size)}</span>
                           <span className="hidden text-muted-foreground sm:inline">
-                            {f.uploaded_by} · {when(f.uploaded_at)}
+                            {f.uploaded_by} · {when(f.uploaded_at, t)}
                           </span>
                           <button
                             type="button"
-                            aria-label={`删除 ${f.path}`}
+                            aria-label={t('deploy.delete_file', { path: f.path })}
                             className="text-muted-foreground hover:text-destructive"
                             onClick={() =>
                               void deleteFile(selected.id, f.path).then(refresh)
@@ -396,19 +404,19 @@ export default function DeployPage() {
                       <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[11px]">
                         2
                       </span>
-                      部署脚本
+                      {t('deploy.step2')}
                     </div>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setScript(SCRIPT_TEMPLATE)}
+                        onClick={() => setScript(scriptTemplate(t))}
                       >
-                        填入参考模板
+                        {t('deploy.fill_template')}
                       </Button>
                       <Button size="sm" variant="outline" onClick={onSaveScript} disabled={savingScript}>
                         <Save />
-                        保存
+                        {t('deploy.save')}
                       </Button>
                     </div>
                   </div>
@@ -431,17 +439,18 @@ export default function DeployPage() {
                       <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[11px]">
                         3
                       </span>
-                      执行部署
+                      {t('deploy.step3')}
                     </div>
                     <Button
                       size="sm"
                       onClick={() => {
-                        if (window.confirm(`在 ${selected.dir} 里执行部署脚本？`)) void onRun();
+                        if (window.confirm(t('deploy.confirm_run', { dir: selected.dir })))
+                          void onRun();
                       }}
                       disabled={!!activeRun || !script.trim()}
                     >
                       {activeRun ? <Loader2 className="animate-spin" /> : <Play />}
-                      {activeRun ? '部署中…' : '执行部署'}
+                      {activeRun ? t('deploy.running') : t('deploy.run')}
                     </Button>
                   </div>
                   {log && (
@@ -458,9 +467,9 @@ export default function DeployPage() {
               {/* 记录 */}
               <Card>
                 <CardContent className="space-y-2 pt-5">
-                  <div className="text-sm font-medium">部署记录</div>
+                  <div className="text-sm font-medium">{t('deploy.records')}</div>
                   {runs.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">还没有执行过。</p>
+                    <p className="text-xs text-muted-foreground">{t('deploy.no_records')}</p>
                   ) : (
                     <ul className="divide-y divide-border/60">
                       {runs.map((run) => (
@@ -471,14 +480,18 @@ export default function DeployPage() {
                               {run.actor}
                               {run.actor_kind === 'agent' ? '（agent）' : ''}
                             </span>
-                            <span className="text-muted-foreground">{when(run.started_at)}</span>
+                            <span className="text-muted-foreground">
+                              {when(run.started_at, t)}
+                            </span>
                             {run.duration_ms != null && (
                               <span className="text-muted-foreground">
                                 {(run.duration_ms / 1000).toFixed(1)}s
                               </span>
                             )}
                             {run.exit_code != null && run.exit_code !== 0 && (
-                              <span className="text-destructive">exit {run.exit_code}</span>
+                              <span className="text-destructive">
+                                {t('deploy.exit_code', { code: run.exit_code })}
+                              </span>
                             )}
                           </div>
                           {run.output && (
@@ -500,15 +513,12 @@ export default function DeployPage() {
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>新建部署任务</DialogTitle>
-            <DialogDescription>
-              会在服务器上创建 <span className="font-mono">/opt/docker-apps/&lt;服务名&gt;/</span>
-              。服务名同时用作目录名、容器名和镜像名。
-            </DialogDescription>
+            <DialogTitle>{t('deploy.new')}</DialogTitle>
+            <DialogDescription>{t('deploy.dir_hint')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="deploy-name">服务名</Label>
+              <Label htmlFor="deploy-name">{t('deploy.name')}</Label>
               <Input
                 id="deploy-name"
                 value={newName}
@@ -518,21 +528,21 @@ export default function DeployPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="deploy-note">备注（可选）</Label>
+              <Label htmlFor="deploy-note">{t('deploy.note')}</Label>
               <Input
                 id="deploy-note"
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
-                placeholder="这次部署是干什么的"
+                placeholder={t('deploy.note_placeholder')}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCreating(false)}>
-              取消
+              {t('deploy.cancel')}
             </Button>
             <Button onClick={onCreate} disabled={busy || !newName.trim()}>
-              创建
+              {t('deploy.create')}
             </Button>
           </DialogFooter>
         </DialogContent>

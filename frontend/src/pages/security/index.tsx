@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
   Bug,
@@ -30,26 +31,25 @@ import {
 
 type Tab = 'firewall' | 'ssh' | 'alerts';
 
-const TABS: { id: Tab; label: string; icon: typeof ShieldCheck }[] = [
-  { id: 'firewall', label: '防火墙', icon: ShieldCheck },
-  { id: 'ssh', label: '端口访问记录', icon: Terminal },
-  { id: 'alerts', label: '攻击 / 机器访问预警', icon: AlertTriangle },
+const TABS: { id: Tab; labelKey: string; icon: typeof ShieldCheck }[] = [
+  { id: 'firewall', labelKey: 'security.tab_firewall', icon: ShieldCheck },
+  { id: 'ssh', labelKey: 'security.tab_ssh', icon: Terminal },
+  { id: 'alerts', labelKey: 'security.tab_alerts', icon: AlertTriangle },
 ];
 
 export default function SecurityPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('firewall');
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">安全中心</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          这台机器被谁敲过门、敲的是什么、以及它现在对外露着哪些端口。
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">{t('security.title')}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t('security.subtitle')}</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {TABS.map(({ id, label, icon: Icon }) => (
+        {TABS.map(({ id, labelKey, icon: Icon }) => (
           <button
             key={id}
             type="button"
@@ -60,7 +60,7 @@ export default function SecurityPage() {
             )}
           >
             <Icon className="size-3.5" />
-            {label}
+            {t(labelKey)}
           </button>
         ))}
       </div>
@@ -75,6 +75,7 @@ export default function SecurityPage() {
 /* ── 防火墙：现状 + 暴露面 ── */
 
 function FirewallTab() {
+  const { t } = useTranslation();
   const [fw, setFw] = useState<Firewall | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -104,24 +105,24 @@ function FirewallTab() {
           </div>
           <div>
             <p className="text-sm font-medium">
-              {fw.tool ? `${fw.tool}` : '没有检测到防火墙'}
+              {fw.tool ? `${fw.tool}` : t('security.fw_none')}
               <span className="ml-2 text-xs font-normal text-muted-foreground">
-                {fw.active ? '运行中' : '未启用'}
+                {fw.active ? t('security.fw_running') : t('security.fw_stopped')}
               </span>
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">{fw.summary}</p>
           </div>
           <p className="ml-auto text-xs text-muted-foreground">
-            对外监听 <span className="font-mono text-foreground">{exposed.length}</span> 个端口
+            {t('security.exposed_count', { n: exposed.length })}
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardContent className="space-y-2 pt-5">
-          <p className="text-sm font-medium">对外暴露的端口</p>
+          <p className="text-sm font-medium">{t('security.exposed_title')}</p>
           {exposed.length === 0 ? (
-            <p className="text-xs text-muted-foreground">没有绑在 0.0.0.0 上的监听端口。</p>
+            <p className="text-xs text-muted-foreground">{t('security.exposed_empty')}</p>
           ) : (
             <ul className="divide-y divide-border/60 text-xs">
               {exposed.map((p) => (
@@ -130,9 +131,7 @@ function FirewallTab() {
                   <span className="w-20 text-muted-foreground">{p.address}</span>
                   <span className="flex-1 truncate">
                     {p.container ? (
-                      <>
-                        容器 <span className="font-mono">{p.container}</span>
-                      </>
+                      <span className="font-mono">{p.container}</span>
                     ) : (
                       <span className="font-mono">{p.process}</span>
                     )}
@@ -141,23 +140,20 @@ function FirewallTab() {
               ))}
             </ul>
           )}
-          <p className="pt-1 text-[11px] text-muted-foreground">
-            只绑在 127.0.0.1 上的服务不算对外暴露，这里没列出来。
-          </p>
+          <p className="pt-1 text-[11px] text-muted-foreground">{t('security.exposed_note')}</p>
         </CardContent>
       </Card>
 
       {fw.rules.length > 0 && (
         <Card>
           <CardContent className="space-y-2 pt-5">
-            <p className="text-sm font-medium">规则（末尾 {fw.rules.length} 行）</p>
+            <p className="text-sm font-medium">
+              {t('security.rules_title', { n: fw.rules.length })}
+            </p>
             <pre className="max-h-72 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-relaxed">
               {fw.rules.join('\n')}
             </pre>
-            <p className="text-[11px] text-muted-foreground">
-              这里只是把规则读出来看。改规则还没做 —— 那要按发行版选后端，还得防着把
-              自己锁在门外。
-            </p>
+            <p className="text-[11px] text-muted-foreground">{t('security.rules_note')}</p>
           </CardContent>
         </Card>
       )}
@@ -167,13 +163,14 @@ function FirewallTab() {
 
 /* ── 端口访问记录（22 / sshd） ── */
 
-const RESULT_LABEL: Record<string, { text: string; className: string }> = {
-  accepted: { text: '成功', className: 'text-emerald-600' },
-  failed: { text: '失败', className: 'text-destructive' },
-  invalid: { text: '无效用户', className: 'text-amber-600' },
+const RESULT_LABEL: Record<string, { key: string; className: string }> = {
+  accepted: { key: 'security.result_accepted', className: 'text-emerald-600' },
+  failed: { key: 'security.result_failed', className: 'text-destructive' },
+  invalid: { key: 'security.result_invalid', className: 'text-amber-600' },
 };
 
 function SshTab() {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState<SshSummary | null>(null);
   const [records, setRecords] = useState<SshRecord[]>([]);
   const [filter, setFilter] = useState('');
@@ -196,10 +193,12 @@ function SshTab() {
     setScanning(true);
     try {
       const res = await scanNow();
-      if (!res.success) throw new Error(res.message || '采集失败');
+      if (!res.success) throw new Error(res.message || t('security.scan_failed'));
       await load();
       toast.success(
-        res.data?.inserted ? `读到 ${res.data.inserted} 条新记录` : '没有新的记录',
+        res.data?.inserted
+          ? t('security.scan_new', { n: res.data.inserted })
+          : t('security.scan_none'),
       );
     } catch (e) {
       toast.error(String((e as Error).message));
@@ -213,16 +212,16 @@ function SshTab() {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-4">
-        <Stat label="成功登录" value={summary?.accepted ?? 0} tone="ok" />
-        <Stat label="失败尝试" value={summary?.failed ?? 0} tone="bad" />
-        <Stat label="无效用户" value={summary?.invalid ?? 0} tone="warn" />
-        <Stat label="来源 IP" value={summary?.ips ?? 0} />
+        <Stat label={t('security.ssh_accepted')} value={summary?.accepted ?? 0} tone="ok" />
+        <Stat label={t('security.ssh_failed')} value={summary?.failed ?? 0} tone="bad" />
+        <Stat label={t('security.ssh_invalid')} value={summary?.invalid ?? 0} tone="warn" />
+        <Stat label={t('security.ssh_ips')} value={summary?.ips ?? 0} />
       </div>
 
       {(summary?.top_failed.length ?? 0) > 0 && (
         <Card>
           <CardContent className="space-y-2 pt-5">
-            <p className="text-sm font-medium">敲门最多的 IP（近 7 天）</p>
+            <p className="text-sm font-medium">{t('security.ssh_top')}</p>
             <div className="flex flex-wrap gap-2">
               {summary!.top_failed.map((t) => (
                 <span
@@ -241,7 +240,7 @@ function SshTab() {
       <Card>
         <CardContent className="space-y-3 pt-5">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium">登录记录</p>
+            <p className="text-sm font-medium">{t('security.ssh_records')}</p>
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {['', 'accepted', 'failed', 'invalid'].map((r) => (
                 <Button
@@ -250,29 +249,28 @@ function SshTab() {
                   variant={filter === r ? 'default' : 'outline'}
                   onClick={() => setFilter(r)}
                 >
-                  {r === '' ? '全部' : RESULT_LABEL[r].text}
+                  {r === '' ? t('security.filter_all') : t(RESULT_LABEL[r].key)}
                 </Button>
               ))}
               <Button size="sm" variant="outline" onClick={scan} disabled={scanning}>
                 {scanning ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                立刻采集
+                {t('security.scan')}
               </Button>
             </div>
           </div>
 
           {records.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              没有记录。日志文件（/var/log/secure 或 /var/log/auth.log）里暂时没有
-              sshd 的认证行，或者这个面板读不到它。
-            </p>
+            <p className="text-xs text-muted-foreground">{t('security.ssh_empty')}</p>
           ) : (
             <ul className="divide-y divide-border/60 text-xs">
               {records.map((r) => {
-                const label = RESULT_LABEL[r.result] ?? { text: r.result, className: '' };
+                const entry = RESULT_LABEL[r.result];
+                const label = entry ? t(entry.key) : r.result;
+                const className = entry?.className ?? '';
                 return (
                   <li key={r.id} className="flex items-center gap-3 py-2">
                     <span className="w-32 shrink-0 text-muted-foreground">{r.time}</span>
-                    <span className={cn('w-16 shrink-0', label.className)}>{label.text}</span>
+                    <span className={cn('w-16 shrink-0', className)}>{label}</span>
                     <span className="w-32 shrink-0 font-mono">{r.ip}</span>
                     <span className="w-24 shrink-0 truncate">
                       {r.user || '—'}
@@ -294,13 +292,14 @@ function SshTab() {
 
 /* ── 预警 ── */
 
-const KIND_LABEL: Record<string, { text: string; className: string; icon: typeof Bug }> = {
-  blocked: { text: '被拦下', className: 'bg-destructive/10 text-destructive', icon: ShieldOff },
-  bot: { text: '扫描器', className: 'bg-amber-500/10 text-amber-600', icon: Bug },
-  probe: { text: '探测敏感路径', className: 'bg-sky-500/10 text-sky-600', icon: AlertTriangle },
+const KIND_LABEL: Record<string, { key: string; className: string; icon: typeof Bug }> = {
+  blocked: { key: 'security.kind_blocked', className: 'bg-destructive/10 text-destructive', icon: ShieldOff },
+  bot: { key: 'security.kind_bot', className: 'bg-amber-500/10 text-amber-600', icon: Bug },
+  probe: { key: 'security.kind_probe', className: 'bg-sky-500/10 text-sky-600', icon: AlertTriangle },
 };
 
 function AlertsTab() {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState<SecuritySummary | null>(null);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [kind, setKind] = useState('');
@@ -327,17 +326,15 @@ function AlertsTab() {
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        从接入日志里挑出来的可疑访问，按「IP + 类型 + 路径 + 小时」聚合。近 24 小时：
-        <span className="mx-1 font-mono text-foreground">{total}</span>条，涉及
-        <span className="mx-1 font-mono text-foreground">{summary?.ips ?? 0}</span>个 IP。
+        {t('security.alerts_intro', { total, ips: summary?.ips ?? 0 })}
       </p>
 
       <div className="flex flex-wrap gap-2">
         {[
-          { id: '', label: `全部 ${total}` },
-          { id: 'blocked', label: `被拦下 ${summary?.blocked ?? 0}` },
-          { id: 'bot', label: `扫描器 ${summary?.bot ?? 0}` },
-          { id: 'probe', label: `探测路径 ${summary?.probe ?? 0}` },
+          { id: '', label: `${t('security.filter_all')} ${total}` },
+          { id: 'blocked', label: `${t('security.kind_blocked')} ${summary?.blocked ?? 0}` },
+          { id: 'bot', label: `${t('security.kind_bot')} ${summary?.bot ?? 0}` },
+          { id: 'probe', label: `${t('security.kind_probe')} ${summary?.probe ?? 0}` },
         ].map((f) => (
           <Button
             key={f.id || 'all'}
@@ -353,16 +350,17 @@ function AlertsTab() {
       {events.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            没有预警。要么访问量本来就干净，要么采集还没跑过第一轮（访问日志采集每 15 秒一次）。
+            {t('security.alerts_empty')}
           </CardContent>
         </Card>
       ) : (
         <ul className="space-y-2">
           {events.map((e) => {
-            const meta = KIND_LABEL[e.kind] ?? {
-              text: e.kind,
-              className: 'bg-muted',
-              icon: AlertTriangle,
+            const entry = KIND_LABEL[e.kind];
+            const meta = {
+              text: entry ? t(entry.key) : e.kind,
+              className: entry?.className ?? 'bg-muted',
+              icon: entry?.icon ?? AlertTriangle,
             };
             const Icon = meta.icon;
             const expanded = open === e.id;
@@ -400,13 +398,13 @@ function AlertsTab() {
                 </button>
                 {expanded && (
                   <div className="space-y-1.5 border-t border-border/60 px-4 py-3 text-[11px]">
-                    <Row k="原因" v={e.reason} />
-                    <Row k="主机" v={e.host || '—'} />
-                    <Row k="请求" v={`${e.method} ${e.uri} → ${e.status}`} />
-                    <Row k="User-Agent" v={e.ua || '—'} />
-                    <Row k="次数" v={`${e.hits} 次`} />
-                    <Row k="首次" v={e.first_seen} />
-                    <Row k="最近" v={e.last_seen} />
+                    <Row k={t('security.detail_reason')} v={e.reason} />
+                    <Row k={t('security.detail_host')} v={e.host || '—'} />
+                    <Row k={t('security.detail_request')} v={`${e.method} ${e.uri} → ${e.status}`} />
+                    <Row k={t('security.detail_ua')} v={e.ua || '—'} />
+                    <Row k={t('security.detail_hits')} v={t('security.hits', { n: e.hits })} />
+                    <Row k={t('security.detail_first')} v={e.first_seen} />
+                    <Row k={t('security.detail_last')} v={e.last_seen} />
                   </div>
                 )}
               </li>

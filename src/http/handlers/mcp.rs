@@ -10,13 +10,14 @@ use std::sync::Arc;
 
 use axum::{
     body::Bytes,
-    extract::{ConnectInfo, Extension, State},
+    extract::{ConnectInfo, Extension, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::domain::auth::{AuthUser, Claims};
@@ -30,7 +31,7 @@ use crate::domain::permission::{
 use crate::domain::token::TOKEN_PREFIX;
 use crate::http::handlers::automation::execute_command;
 use crate::http::AppState;
-use crate::shared::AppError;
+use crate::shared::{ApiResponse, AppError};
 
 // ─────────────────────────── principal ───────────────────────────
 
@@ -1012,9 +1013,12 @@ fn audit_tool_call(
     let Some(def) = tool_catalog().into_iter().find(|t| t.name == tool) else {
         return;
     };
-    if tool_level(&def) == "read" {
-        return;
-    }
+    // 读调用也记。
+    //
+    // 以前只记写操作，理由是"一次排障能调十几次只读工具，会把要紧的行淹掉"。但
+    // MCP 页上要的是"这个 agent 到底干了什么"的完整流水 —— 只记写操作，用户看到的
+    // 是一段段断掉的历史。面板的审计接口照旧支持按 level 过滤，真嫌吵的时候过滤就行。
+    let level = tool_level(&def);
 
     // 日志里写令牌的名字而不是 id：出事时看的是"哪个 agent 干的"。
     let (actor, kind) = principal_actor(state, principal);
@@ -1028,7 +1032,10 @@ fn audit_tool_call(
         "MCP",
         tool,
         if failed { 500 } else { 200 },
-        &format!("MCP 调用工具 {tool}"),
+        &format!(
+            "MCP {} {tool}",
+            if level == "write" { "写操作" } else { "只读查询" }
+        ),
         &detail,
         0,
     );
@@ -1110,7 +1117,57 @@ async fn tool_list(
 
 /// 挂在面板 JWT 组里（见 http/mod.rs），由鉴权中间件负责认证。
 pub fn catalog_routes() -> Router<Arc<AppState>> {
-    Router::new().route("/tools", get(tool_list))
+    Router::new()
+        .route("/tools", get(tool_list))
+        .route("/ops", get(agent_ops))
+}
+
+#[derive(Deserialize)]
+pub struct AgentOpsQuery {
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
+/// agent 在这个面板上干过什么 —— MCP 页的"操作日志"。
+///
+/// 数据就是审计日志里 `actor_kind = agent` 的那些行（MCP 是目前唯一的 agent 入口），
+/// 这里额外把工具的读写级别算出来：一眼能看出哪几行动了服务器。
+///
+/// 要 `nav.agent`：这是看"agent 干了什么"的入口，能打开 MCP 页的人就该看得到它干过什么。
+async fn agent_ops(
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    Query(q): Query<AgentOpsQuery>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    if !user.has(crate::domain::permission::NAV_AGENT) {
+        return Err(AppError::forbidden("没有权限查看 agent 的操作记录"));
+    }
+    let limit = q.limit.unwrap_or(120).clamp(1, 500);
+    let catalog = tool_catalog();
+    let ops: Vec<Value> = state
+        .audit
+        .list(limit, Some("agent"))?
+        .into_iter()
+        .filter(|r| r.method == "MCP")
+        .map(|r| {
+            let level = catalog
+                .iter()
+                .find(|t| t.name == r.path)
+                .map(tool_level)
+                .unwrap_or("write");
+            json!({
+                "id": r.id,
+                "at": r.at,
+                "actor": r.actor,
+                "tool": r.path,
+                "level": level,
+                "ok": r.status < 400,
+                "summary": r.summary,
+                "detail": r.detail,
+            })
+        })
+        .collect();
+    Ok(Json(ApiResponse::ok(json!(ops))))
 }
 
 pub fn mcp_routes() -> Router<Arc<AppState>> {

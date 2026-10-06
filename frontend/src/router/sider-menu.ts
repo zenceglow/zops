@@ -65,7 +65,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     items: [
       { path: '/ssh', labelKey: 'nav.ssh', icon: Icons.NavSshIcon, perm: Perm.NAV_SSH },
       { path: '/files', labelKey: 'nav.files', icon: Icons.NavFilesIcon, perm: Perm.NAV_FILES },
-      { path: '/deploy', labelKey: 'nav.deploy', icon: Icons.NavDeployIcon, perm: Perm.OPS_DEPLOY },
+      { path: '/deploy', labelKey: 'nav.apps', icon: Icons.NavDeployIcon, perm: Perm.OPS_DEPLOY },
       { path: '/logs', labelKey: 'nav.logs', icon: Icons.NavLogViewerIcon, perm: Perm.NAV_LOG_VIEWER },
       { path: '/agent', labelKey: 'nav.agent', icon: Icons.NavAgentIcon, perm: Perm.NAV_AGENT },
       { path: '/notify', labelKey: 'nav.notify', icon: Icons.NavNotifyIcon, perm: Perm.NAV_NOTIFY },

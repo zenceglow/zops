@@ -83,7 +83,9 @@ function DialogContent({
         className={cn(
           // 20px 圆角 + 实阴影：之前只有一圈 10% 的描边、没有投影，浮在蒙层上像贴纸
           // 而不是"盖在上面的一层"。
-          "fixed top-1/2 left-1/2 z-[100] grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[20px] bg-popover p-4 text-sm text-popover-foreground shadow-2xl shadow-black/40 ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // max-h + overflow-y-auto：弹窗内容一多（比如"连接已创建"里两块配置）
+          // 就会顶出屏幕、上下都够不着。限高并让内容自己滚，弹窗框永远在视口里。
+          "fixed top-1/2 left-1/2 z-[100] grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-[20px] bg-popover p-4 text-sm text-popover-foreground shadow-2xl shadow-black/40 ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

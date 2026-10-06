@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Globe } from 'lucide-react';
+import { ChevronRight, Globe } from 'lucide-react';
 import { SiteGlyph } from '../../../components/site-glyph';
 import { Skeleton } from '../../../components/ui/skeleton';
 import type { GatewayStatus, SiteEntry } from '../../sites/_api';
@@ -57,7 +57,7 @@ export function GatewayEntry({
           className="group ml-auto inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {status.installed ? t('entry.manage') : t('entry.enable')}
-          <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+          <ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
 

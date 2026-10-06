@@ -1,5 +1,6 @@
 import { get, post } from '../../../lib/api';
 import type { ApiResultType } from '../../../lib/types/api-response';
+import i18n from '../../../i18n/i18n';
 
 export type ExposedPort = {
   port: number;
@@ -65,7 +66,7 @@ export type SshSummary = {
 
 async function one<T>(p: Promise<ApiResultType<T>>): Promise<T> {
   const res = await p;
-  if (!res.success || res.data === undefined) throw new Error(res.message || '读取失败');
+  if (!res.success || res.data === undefined) throw new Error(res.message || i18n.t('security.load_failed'));
   return res.data;
 }
 

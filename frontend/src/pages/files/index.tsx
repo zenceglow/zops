@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Activity,
   Check,
   ClipboardCopy,
   File as FileIcon,
@@ -32,11 +34,13 @@ import {
 } from '../../components/ui/dialog';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
 import { Skeleton } from '../../components/ui/skeleton';
 import { toast } from '../../components/ui/sonner';
 import { cn } from '../../lib/utils';
 import { copyText } from '../../lib/clipboard';
 import { RowMenu, type RowAction } from './_components/row-menu';
+import { addLogSource } from '../logs/_api';
 import {
   copyPaths,
   emptyTrash,
@@ -138,6 +142,11 @@ export default function FilesPage() {
   const [view, setView] = useState<'browse' | 'trash'>('browse');
   const [trash, setTrash] = useState<TrashItem[]>([]);
   const [pending, setPending] = useState<Pending | null>(null);
+  /** 点了「创建日志监控」的那个文件。 */
+  const [logTarget, setLogTarget] = useState<FileEntry | null>(null);
+  const [logName, setLogName] = useState('');
+  const [logBusy, setLogBusy] = useState(false);
+  const navigate = useNavigate();
 
   // 前进/后退栈。用下标而不是两个数组，来回切换时才不会越走越乱。
   const [history, setHistory] = useState<string[]>([path]);
@@ -403,6 +412,24 @@ export default function FilesPage() {
     );
   };
 
+  /** 把当前这个文件登记成日志卡片，建完直接把人领到日志页。 */
+  const createLogMonitor = async () => {
+    if (!logTarget) return;
+    setLogBusy(true);
+    try {
+      const res = await addLogSource(logTarget.path, logName.trim());
+      if (!res.success) throw new Error(res.message || t('logs.add_failed'));
+      setLogTarget(null);
+      toast.success(t('logs.create_monitor_done'), {
+        action: { label: t('logs.view_logs'), onClick: () => navigate('/logs') },
+      });
+    } catch (e) {
+      toast.error(String((e as Error).message));
+    } finally {
+      setLogBusy(false);
+    }
+  };
+
   /** 一行能做什么。菜单和批量按钮共用同一份定义，不会两边对不上。 */
   const entryActions = (entry: FileEntry): RowAction[] => [
     {
@@ -410,6 +437,19 @@ export default function FilesPage() {
       icon: entry.kind === 'dir' ? FolderOpen : FileText,
       onSelect: () => openRow(entry),
     },
+    // 文件多给一条捷径：不用再跑到日志页手动敲一遍路径。
+    ...(entry.kind !== 'dir' && canMonitor(entry.name)
+      ? [
+          {
+            label: t('logs.create_monitor'),
+            icon: Activity,
+            onSelect: () => {
+              setLogName(suggestLogName(entry));
+              setLogTarget(entry);
+            },
+          },
+        ]
+      : []),
     { label: t('files.copy_path'), icon: ClipboardCopy, separated: true, onSelect: () => void copyOnePath(entry.path) },
     { label: t('files.copy'), icon: Copy, onSelect: () => copyToClipboard([entry.path]) },
     { label: t('files.cut'), icon: Scissors, onSelect: () => cutToClipboard([entry.path]) },
@@ -863,6 +903,75 @@ export default function FilesPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 从文件直接建一张日志卡片。路径已经在手上，别再让人跑过去敲一遍。 */}
+      <Dialog open={!!logTarget} onOpenChange={(o) => !o && setLogTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('logs.create_monitor')}</DialogTitle>
+            <DialogDescription>{t('logs.create_monitor_desc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>{t('logs.path')}</Label>
+              <p className="truncate rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1.5 font-mono text-xs">
+                {logTarget?.path}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="log-card-name">{t('logs.name')}</Label>
+              <Input
+                id="log-card-name"
+                value={logName}
+                autoFocus
+                onChange={(e) => setLogName(e.target.value)}
+                placeholder={t('logs.name_placeholder')}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setLogTarget(null)}>
+              {t('deploy.cancel')}
+            </Button>
+            <Button onClick={createLogMonitor} disabled={logBusy}>
+              {logBusy ? t('logs.creating') : t('logs.create_monitor')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+/** 文件名 → 卡片名：`front-server.json.log` → `front-server`，`access.txt` → `access`。 */
+function suggestLogName(entry: FileEntry): string {
+  const base = entry.name
+    .replace(/\.log(\.\d+)?$/i, '')
+    .replace(/\.(json|txt|out|err|ndjson|jsonl|text)$/i, '');
+  return base || entry.name;
+}
+
+/**
+ * 明显是二进制的才藏起"创建日志监控"，其余都给。
+ *
+ * 之前只认 `*.log`，于是 `.txt`、`.json`、`.out`、没有扩展名的都被挡了 ——
+ * 靠"猜这是不是日志"来决定给不给入口，只会一直有人问"txt 为什么没有"。
+ * 反过来按黑名单排掉明显看不了的（图片、压缩包、字体、可执行文件），
+ * 一条 `tail` 能看的东西就都留着了。
+ */
+const NOT_LOGGABLE = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp', 'tiff', 'heic',
+  'pdf', 'zip', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar', 'dmg', 'pkg', 'deb',
+  'rpm', 'apk', 'jar', 'war',
+  'mp3', 'mp4', 'mov', 'avi', 'mkv', 'wav', 'flac', 'webm',
+  'woff', 'woff2', 'ttf', 'otf', 'eot',
+  'so', 'dll', 'dylib', 'exe', 'bin', 'class', 'wasm', 'o', 'a',
+  'db', 'sqlite', 'sqlite3', 'mdb', 'dat',
+]);
+
+function canMonitor(name: string): boolean {
+  const dot = name.lastIndexOf('.');
+  // 没有扩展名的（Dockerfile、Makefile、bin/server…）一律允许。
+  if (dot <= 0) return true;
+  return !NOT_LOGGABLE.has(name.slice(dot + 1).toLowerCase());
 }

@@ -1,5 +1,6 @@
 import { del, get, post, put } from '../../lib/api';
 import useAuthorizeStore from '../../stores/authorize.store';
+import i18n from '../../i18n/i18n';
 
 /** 面板令牌存在 zustand 里（可能被 secure-storage 加密过），统一从这里取。 */
 function authHeader(): Record<string, string> {
@@ -59,30 +60,30 @@ export type RunLog = {
 
 export async function listJobs(): Promise<DeployJob[]> {
   const res = await get<DeployJob[]>('/deploy/jobs');
-  if (!res.success || !res.data) throw new Error(res.message || '读取部署任务失败');
+  if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.err_load'));
   return res.data;
 }
 
 export async function createJob(name: string, note: string): Promise<DeployJob> {
   const res = await post<DeployJob>('/deploy/jobs', { name, note, source: 'manual' });
-  if (!res.success || !res.data) throw new Error(res.message || '创建失败');
+  if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.create_failed'));
   return res.data;
 }
 
 export async function deleteJob(id: string): Promise<void> {
   const res = await del('/deploy/job', { id });
-  if (!res.success) throw new Error(res.message || '删除失败');
+  if (!res.success) throw new Error(res.message || i18n.t('deploy.err_delete'));
 }
 
 export async function saveScript(id: string, script: string): Promise<DeployJob> {
   const res = await put<DeployJob>('/deploy/job/script', { id, script });
-  if (!res.success || !res.data) throw new Error(res.message || '保存失败');
+  if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.err_save'));
   return res.data;
 }
 
 export async function deleteFile(id: string, path: string): Promise<DeployJob> {
   const res = await post<DeployJob>('/deploy/job/file', { id, path });
-  if (!res.success || !res.data) throw new Error(res.message || '删除失败');
+  if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.err_delete'));
   return res.data;
 }
 
@@ -91,19 +92,19 @@ export async function runJob(id: string): Promise<DeployRun> {
   const url = `/api/ops/deploy/job/run?id=${encodeURIComponent(id)}`;
   const res = await fetch(url, { method: 'POST', headers: authHeader() });
   const body = (await res.json()) as { success: boolean; message: string; data: DeployRun };
-  if (!body.success || !body.data) throw new Error(body.message || '执行失败');
+  if (!body.success || !body.data) throw new Error(body.message || i18n.t('deploy.err_run'));
   return body.data;
 }
 
 export async function listRuns(id: string, limit = 30): Promise<DeployRun[]> {
   const res = await get<DeployRun[]>('/deploy/job/runs', { id, limit });
-  if (!res.success || !res.data) throw new Error(res.message || '读取记录失败');
+  if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.err_runs'));
   return res.data;
 }
 
 export async function readRunLog(id: string, offset: number): Promise<RunLog> {
   const res = await get<RunLog>('/deploy/run/log', { id, offset });
-  if (!res.success || !res.data) throw new Error(res.message || '读取日志失败');
+  if (!res.success || !res.data) throw new Error(res.message || i18n.t('deploy.err_log'));
   return res.data;
 }
 
@@ -131,12 +132,12 @@ export function uploadFile(
       try {
         const body = JSON.parse(xhr.responseText) as { success: boolean; message: string };
         if (xhr.status >= 200 && xhr.status < 300 && body.success) resolve();
-        else reject(new Error(body.message || `上传失败（${xhr.status}）`));
+        else reject(new Error(body.message || i18n.t('deploy.err_upload', { code: xhr.status })));
       } catch {
-        reject(new Error(`上传失败（${xhr.status}）`));
+        reject(new Error(i18n.t('deploy.err_upload', { code: xhr.status })));
       }
     };
-    xhr.onerror = () => reject(new Error('网络错误，上传中断'));
+    xhr.onerror = () => reject(new Error(i18n.t('deploy.err_network')));
     xhr.send(file);
   });
 }

@@ -52,6 +52,9 @@ export function CapabilityGrid({ tools }: { tools: AgentTool[] }) {
       {sorted.map((tool) => {
         const Icon = iconFor(tool.name);
         const write = tool.level === 'write';
+        // 描述来自服务端工具目录（中文）。英文界面下用 tools.<name> 覆盖；
+        // 没覆盖到的（比如新加的工具）退回服务端那句 —— 宁可中文，也不要空着。
+        const description = t(`tools.${tool.name}`, { defaultValue: tool.description });
         return (
           <div
             key={tool.name}
@@ -67,7 +70,7 @@ export function CapabilityGrid({ tools }: { tools: AgentTool[] }) {
               <Icon className="size-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm leading-snug">{tool.description}</p>
+              <p className="text-sm leading-snug">{description}</p>
               {write && (
                 <Badge variant="secondary" className="mt-1.5 h-5 text-[10px]">
                   {t('mcp.write_badge')}
