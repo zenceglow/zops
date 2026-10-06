@@ -588,7 +588,7 @@
   },
   "cleanup": {
     "title": "Clean up",
-    "desc": "Only removes things nothing is using: dangling images, stopped containers, unused networks.",
+    "desc": "Only clears what nothing uses anymore: dangling images, unreferenced tagged images, build cache, stopped containers, unattached networks.",
     "junk_images": "Dangling images (untagged, unreferenced)",
     "junk_containers": "Stopped containers",
     "junk_networks": "Networks with no containers",
@@ -611,7 +611,7 @@
     "done_desc": "The cleanup has finished.",
     "done_body": "Removed {{count}} items",
     "close": "Done",
-    "junk_unused_images": "Tagged images no container uses (what prune -a removes, may include rollback backups)",
+    "junk_unused_images": "Tagged images no container uses (may include rollback backups)",
     "junk_build_cache": "Build cache (grows with every build, unrelated to containers)"
   },
   "profile": {

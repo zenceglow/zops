@@ -588,7 +588,7 @@
   },
   "cleanup": {
     "title": "垃圾清理",
-    "desc": "只清理没人还在用的东西：悬空镜像、已停止容器、没有接入的网络。",
+    "desc": "只清理没人还在用的东西：悬空镜像、没人引用的旧镜像、构建缓存、已停止容器、没接入的网络。",
     "junk_images": "悬空镜像（没标签、没容器引用）",
     "junk_containers": "已停止的容器",
     "junk_networks": "没有被接入的网络",
@@ -611,7 +611,7 @@
     "done_desc": "本次清理已结束。",
     "done_body": "删除 {{count}} 项",
     "close": "完成",
-    "junk_unused_images": "带了标签但没容器在用（prune -a 会删这些，可能包含回滚备份）",
+    "junk_unused_images": "带了标签但没容器在用（可能含回滚备份）",
     "junk_build_cache": "构建缓存（每次构建都会长大，与容器无关）"
   },
   "profile": {
