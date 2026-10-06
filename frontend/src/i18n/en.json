@@ -610,7 +610,9 @@
     "done_title": "Cleanup finished",
     "done_desc": "The cleanup has finished.",
     "done_body": "Removed {{count}} items",
-    "close": "Done"
+    "close": "Done",
+    "junk_unused_images": "Tagged images no container uses (what prune -a removes, may include rollback backups)",
+    "junk_build_cache": "Build cache (grows with every build, unrelated to containers)"
   },
   "profile": {
     "title": "Profile",

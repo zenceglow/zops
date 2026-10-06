@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, BrushCleaning, Check, HardDrive, Layers, Network } from 'lucide-react';
+import {
+  AlertTriangle,
+  BrushCleaning,
+  Check,
+  Hammer,
+  HardDrive,
+  Layers,
+  Network,
+  Package,
+} from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import {
   Dialog,
@@ -13,11 +22,13 @@ import {
 import { cn } from '../../../lib/utils';
 import { fetchJunk, pruneJunk, type JunkSummary } from '../../docker/containers/_api';
 
-type Choice = 'images' | 'containers' | 'networks';
+type Choice = 'images' | 'containers' | 'networks' | 'unused_images' | 'build_cache';
 type Phase = 'scan' | 'review' | 'confirm' | 'running' | 'done';
 
 const OPTIONS: { key: Choice; icon: typeof Layers; labelKey: string }[] = [
   { key: 'images', icon: Layers, labelKey: 'junk_images' },
+  { key: 'unused_images', icon: Package, labelKey: 'junk_unused_images' },
+  { key: 'build_cache', icon: Hammer, labelKey: 'junk_build_cache' },
   { key: 'containers', icon: HardDrive, labelKey: 'junk_containers' },
   { key: 'networks', icon: Network, labelKey: 'junk_networks' },
 ];
@@ -51,6 +62,9 @@ export function CleanupDialog() {
     images: true,
     containers: true,
     networks: false,
+    // 未使用的镜像里可能有回滚备份 tag，默认不勾；构建缓存只是重建慢一点，默认清。
+    unused_images: false,
+    build_cache: true,
   });
   const [freed, setFreed] = useState({ bytes: 0, count: 0 });
   const [error, setError] = useState('');
@@ -66,6 +80,8 @@ export function CleanupDialog() {
         // 扫描结果里没有可清项的类别，默认不勾 —— 勾一个 0 项的没意义。
         setPicked((p) => ({
           images: p.images && data.images.count > 0,
+          unused_images: false,
+          build_cache: p.build_cache && data.build_cache.count > 0,
           containers: p.containers && data.containers.count > 0,
           networks: data.networks.count > 0,
         }));

@@ -54,6 +54,10 @@ export interface JunkSummary {
   images: JunkItem;
   containers: JunkItem;
   networks: JunkItem;
+  /** 带 tag 但没有任何容器引用 —— `docker image prune -a` 会删的就是这些。 */
+  unused_images: JunkItem;
+  /** BuildKit 构建缓存，每次构建都会长大，删容器不会让它变小。 */
+  build_cache: JunkItem;
 }
 
 /** 扫一遍有多少可清理的。跟 prune 同一套口径，不然两个数对不上。 */
@@ -63,8 +67,14 @@ export async function fetchJunk() {
   return res.data;
 }
 
-/** 清理垃圾。默认只清"没人还在用"的三类；卷不在接口里，后端也不动它。 */
-export async function pruneJunk(what: { containers: boolean; images: boolean; networks: boolean }) {
+/** 清理垃圾。卷不在接口里，后端也不动它。 */
+export async function pruneJunk(what: {
+  containers: boolean;
+  images: boolean;
+  networks: boolean;
+  unused_images: boolean;
+  build_cache: boolean;
+}) {
   const res = await post<PruneResult>('/service/prune', what);
   if (!res.success || !res.data) throw new Error(res.message || 'Failed');
   return res.data;

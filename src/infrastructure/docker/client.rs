@@ -41,14 +41,21 @@ fn short_id(id: &str) -> String {
 
 /// 清理垃圾时"要清哪些"。
 ///
-/// 只有这三类，是因为 bollard 这个版本没有构建缓存的 prune 接口 —— 不为了凑数去
-/// 调 docker CLI 再解析人类可读的 "1.2GB"，那种解析很脆。卷同样不在里面：卷里是
-/// 数据，"没在使用"不等于"可以删"。
+/// `images` 只删悬空镜像；`unused_images` 是 `docker image prune -a` 那一档 ——
+/// 带 tag 但没有任何容器引用（**包含回滚用的备份 tag**，所以默认不勾）。
+/// `build_cache` 是每次构建都会长大、删了容器也不会自己消失的构建缓存，
+/// bollard 这一版没有它的 prune 接口，只能走 CLI。
+///
+/// 卷不在里面：卷里是数据，"没在使用"不等于"可以删"。
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PruneRequest {
     pub containers: bool,
     pub images: bool,
     pub networks: bool,
+    #[serde(default)]
+    pub unused_images: bool,
+    #[serde(default)]
+    pub build_cache: bool,
 }
 
 /// 各项删掉的数量 + 合计释放的空间。
@@ -57,6 +64,8 @@ pub struct PruneResult {
     pub containers: i64,
     pub images: i64,
     pub networks: i64,
+    pub unused_images: i64,
+    pub build_cache: i64,
     pub bytes: i64,
 }
 
@@ -72,6 +81,66 @@ pub struct JunkSummary {
     pub images: JunkItem,
     pub containers: JunkItem,
     pub networks: JunkItem,
+    pub unused_images: JunkItem,
+    pub build_cache: JunkItem,
+}
+
+/// `docker system df` 那种人读大小：`23.33MB`、`1.2 GB`、`0B`、`512kB`。
+///
+/// 只解析开头的数字 + 单位，后面的 `(7%)` 直接忽略。
+fn parse_human_size(raw: &str) -> Option<i64> {
+    let s = raw.trim();
+    let split = s
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(s.len());
+    let (num, unit) = s.split_at(split);
+    let value: f64 = num.trim().parse().ok()?;
+    let mult: f64 = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1.0,
+        "kb" | "kib" => 1024.0,
+        "mb" | "mib" => 1024.0 * 1024.0,
+        "gb" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        "tb" | "tib" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some((value * mult) as i64)
+}
+
+/// 构建缓存有多少可以回收。
+///
+/// 为什么走 CLI：BuildKit 的缓存不在 Docker 的 HTTP API 里（走 gRPC），
+/// bollard 这一版既没有 df 口径的可回收字节，也没有 prune 接口；
+/// `docker system df --format json` 是唯一稳定、带机读字段的来源。
+/// 读不到就当 0：**少报**比"报了一堆其实清不掉"好。
+fn build_cache_junk() -> JunkItem {
+    let out = match std::process::Command::new("docker")
+        .args(["system", "df", "--format", "json"])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return JunkItem::default(),
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("Type").and_then(|t| t.as_str()) != Some("Build Cache") {
+            continue;
+        }
+        let count = v
+            .get("TotalCount")
+            .and_then(|c| c.as_str())
+            .and_then(|c| c.parse::<i64>().ok())
+            .unwrap_or(0);
+        let bytes = v
+            .get("Reclaimable")
+            .and_then(|r| r.as_str())
+            .and_then(parse_human_size)
+            .unwrap_or(0);
+        return JunkItem { count, bytes };
+    }
+    JunkItem::default()
 }
 
 /// 端口映射的线上格式：`宿主ip:宿主端口-容器端口`，多条用逗号分隔。
@@ -606,6 +675,43 @@ impl DockerClient {
                 .map_err(|_| AppError::internal("清理未使用网络失败"))?;
             result.networks = r.networks_deleted.map(|v| v.len() as i64).unwrap_or(0);
         }
+        if what.unused_images {
+            // dangling=false 就是 `docker image prune -a`：把没被任何容器引用的镜像
+            // （**包括带着 tag 的**）一起收掉。这正是"容器删了、镜像还在"的那个垃圾。
+            let r = docker
+                .prune_images(Some(PruneImagesOptions::<String> {
+                    filters: std::collections::HashMap::from([(
+                        "dangling".to_string(),
+                        vec!["false".to_string()],
+                    )]),
+                }))
+                .await
+                .map_err(|_| AppError::internal("清理未使用镜像失败"))?;
+            result.unused_images = r.images_deleted.map(|v| v.len() as i64).unwrap_or(0);
+            result.bytes += r.space_reclaimed.unwrap_or(0);
+        }
+        if what.build_cache {
+            // 构建缓存没有 HTTP 接口（BuildKit 走 gRPC），只能叫 CLI 干活。
+            // `-a` 连"正在用"的也一起清，`-f` 免掉交互确认。
+            let out = std::process::Command::new("docker")
+                .args(["builder", "prune", "-af"])
+                .output()
+                .map_err(|e| AppError::internal(format!("调用 docker builder prune 失败：{e}")))?;
+            if !out.status.success() {
+                return Err(AppError::internal(format!(
+                    "清理构建缓存失败：{}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                )));
+            }
+            let text = String::from_utf8_lossy(&out.stdout);
+            result.build_cache = 1;
+            result.bytes += text
+                .lines()
+                .rev()
+                .find_map(|l| l.trim().strip_prefix("Total:").map(str::trim))
+                .and_then(parse_human_size)
+                .unwrap_or(0);
+        }
         Ok(result)
     }
 
@@ -633,6 +739,11 @@ impl DockerClient {
                     out.images.count += 1;
                     // size 里含与其他镜像共享的层，减掉才是真正能回收的。
                     out.images.bytes += (img.size - img.shared_size).max(0);
+                } else if img.containers == -1 {
+                    // 有 tag、但没有任何容器引用（running/stopped 都算）——
+                    // 这就是 `docker image prune -a` 会收走的部分。
+                    out.unused_images.count += 1;
+                    out.unused_images.bytes += (img.size - img.shared_size).max(0);
                 }
             }
         }
@@ -677,6 +788,8 @@ impl DockerClient {
                 }
             }
         }
+
+        out.build_cache = build_cache_junk();
 
         Ok(out)
     }
