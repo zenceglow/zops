@@ -139,7 +139,11 @@ impl SelfUpdateService {
         // 先落到同目录的临时文件：同一分区才能最后一步用 rename 原子替换，
         // 跨设备 rename 会退化成"先删后拷"，中间那一瞬间面板就没了。
         let tmp = bin.with_extension("new");
-        download(&release.url, &tmp).await?;
+        if let Err(e) = download(&release.url, &tmp).await {
+            // 半截文件一定要清掉：留着既占十几兆，又容易让人以为"已经下好了"。
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
         if let Err(e) = verify(&tmp, &release.version) {
             // 校验没过就把半截文件删掉：留着只会让下一次升级多一个误导人的残骸。
             let _ = std::fs::remove_file(&tmp);
@@ -243,7 +247,28 @@ async fn download(url: &str, dest: &Path) -> Result<(), AppError> {
     let (url, dest) = (url.to_string(), dest.to_path_buf());
     let out = tokio::task::spawn_blocking(move || {
         std::process::Command::new("curl")
-            .args(["-fsSL", "--max-time", "300", "-A", "ZOPS/self-update", "-o"])
+            .args([
+                "-fsSL",
+                // 断点续传 + 重试：十几兆的东西，中间抖一下不该从头再来。
+                "-C",
+                "-",
+                "--retry",
+                "3",
+                "--retry-delay",
+                "2",
+                "--retry-all-errors",
+                // 慢到 30 秒都跑不满 10KB/s 就判死，不必干等十分钟；
+                // 但正常慢速（比如跨境线路只有几十 KB/s）仍然给足 10 分钟。
+                "--speed-limit",
+                "10240",
+                "--speed-time",
+                "30",
+                "--max-time",
+                "600",
+                "-A",
+                "ZOPS/self-update",
+                "-o",
+            ])
             .arg(&dest)
             .arg(&url)
             .output()
