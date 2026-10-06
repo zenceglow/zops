@@ -787,7 +787,8 @@
     "rebuild": "Reissue this key",
     "rebuild_confirm": "The token for “{{name}}” cannot be recovered. Issue a new one with the same name? The agent will need the new token.",
     "client": "For which client",
-    "ops_recent": "latest: {{who}} called {{tool}}"
+    "ops_recent": "latest: {{who}} called {{tool}}",
+    "howto": "One step: copy any card below into your agent. The connection carries the config and the skill pack."
   },
   "screen": {
     "title": "Screen",

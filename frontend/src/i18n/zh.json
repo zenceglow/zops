@@ -787,7 +787,8 @@
     "rebuild": "重建这把钥匙",
     "rebuild_confirm": "「{{name}}」的令牌取不出来了，换一把同名的？agent 那边要换成新令牌。",
     "client": "给哪个客户端",
-    "ops_recent": "最近：{{who}} 调用了 {{tool}}"
+    "ops_recent": "最近：{{who}} 调用了 {{tool}}",
+    "howto": "用法只有一步：把下面任意一张卡片复制给 agent（它自带配置和技能包，接上就能干活）。"
   },
   "screen": {
     "title": "数据大屏",

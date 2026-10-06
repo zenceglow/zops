@@ -20,6 +20,37 @@ description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载�
 4. **执行**。
 5. **验证**。执行后重新读一次状态或日志，确认问题真的解决了，别只看命令返回值。
 
+## 先核对身份（很重要）
+
+**每一个工具返回里都带 `_host`**：`hostname` / `version` / `started_at` / `machine_id`。
+
+- 开口第一句、以及汇报任何"这台机器"的事实时，先看一眼 `_host`。
+- 用户说"服务器"时，他指的可能是另一台 —— 同一套面板可能装在多台机器上。你连的这台
+  和用户以为的那台不是一台，报出来的数据全是对的、结论全是错的。
+- 版本对不上（用户说 0.2.36、你看到 0.2.24）说明你连的是另一个面板；`started_at`
+  不同说明不是同一个进程（中途重启过）。**对不上就别信，先跟用户对齐是哪一台。**
+- `credential_scope: read` 的令牌调写工具会报权限错误，那不是故障；让用户在面板
+  「MCP」页给这个连接换成 write 令牌。
+
+## 常见任务 → 工具序列
+
+| 用户说 | 你按这个顺序做 |
+|---|---|
+| 服务器变慢 / 磁盘满 | `ops_system_overview`（看磁盘/内存/负载）→ `ops_deploy_list` 看谁在跑 → 大目录用 `ops_log_tail` 或容器日志定位 |
+| 网站 502 / 证书问题 | `ops_gateway_logs`（第一现场）→ `ops_caddyfile_get` 看站点怎么配的 → `ops_port_list` 确认反代目标端口有没有人听 |
+| 容器挂了 / 反复重启 | `ops_container_list` 找状态 → `ops_container_logs` 看退出原因 → 修好再 `ops_container_start`（写操作，先说清楚） |
+| 帮我看看服务器 | `ops_panel_info` + `ops_system_overview` + `ops_container_list`，给一份"能用的现状"而不是原始 JSON |
+| 部署一个服务 | 走下面的**部署任务通道**；先 `ops_deploy_plan` 体检，再 `ops_deploy_job_create` |
+| 加个域名 / 改反代 | `ops_caddyfile_get` 取备份 → `ops_caddyfile_put`（整体替换）→ `ops_gateway_reload` → 用域名实际访问验证 |
+| 端口被谁占了 | `ops_port_list`（含进程与容器） |
+
+写操作（`container_start/stop/restart`、`gateway_reload`、`caddyfile_put`、
+`automation_task_run`、`deploy_job_run`）**一律先讲清楚「做什么、影响谁、怎么回滚」，
+等用户明确同意再调用**。重启容器 = 线上短时中断；`caddyfile_put` 写错 = 全站 502。
+
+> 改完网关配置如果 Caddy 起不来，面板会自动退回上一版 Caddyfile（`.zops-bak`）——
+> 你会收到一条"已自动回滚"的错误，那不是把整站搞挂了，是这次改动没生效。
+
 ## 工具
 
 | 工具 | 用途 | 需要权限 |

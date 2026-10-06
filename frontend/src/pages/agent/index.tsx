@@ -210,6 +210,9 @@ export default function McpPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t('mcp.title')}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t('mcp.subtitle')}</p>
+          {/* 这一页对用户只有一件事：把一张卡片发给 agent。工具清单、技能包
+             这些东西是 agent 自己接上就能读的，不该堆在人眼前。 */}
+          <p className="mt-1 text-xs text-muted-foreground/80">{t('mcp.howto')}</p>
         </div>
         <Button size="sm" onClick={openCreate}>
           <Plus />
