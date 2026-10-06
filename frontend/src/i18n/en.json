@@ -689,7 +689,20 @@
     "uptime_dh": "{{d}}d {{h}}h",
     "uptime_hm": "{{h}}h {{m}}m",
     "uptime_m": "{{m}}m",
-    "footer": "Found a bug, have an idea, or want a feature? Open an issue or just send an email."
+    "footer": "Found a bug, have an idea, or want a feature? Open an issue or just send an email.",
+    "update": "Update",
+    "check_update": "Check for updates",
+    "checking": "Checking…",
+    "up_to_date": "You're up to date",
+    "update_available": "Version {{v}} is available",
+    "check_failed": "Couldn't reach the release manifest (network or CDN) — showing the last known result",
+    "last_checked": "Last checked: {{t}}",
+    "never_checked": "Never checked",
+    "update_now": "Update now",
+    "updating": "Downloading and swapping — the panel will restart itself, keep this page open",
+    "updated": "Updated to {{v}} — refresh the page",
+    "copy_command": "Copy upgrade command",
+    "command_copied": "Command copied"
   },
   "notify": {
     "title": "Notifications",

@@ -67,6 +67,22 @@ async fn release(
     Json(ApiResponse::ok(state.selfupdate.status()))
 }
 
+/// 手动"检查更新"。
+///
+/// 和 `/release` 的区别是**等这次拉完再返回**：用户点了按钮就该拿到一个确定答案
+/// （已是最新 / 有新版本 / 拉不到清单），而不是一个还要再等一会儿的旧状态。
+/// `fetched: false` 表示这次没拉到清单，界面上要如实说"检查不了"，别报"已是最新"。
+async fn check_release(
+    State(state): State<Arc<AppState>>,
+    Extension(_user): Extension<AuthUser>,
+) -> Json<ApiResponse<serde_json::Value>> {
+    let fetched = state.selfupdate.check().await.is_some();
+    Json(ApiResponse::ok(serde_json::json!({
+        "fetched": fetched,
+        "status": state.selfupdate.status(),
+    })))
+}
+
 /// 就地升级面板自己：下载新版本、换掉二进制、重启服务。
 ///
 /// 要 `OPS_SYSTEM_WRITE`：这一步会覆盖磁盘上的可执行文件，是真正会改主机的动作。
@@ -164,6 +180,7 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/panel", get(panel))
         .route("/release", get(release))
+        .route("/release/check", post(check_release))
         .route("/release/apply", post(apply_release))
         .route("/ports", get(ports))
         .route("/overview", get(overview))

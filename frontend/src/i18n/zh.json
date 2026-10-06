@@ -689,7 +689,20 @@
     "uptime_dh": "{{d}} 天 {{h}} 小时",
     "uptime_hm": "{{h}} 小时 {{m}} 分钟",
     "uptime_m": "{{m}} 分钟",
-    "footer": "遇到问题、有建议，或者想加个功能，欢迎到仓库提 issue 或直接发邮件。"
+    "footer": "遇到问题、有建议，或者想加个功能，欢迎到仓库提 issue 或直接发邮件。",
+    "update": "更新",
+    "check_update": "检查更新",
+    "checking": "检查中…",
+    "up_to_date": "已是最新",
+    "update_available": "发现新版本 {{v}}",
+    "check_failed": "拿不到版本清单（网络或 CDN 的问题），下面是上一次的结果",
+    "last_checked": "上次检查：{{t}}",
+    "never_checked": "还没检查过",
+    "update_now": "立即更新",
+    "updating": "正在下载并替换，面板会自己重启，别关这个页面",
+    "updated": "已更新到 {{v}}，刷新页面即可",
+    "copy_command": "复制升级命令",
+    "command_copied": "命令已复制"
   },
   "notify": {
     "title": "通知",
