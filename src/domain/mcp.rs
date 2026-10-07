@@ -173,6 +173,47 @@ mod tests {
         );
     }
 
+    /// 包名得是给机器看的那个 `zops`，不能是给用户看的中文名。
+    ///
+    /// `display.name` 是市场卡片上的标题（「ZOPS - 轻松搞定运维工作」那种带一句话的），
+    /// 顶层 `name` 则是包标识，要跟目录名、市场索引的 `source` 对得上。两者长得很不一样，
+    /// 所以很容易有人"顺手"把顶层那个也改成中文标题 —— 那会让包名和目录名分家。
+    /// 同时钉住 MCP server 的键名：`policy.mcpServers` 和 `urlTemplatedMcpServers`
+    /// 用不同的键，超时配置就会静默地不生效。
+    #[test]
+    fn connector_pack_name_and_server_key_stay_machine_readable() {
+        let plugin = pack_plugin();
+
+        let root = pack_root();
+        let dir = root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("包目录名读不出来");
+        assert_eq!(
+            plugin["name"].as_str(),
+            Some(dir),
+            "plugin.json 的顶层 name 必须等于包目录名"
+        );
+
+        let template_key = plugin["extensions"]["ai.workbuddy"]["urlTemplatedMcpServers"]
+            .as_object()
+            .expect("urlTemplatedMcpServers 不是对象")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        let policy_key = plugin["extensions"]["ai.workbuddy"]["policy"]["mcpServers"]
+            .as_object()
+            .expect("policy.mcpServers 不是对象")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            template_key, policy_key,
+            "两处的 MCP server 键名不一致，policy 里的 timeout 会静默失效"
+        );
+        assert_eq!(template_key, vec!["zops".to_string()]);
+    }
+
     /// `urlTemplate` 必须落在真的在听的那条路径上。
     ///
     /// 路径写错不会提示"配置有误"，只会一直连不上，而排查方向会跑偏到网络和令牌上。

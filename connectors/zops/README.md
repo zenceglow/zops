@@ -4,6 +4,7 @@ ZOPS 面板的 WorkBuddy / CodeBuddy 连接器。装上它，agent 就能通过�
 看清这台服务器的负载、磁盘、Docker 容器、Caddy 网关、日志和定时任务，并在你确认后
 重启容器、重载网关或改 Caddyfile。
 
+- 市场上展示的名字：`ZOPS - 轻松搞定运维工作` / `ZOPS - Server Ops Made Easy`
 - 面板本体：<https://github.com/zenceglow/zops>
 - MCP 端点：`<协议>://<主机>:<端口>/api/ops/mcp`（Streamable HTTP + JSON-RPC 2.0）
 - 工具面：31 个 `ops_*` 工具，每个返回里都带 `_host` 指纹
