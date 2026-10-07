@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   Globe,
+  Loader2,
   Save,
   Undo2,
   FileText,
@@ -48,6 +49,27 @@ export default function SitesPage() {
   const [showLogs, setShowLogs] = useState(false);
   /** 等着确认删除的那个域名。 */
   const [deleting, setDeleting] = useState<string | null>(null);
+  /**
+   * 删除进行中。
+   *
+   * 删站点要改 Caddyfile 再 reload 网关，慢的时候好几秒。原来点完「删除」立刻把弹窗关掉、
+   * 请求 fire-and-forget，整个过程界面一动不动 —— 用户会以为没点上而反复点。
+   * 现在弹窗留着，按钮转圈、期间不能重复提交。
+   */
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const confirmDelete = async () => {
+    const addr = deleting;
+    if (!addr || deleteBusy) return;
+    setDeleteBusy(true);
+    try {
+      // removeSite 自己会 toast 成功/失败，这里只负责收不收弹窗
+      await s.removeSite(addr);
+    } finally {
+      setDeleteBusy(false);
+      setDeleting(null);
+    }
+  };
 
   if (!s.status) {
     return (
@@ -135,7 +157,7 @@ export default function SitesPage() {
       <GatewayLogDialog open={showLogs} onOpenChange={setShowLogs} />
 
       {/* 删站点是不可逆的（虽然能从历史版本回滚），先问一句。 */}
-      <Dialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
+      <Dialog open={deleting !== null} onOpenChange={(o) => !o && !deleteBusy && setDeleting(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('sites.delete_title', { addr: deleting ?? '' })}</DialogTitle>
@@ -146,17 +168,11 @@ export default function SitesPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleting(null)}>
+            <Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleting(null)}>
               {t('sites.cancel')}
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                const addr = deleting;
-                setDeleting(null);
-                if (addr) void s.removeSite(addr);
-              }}
-            >
+            <Button variant="destructive" disabled={deleteBusy} onClick={() => void confirmDelete()}>
+              {deleteBusy && <Loader2 className="animate-spin" />}
               {t('sites.delete')}
             </Button>
           </DialogFooter>

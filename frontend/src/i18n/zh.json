@@ -952,7 +952,8 @@
   "common": {
     "cancel": "取消",
     "confirm": "确认",
-    "delete": "删除"
+    "delete": "删除",
+    "processing": "处理中"
   },
   "deploy": {
     "title": "应用与服务",

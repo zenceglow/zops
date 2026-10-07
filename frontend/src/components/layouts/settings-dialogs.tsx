@@ -18,12 +18,12 @@ import type { SettingsDialog } from './settings-menu';
 
 /**
  * 面板自己的联系方式。放在这里是让它只有一处：要改就改这两个常量。
- * 域名取自现网（carapi.zenceglow.com 那套配置里的根域），邮箱取自 Caddy 的
- * ACME 联系邮箱。
+ * 网址是 ZOPS 自己的官网（产品站，从主站 /zops 拆出来独立部署）；
+ * 邮箱取自 Caddy 的 ACME 联系邮箱。
  */
 export const PANEL_CONTACT = {
   email: 'dev@zenceglow.com',
-  site: 'https://zenceglow.com',
+  site: 'https://ops.zenceglow.com',
 };
 
 const UNINSTALL_STEPS = `systemctl stop zenceglow-ops

@@ -5,6 +5,8 @@
 **MCP 服务器**和**技能包**，Codex、Workbuddy 或任何支持 MCP 的 agent 都能在你的
 规则下看着、修着这台机器。
 
+**官网：** https://ops.zenceglow.com · **源码：** https://github.com/zenceglow/zops
+
 ## 安装
 
 服务器上 root 执行：
@@ -165,4 +167,4 @@ Docker 管理面板 · Caddy 图形化 · 单机运维首选 · 自托管运维�
 ## 开源协议
 
 [MIT](./LICENSE) © 2026 Zenceglow（广州境际之光科技有限公司）·
-developer@zenceglow.com
+developer@zenceglow.com · https://ops.zenceglow.com

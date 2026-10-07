@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Container, Play, RotateCw, Server, Square, Trash2 } from 'lucide-react';
+import { Container, Loader2, Play, RotateCw, Server, Square, Trash2 } from 'lucide-react';
 import { PageHeader } from './_components/page-header';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent } from '../../../components/ui/card';
@@ -30,14 +30,20 @@ export default function Page() {
   const { t } = useTranslation();
   const { containers, docker, loading, reload } = useContainers();
   const [pending, setPending] = useState<ContainerInfo | null>(null);
+  /** 正在执行启停重启的那一行。启停不是瞬时的，不给反馈用户会连点。 */
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const act = async (id: string, action: 'start' | 'stop' | 'restart') => {
+    if (busyId) return;
+    setBusyId(id);
     try {
       await containerAction(id, action);
       // 状态变化不是瞬时的，等一拍再读，看到的才是新状态。
       setTimeout(reload, 800);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -113,47 +119,63 @@ export default function Page() {
                   {/* 行内操作：启停重启是日常，删除会确认。 */}
                   <TableCell>
                     <div className="flex items-center justify-end gap-0.5">
-                      {c.state === 'running' ? (
+                      {busyId === c.id ? (
+                        <span
+                          className="flex items-center gap-1.5 pr-1 text-xs text-muted-foreground"
+                          role="status"
+                        >
+                          <Loader2 className="size-3.5 animate-spin" />
+                          {t('common.processing')}
+                        </span>
+                      ) : (
                         <>
+                          {c.state === 'running' ? (
+                            <>
+                              <button
+                                type="button"
+                                title={t('sites.stop')}
+                                aria-label={t('sites.stop')}
+                                className={iconBtn}
+                                disabled={busyId !== null}
+                                onClick={() => void act(c.id, 'stop')}
+                              >
+                                <Square className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title={t('docker.restart')}
+                                aria-label={t('docker.restart')}
+                                className={iconBtn}
+                                disabled={busyId !== null}
+                                onClick={() => void act(c.id, 'restart')}
+                              >
+                                <RotateCw className="size-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              title={t('sites.start')}
+                              aria-label={t('sites.start')}
+                              className={iconBtn}
+                              disabled={busyId !== null}
+                              onClick={() => void act(c.id, 'start')}
+                            >
+                              <Play className="size-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            title={t('sites.stop')}
-                            aria-label={t('sites.stop')}
+                            title={t('docker.delete_container')}
+                            aria-label={t('docker.delete_container')}
                             className={iconBtn}
-                            onClick={() => void act(c.id, 'stop')}
+                            disabled={busyId !== null}
+                            onClick={() => setPending(c)}
                           >
-                            <Square className="size-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            title={t('docker.restart')}
-                            aria-label={t('docker.restart')}
-                            className={iconBtn}
-                            onClick={() => void act(c.id, 'restart')}
-                          >
-                            <RotateCw className="size-3.5" />
+                            <Trash2 className="size-3.5" />
                           </button>
                         </>
-                      ) : (
-                        <button
-                          type="button"
-                          title={t('sites.start')}
-                          aria-label={t('sites.start')}
-                          className={iconBtn}
-                          onClick={() => void act(c.id, 'start')}
-                        >
-                          <Play className="size-3.5" />
-                        </button>
                       )}
-                      <button
-                        type="button"
-                        title={t('docker.delete_container')}
-                        aria-label={t('docker.delete_container')}
-                        className={iconBtn}
-                        onClick={() => setPending(c)}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
                     </div>
                   </TableCell>
                 </TableRow>

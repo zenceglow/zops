@@ -6,6 +6,7 @@ import {
   Boxes,
   Gauge,
   HardDrive,
+  Loader2,
   Network,
   Package,
   Pencil,
@@ -77,6 +78,8 @@ export default function DockerPage() {
     | { kind: 'image'; id: string; label: string; action: 'remove' }
     | null
   >(null);
+  /** 正在启停重启的那个容器。操作不是瞬时的，没反馈用户会连点。 */
+  const [actingId, setActingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [c, i, n, d] = await Promise.allSettled([
@@ -127,11 +130,15 @@ export default function DockerPage() {
 
   /** 不删东西的那些动作（启停重启）直接就做 —— 它们是可逆的，不该也要确认。 */
   const act = async (id: string, action: 'start' | 'stop' | 'restart') => {
+    if (actingId) return;
+    setActingId(id);
     try {
       await containerAction(id, action);
-      void load();
+      await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActingId(null);
     }
   };
 
@@ -190,7 +197,7 @@ export default function DockerPage() {
           {[...containers]
             .sort((a, b) => Number(b.state === 'running') - Number(a.state === 'running'))
             .map((c) => (
-            <ContainerCard key={c.id} c={c} onAct={act} onDelete={() => setPending({
+            <ContainerCard key={c.id} c={c} busy={actingId === c.id} onAct={act} onDelete={() => setPending({
               kind: 'container',
               id: c.id,
               label: c.name,
@@ -379,10 +386,12 @@ export default function DockerPage() {
  */
 function ContainerCard({
   c,
+  busy,
   onAct,
   onDelete,
 }: {
   c: ContainerInfo;
+  busy: boolean;
   onAct: (id: string, action: 'start' | 'stop' | 'restart') => void;
   onDelete: () => void;
 }) {
@@ -415,48 +424,62 @@ function ContainerCard({
       >
         {c.ports || '—'}
       </span>
-      <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        {running ? (
+      <span
+        className={cn(
+          'flex shrink-0 items-center gap-0.5 transition-opacity',
+          busy ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+        )}
+      >
+        {busy ? (
+          // 启停重启不是瞬时的：把按钮换成转圈，既给了反馈也挡住了重复点击。
+          <span className="px-1 text-muted-foreground" role="status">
+            <Loader2 className="size-3.5 animate-spin" />
+          </span>
+        ) : (
           <>
+            {running ? (
+              <>
+                <button
+                  type="button"
+                  title={t('sites.stop')}
+                  aria-label={t('sites.stop')}
+                  className={iconBtn}
+                  onClick={() => onAct(c.id, 'stop')}
+                >
+                  <Square className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title={t('docker.restart')}
+                  aria-label={t('docker.restart')}
+                  className={iconBtn}
+                  onClick={() => onAct(c.id, 'restart')}
+                >
+                  <RotateCw className="size-3.5" />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                title={t('sites.start')}
+                aria-label={t('sites.start')}
+                className={iconBtn}
+                onClick={() => onAct(c.id, 'start')}
+              >
+                <Play className="size-3.5" />
+              </button>
+            )}
             <button
               type="button"
-              title={t('sites.stop')}
-              aria-label={t('sites.stop')}
+              title={t('docker.delete_container')}
+              aria-label={t('docker.delete_container')}
               className={iconBtn}
-              onClick={() => onAct(c.id, 'stop')}
+              onClick={onDelete}
             >
-              <Square className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              title={t('docker.restart')}
-              aria-label={t('docker.restart')}
-              className={iconBtn}
-              onClick={() => onAct(c.id, 'restart')}
-            >
-              <RotateCw className="size-3.5" />
+              <Trash2 className="size-3.5" />
             </button>
           </>
-        ) : (
-          <button
-            type="button"
-            title={t('sites.start')}
-            aria-label={t('sites.start')}
-            className={iconBtn}
-            onClick={() => onAct(c.id, 'start')}
-          >
-            <Play className="size-3.5" />
-          </button>
         )}
-        <button
-          type="button"
-          title={t('docker.delete_container')}
-          aria-label={t('docker.delete_container')}
-          className={iconBtn}
-          onClick={onDelete}
-        >
-          <Trash2 className="size-3.5" />
-        </button>
       </span>
     </div>
   );

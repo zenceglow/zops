@@ -5,6 +5,8 @@ SQLite file, no external services — a desktop-like control panel for a single
 Linux box, plus a built-in **MCP server** and **skill pack** so Codex, Workbuddy
 or any MCP-capable agent can watch and fix that box under your rules.
 
+**Website:** https://ops.zenceglow.com · **Source:** https://github.com/zenceglow/zops
+
 ## Install
 
 On the server, as root:
@@ -177,4 +179,4 @@ deploy your app from an agent
 ## License
 
 [MIT](./LICENSE) © 2026 Zenceglow (广州境际之光科技有限公司) ·
-developer@zenceglow.com
+developer@zenceglow.com · https://ops.zenceglow.com

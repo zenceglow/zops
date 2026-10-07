@@ -952,7 +952,8 @@
   "common": {
     "cancel": "Cancel",
     "confirm": "Confirm",
-    "delete": "Delete"
+    "delete": "Delete",
+    "processing": "Processing"
   },
   "deploy": {
     "title": "Apps & services",
