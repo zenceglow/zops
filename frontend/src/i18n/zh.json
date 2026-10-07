@@ -1117,6 +1117,10 @@
     "no_rows": "没有符合筛选条件的记录。",
     "rows_hint": "当前显示 {{n}} 条（最多各取最近 300 条）",
     "legend_visitor": "访问落点",
-    "legend_self": "本机"
+    "legend_self": "本机",
+    "site_ratio": "站点访问比例",
+    "other_sites": "其他",
+    "cities_hint": "共 {{n}} 个城市（按访问量排序）",
+    "cities_rest": "其余 {{n}} 个为长尾，合计占比不足 1%"
   }
 }

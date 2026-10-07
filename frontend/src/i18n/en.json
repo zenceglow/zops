@@ -1150,6 +1150,10 @@
     "no_rows": "Nothing matches the filter.",
     "rows_hint": "Showing {{n}} rows (latest 300 each)",
     "legend_visitor": "Visitor",
-    "legend_self": "This server"
+    "legend_self": "This server",
+    "site_ratio": "Traffic by host",
+    "other_sites": "Other",
+    "cities_hint": "{{n}} cities, by volume",
+    "cities_rest": "{{n}} more cities in the long tail (under 1% combined)"
   }
 }

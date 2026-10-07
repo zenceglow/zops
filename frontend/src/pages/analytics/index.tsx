@@ -41,6 +41,77 @@ function pct(part: number, all: number) {
   return `${((part / all) * 100).toFixed(part / all >= 0.1 ? 1 : 2)}%`;
 }
 
+/** 每分钟是算出来的浮点（total / (hours*60)），直接渲染就是 8.17013888888889。 */
+function perMinute(v: number | undefined) {
+  return (v ?? 0).toFixed(1);
+}
+
+/**
+ * 站点（域名）访问比例 —— 环形图。
+ *
+ * 自己画 SVG，不引图表库：这里只有"几个域名 + 一个其他"，为它装 echarts 是给打包
+ * 体积加两百多 KB 去干二十行能画完的事。环形而不是实心饼：中间那块正好写总数。
+ */
+function SiteDonut({ data }: { data: { key: string; count: number }[] }) {
+  const { t } = useTranslation();
+  const palette = ['#34d399', '#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#fb7185', '#94a3b8'];
+  // 超过 6 个的合成"其他"，图例才不会被一堆小域名塞满。
+  const top = data.slice(0, 6);
+  const restCount = data.slice(6).reduce((s, d) => s + d.count, 0);
+  const slices = restCount > 0 ? [...top, { key: t('analytics.other_sites'), count: restCount }] : top;
+  const sum = slices.reduce((s, d) => s + d.count, 0);
+  if (sum === 0) return <p className="py-8 text-center text-xs text-muted-foreground">—</p>;
+
+  const radius = 54;
+  const circumference = 2 * Math.PI * radius;
+  let acc = 0;
+
+  return (
+    <div className="flex flex-col items-center gap-4 sm:flex-row">
+      <svg viewBox="0 0 140 140" className="size-32 shrink-0">
+        <g transform="rotate(-90 70 70)">
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="currentColor" strokeWidth="14" className="text-muted/50" />
+          {slices.map((s, i) => {
+            const len = (s.count / sum) * circumference;
+            const dash = `${len} ${circumference - len}`;
+            const offset = -acc;
+            acc += len;
+            return (
+              <circle
+                key={s.key}
+                cx="70"
+                cy="70"
+                r={radius}
+                fill="none"
+                stroke={palette[i % palette.length]}
+                strokeWidth="14"
+                strokeDasharray={dash}
+                strokeDashoffset={offset}
+              />
+            );
+          })}
+        </g>
+        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" className="fill-foreground text-[15px] font-semibold">
+          {sum}
+        </text>
+      </svg>
+      <ul className="w-full min-w-0 space-y-1.5">
+        {slices.map((s, i) => (
+          <li key={s.key} className="flex items-center gap-2 text-xs">
+            <span className="size-2 shrink-0 rounded-full" style={{ background: palette[i % palette.length] }} />
+            <span className="min-w-0 flex-1 truncate" title={s.key}>
+              {s.key}
+            </span>
+            <span className="shrink-0 tabular-nums text-muted-foreground">
+              {s.count} · {pct(s.count, sum)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * 访问分布地图。
  *
@@ -166,15 +237,38 @@ export default function AnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hours]);
 
-  /** 城市比例：按落点聚合，count 占比 = 该城市访问 / 总访问。 */
+  /**
+   * 城市比例：**先按名字合并**再排序。
+   *
+   * IP 库给的是"落点"，同一个城市会有多个点（「广东 · 广州市」在列表里出现过 5 次、
+   * 「北京」和「北京市 · 西城区」还分成两条），直接铺开就是七十多行、读不出重点。
+   * 合并后坐标按 count 加权，地图上的气泡也跟着合并 —— 少而准，比多而碎强。
+   */
   const cities = useMemo(() => {
     const total = overview?.total ?? 0;
-    return (overview?.points ?? [])
-      .filter((p) => p.count > 0)
-      .slice()
+    const merged = new Map<string, { label: string; count: number; lat: number; lon: number }>();
+    for (const p of overview?.points ?? []) {
+      if (p.count <= 0) continue;
+      const cur = merged.get(p.label);
+      if (cur) {
+        cur.count += p.count;
+        cur.lat += p.lat * p.count;
+        cur.lon += p.lon * p.count;
+      } else {
+        merged.set(p.label, { label: p.label, count: p.count, lat: p.lat * p.count, lon: p.lon * p.count });
+      }
+    }
+    return [...merged.values()]
+      .map((c) => ({ ...c, lat: c.lat / c.count, lon: c.lon / c.count }))
       .sort((a, b) => b.count - a.count)
-      .map((p) => ({ ...p, ratio: pct(p.count, total) }));
+      .map((c) => ({ ...c, ratio: pct(c.count, total) }));
   }, [overview]);
+
+  /** 地图上用的就是合并后的落点（最多 60 个，够看分布）。 */
+  const mapPoints = useMemo(
+    () => cities.slice(0, 60).map(({ label, lat, lon, count }) => ({ label, lat, lon, count })),
+    [cities],
+  );
 
   const hosts = overview?.hosts ?? [];
 
@@ -223,7 +317,7 @@ export default function AnalyticsPage() {
           { label: t('analytics.total'), value: overview?.total ?? 0 },
           { label: t('analytics.visitors'), value: overview?.unique_ips ?? 0 },
           { label: t('analytics.cities'), value: cities.length },
-          { label: t('analytics.per_minute'), value: overview?.per_minute ?? 0 },
+          { label: t('analytics.per_minute'), value: perMinute(overview?.per_minute) },
         ].map((s) => (
           <Card key={s.label}>
             <CardContent className="pt-5">
@@ -246,7 +340,7 @@ export default function AnalyticsPage() {
             {loading && !overview ? (
               <Skeleton className="h-[380px] w-full rounded-xl" />
             ) : (
-              <DistributionMap points={overview?.points ?? []} self={overview?.self_location ?? null} />
+              <DistributionMap points={mapPoints} self={overview?.self_location ?? null} />
             )}
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1.5">
@@ -261,16 +355,32 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
+        {/* 右栏是"比例"：站点一条、城市一条，都是几行就说完的事 */}
         <Card>
-          <CardContent className="space-y-2 pt-5">
+          <CardContent className="space-y-3 pt-5">
+            <p className="text-sm font-medium">{t('analytics.site_ratio')}</p>
+            <SiteDonut data={hosts} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardContent className="space-y-3 pt-5">
+          <div className="flex items-baseline justify-between gap-2">
             <p className="text-sm font-medium">{t('analytics.city_ratio')}</p>
-            {cities.length === 0 ? (
-              <p className="py-8 text-center text-xs text-muted-foreground">
-                {overview?.geo.enabled ? t('analytics.no_data') : t('analytics.geo_off')}
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {cities.map((c) => (
+            <span className="text-[11px] text-muted-foreground">
+              {t('analytics.cities_hint', { n: cities.length })}
+            </span>
+          </div>
+          {/* 只铺前 12 个：全量七十多行既读不完也压不到重点，剩下的是长尾 */}
+          {cities.length === 0 ? (
+            <p className="py-8 text-center text-xs text-muted-foreground">
+              {overview?.geo.enabled ? t('analytics.no_data') : t('analytics.geo_off')}
+            </p>
+          ) : (
+            <>
+              <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
+                {cities.slice(0, 12).map((c) => (
                   <li key={c.label} className="space-y-1">
                     <div className="flex items-baseline justify-between gap-2 text-xs">
                       <span className="min-w-0 truncate" title={c.label}>
@@ -286,10 +396,15 @@ export default function AnalyticsPage() {
                   </li>
                 ))}
               </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              {cities.length > 12 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {t('analytics.cities_rest', { n: cities.length - 12 })}
+                </p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="space-y-3 pt-5">
