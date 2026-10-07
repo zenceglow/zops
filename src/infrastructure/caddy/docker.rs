@@ -50,15 +50,21 @@ pub fn detect() -> Option<DockerCaddy> {
     if !available() {
         return None;
     }
-    let listing = run(&["ps", "--format", "{{.Names}}\t{{.Image}}"])?;
+    let listing = run(&["ps", "--format", "{{.Names}}\t{{.Image}}\t{{.Ports}}"])?;
     let mut candidates: Vec<(String, String)> = listing
         .lines()
         .filter_map(|line| {
-            let mut parts = line.splitn(2, '\t');
+            let mut parts = line.splitn(3, '\t');
             let name = parts.next()?.trim().to_string();
             let image = parts.next().unwrap_or("").trim().to_string();
-            let looks_like_caddy =
-                name == "caddy" || name.starts_with("caddy-") || image.starts_with("caddy");
+            let ports = parts.next().unwrap_or("").trim();
+            // 名字是「这就是网关」的强约定；只认镜像名会把拿 caddy 镜像当静态文件服务
+            // 的应用容器也算进来（paober-web / paober-drive-oms-web 就是），那些容器
+            // 的 443 只是 EXPOSE、并没有发布到宿主机 —— 面板一旦认错，站点配置就会被
+            // 写到那个应用的 Caddyfile 上，访问日志也读错文件。
+            let looks_like_caddy = name == "caddy"
+                || name.starts_with("caddy-")
+                || (image.starts_with("caddy") && publishes_web_port(ports));
             looks_like_caddy.then_some((name, image))
         })
         .collect();
@@ -68,6 +74,22 @@ pub fn detect() -> Option<DockerCaddy> {
     candidates
         .into_iter()
         .find_map(|(name, image)| inspect(&name, &image))
+}
+
+/// 容器的宿主机端口里有没有 80 / 443。
+///
+/// 只看镜像名不看端口是不够的：`docker ps` 里的 Ports 是
+/// `443/tcp, 2019/tcp, 443/udp, 127.0.0.1:8085->80/tcp` 这种，箭头左边才是宿主机端口。
+/// 应用容器发布的 8085 不代表它在当网关。
+fn publishes_web_port(ports: &str) -> bool {
+    ports.split(',').any(|mapping| {
+        let Some((host_side, _)) = mapping.trim().split_once("->") else {
+            return false;
+        };
+        let host_side = host_side.trim();
+        let port = host_side.rsplit(':').next().unwrap_or(host_side).trim();
+        matches!(port, "80" | "443")
+    })
 }
 
 fn inspect(name: &str, image: &str) -> Option<DockerCaddy> {
@@ -285,4 +307,32 @@ pub fn install_default() -> Result<String, String> {
     ])?;
 
     Ok(format!("已启动 {DEFAULT_IMAGE}，配置目录 {DEFAULT_DIR}/config"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::publishes_web_port;
+
+    #[test]
+    fn published_web_ports_are_recognised() {
+        assert!(publishes_web_port("0.0.0.0:80->80/tcp, :::80->80/tcp"));
+        assert!(publishes_web_port("0.0.0.0:443->443/tcp"));
+        assert!(publishes_web_port("127.0.0.1:80->8080/tcp"));
+        assert!(publishes_web_port("80->80/tcp"));
+    }
+
+    #[test]
+    fn app_containers_serving_static_files_are_not_gateways() {
+        // paober-web / paober-drive-oms-web 的真实端口串：443 只是 EXPOSE，
+        // 发布到宿主机的只有 8085 / 8086。
+        assert!(!publishes_web_port(
+            "443/tcp, 2019/tcp, 443/udp, 127.0.0.1:8085->80/tcp"
+        ));
+        assert!(!publishes_web_port("127.0.0.1:8086->80/tcp"));
+        assert!(!publishes_web_port("127.0.0.1:8087->80/tcp"));
+        // 前缀相同但不是 80/443 的宿主端口不能误判。
+        assert!(!publishes_web_port("0.0.0.0:8080->80/tcp"));
+        assert!(!publishes_web_port("0.0.0.0:4430->4430/tcp"));
+        assert!(!publishes_web_port(""));
+    }
 }

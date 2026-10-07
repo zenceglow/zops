@@ -1,6 +1,6 @@
 [package]
 name = "zenceglow-ops"
-version = "0.2.47"
+version = "0.2.50"
 edition = "2021"
 
 [dependencies]

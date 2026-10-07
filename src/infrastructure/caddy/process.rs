@@ -6,6 +6,7 @@ use crate::shared::AppError;
 use super::bin::{self, which_caddy};
 use super::docker::{self, DockerCaddy};
 use super::fmt;
+use super::install;
 use super::logs::GatewayLog;
 
 pub struct CaddyProcess {
@@ -47,6 +48,7 @@ impl CaddyProcess {
     pub fn effective_caddyfile_path(&self) -> String {
         self.detect_docker()
             .map(|d| d.host_config)
+            .or_else(bin::running_config_path)
             .unwrap_or_else(|| self.caddyfile_path.clone())
     }
 
@@ -75,6 +77,9 @@ impl CaddyProcess {
             String::new()
         };
         let pid = bin::pid();
+        // 二进制模式下，正在跑的进程用的是哪份配置就以它为准 —— `CADDYFILE_PATH`
+        // 是部署时写进 systemd 单元里的，从容器迁到宿主机之后必然过期。
+        let caddyfile_path = bin::running_config_path().unwrap_or_else(|| self.caddyfile_path.clone());
         GatewayStatusSnapshot {
             installed,
             running: pid.is_some(),
@@ -87,8 +92,8 @@ impl CaddyProcess {
             version,
             pid,
             bin_path: bin,
-            config_modified: modified_ms(&self.caddyfile_path),
-            caddyfile_path: self.caddyfile_path.clone(),
+            config_modified: modified_ms(&caddyfile_path),
+            caddyfile_path,
         }
     }
 
@@ -108,13 +113,12 @@ impl CaddyProcess {
             return Err(AppError::bad_request("接入网关已安装"));
         }
 
-        // Prefer the container route on Linux: it keeps Caddy out of the host
-        // package manager and matches the layout the panel already understands.
-        if cfg!(target_os = "linux") && docker::available() {
-            return docker::install_default().map_err(AppError::internal);
-        }
-
+        // 网关装在宿主机上，不装成容器。原因见 `install` 模块开头：容器里拿不到真实
+        // IP、读不到访问日志、也说不清当前生效的是哪份配置 —— 而这正是面板的网络监控
+        // 和访问统计赖以工作的三样东西。以前这里"在 Linux 上优先走容器"是为了把 Caddy
+        // 挡在宿主机包管理之外，代价太大，不值。
         let result = if cfg!(target_os = "macos") {
+            // macOS 上装网关只是为了本地开发，brew 最省事，也不用 root 之外的东西。
             let output = std::process::Command::new("brew")
                 .args(["install", "caddy"])
                 .output()
@@ -126,17 +130,23 @@ impl CaddyProcess {
                 Err(AppError::internal(format!("安装失败: {stderr}")))
             }
         } else if cfg!(target_os = "linux") {
-            let status = std::process::Command::new("sh")
-                .args(["-c", "curl -fsSL https://getcaddy.com | bash"])
-                .status()
-                .map_err(|e| AppError::internal(format!("无法执行安装脚本: {e}")))?;
-            if status.success() {
-                Ok("安装成功".to_string())
-            } else {
-                Err(AppError::internal(
-                    "安装失败，请手动安装 Caddy: https://caddyserver.com/docs/install",
-                ))
-            }
+            install::install_host().map_err(|e| {
+                // 宿主机装不上（没有 curl、GitHub 不可达、不是 root……）时还能退回容器，
+                // 否则用户面对的是一个连按钮都点不动的网关页。把代价写在返回值里，别让
+                // 它变成一次静悄悄的降级。
+                if docker::available() {
+                    match docker::install_default() {
+                        Ok(m) => AppError::internal(format!(
+                            "宿主机部署失败（{e}），已退回 Docker 容器部署：{m}\n\
+                             注意：容器网关拿不到真实 IP 也读不到访问日志，网络监控与访问统计会不准；\
+                             建议修好上面的问题后换成宿主机部署。"
+                        )),
+                        Err(d) => AppError::internal(format!("宿主机部署失败（{e}），退回容器也失败了（{d}）")),
+                    }
+                } else {
+                    AppError::internal(e)
+                }
+            })
         } else {
             Err(AppError::bad_request(
                 "不支持的操作系统，请手动安装 Caddy: https://caddyserver.com/docs/install",
@@ -160,7 +170,10 @@ impl CaddyProcess {
             std::process::Command::new(&bin)
                 .arg("run")
                 .arg("--config")
-                .arg(&self.caddyfile_path)
+                // 启动时别写 `self.caddyfile_path`：那是部署时写进环境里的一份，从容器
+                // 迁到宿主机之后已经过期。别的路径上（reload / 状态）都已经以"正在跑的
+                // 那份"为准，这里跟着走，否则会出现"重载改了 A 文件、重启却按 B 文件起"。
+                .arg(self.effective_caddyfile_path())
                 .spawn()
                 .map_err(|e| AppError::internal(e.to_string()))?;
 
@@ -183,12 +196,33 @@ impl CaddyProcess {
         }
 
         systemctl("stop", "caddy").or_else(|_| {
-            std::process::Command::new("pkill")
-                .arg("-x")
-                .arg("caddy")
-                .status()
-                .map(|_| ())
-                .map_err(|e| AppError::internal(e.to_string()))
+            // 这里以前是 `pkill -x caddy`，在只有宿主机 Caddy 的年代没问题。现在不行了：
+            // 宿主机的 PID 命名空间看得见容器里的进程，`paober-web` / `paober-drive-oms-web`
+            // 这类「拿 caddy 镜像做静态文件服务」的应用容器会被一起杀掉 —— 点一下「停止
+            // 网关」，别人的网站跟着下线。`bin::pids()` 按 cgroup 把容器里的滤掉了。
+            let pids = bin::pids();
+            if pids.is_empty() {
+                return Ok(());
+            }
+            for pid in &pids {
+                std::process::Command::new("kill")
+                    .arg(pid.to_string())
+                    .status()
+                    .map_err(|e| AppError::internal(format!("结束 Caddy 进程 {pid} 失败: {e}")))?;
+            }
+
+            // 发完信号不等于停下来了：Caddy 收到 TERM 会先把在飞的请求收完，站多的时候
+            // 要几秒。等一等再看，不然界面显示"已停止"、它其实还在 80 上跑着。
+            for _ in 0..30 {
+                if bin::pids().is_empty() {
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(AppError::internal(
+                "Caddy 没有退出 —— 它可能是被 systemd 拉起来的（`systemctl stop caddy`），\
+                 停掉之后会被自动重启。先看 `systemctl status caddy`。",
+            ))
         })
     }
 
@@ -202,11 +236,12 @@ impl CaddyProcess {
         let bin = self
             .cached_bin()
             .ok_or_else(|| AppError::bad_request("接入网关未安装"))?;
+        let cfg = self.effective_caddyfile_path();
 
         std::process::Command::new(&bin)
             .arg("reload")
             .arg("--config")
-            .arg(&self.caddyfile_path)
+            .arg(&cfg)
             .output()
             .map_err(|e| AppError::internal(e.to_string()))
             .and_then(|o| {
@@ -227,13 +262,14 @@ impl CaddyProcess {
     /// 立刻退出 —— 本来只是想改一个站点，结果是全站 502。这里把那种事故降级成
     /// "这次改动没生效，配置回滚了"。
     fn restart_with_rollback(&self) -> Result<(), AppError> {
+        let cfg = self.effective_caddyfile_path();
         systemctl("restart", "caddy")?;
         std::thread::sleep(Duration::from_millis(1200));
         if bin::pid().is_some() {
             return Ok(());
         }
 
-        let bak = format!("{}.zops-bak", self.caddyfile_path);
+        let bak = format!("{}.zops-bak", cfg);
         if !std::path::Path::new(&bak).exists() {
             return Err(AppError::internal(
                 "Caddy 重启后没有起来，而且没找到上一版配置，无法自动回滚 —— 先看网关日志（journalctl -u caddy）",
@@ -241,7 +277,7 @@ impl CaddyProcess {
         }
         let previous = std::fs::read_to_string(&bak)
             .map_err(|e| AppError::internal(format!("读取上一版配置失败：{e}")))?;
-        std::fs::write(&self.caddyfile_path, previous)
+        std::fs::write(&cfg, previous)
             .map_err(|e| AppError::internal(format!("写回上一版配置失败：{e}")))?;
         systemctl("restart", "caddy")?;
         std::thread::sleep(Duration::from_millis(1200));
