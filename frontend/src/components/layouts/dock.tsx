@@ -30,6 +30,7 @@ import { cn } from '../../lib/utils';
 const DOCK_ORDER = [
   '/monitor',
   '/screen',
+  '/analytics',
   '/sites',
   '/deploy',
   '/network',
