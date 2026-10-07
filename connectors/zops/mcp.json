@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "zops": {
+      "type": "streamableHttp",
+      "url": "${ZOPS_SCHEMA}://${ZOPS_HOST}:${ZOPS_PORT}/api/ops/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ZOPS_API_KEY}"
+      },
+      "timeout": 30000
+    }
+  }
+}

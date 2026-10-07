@@ -131,13 +131,69 @@ mod tests {
         })
     }
 
-    fn pack_plugin() -> Value {
-        serde_json::from_str(&read_pack(".codebuddy-plugin/plugin.json"))
-            .expect("连接器包的 plugin.json 不是合法 JSON")
+    fn pack_meta() -> Value {
+        serde_json::from_str(&read_pack("connector-meta.json"))
+            .expect("连接器包的 connector-meta.json 不是合法 JSON")
     }
 
-    fn pack_server<'a>(plugin: &'a Value) -> &'a Value {
-        &plugin["extensions"]["ai.workbuddy"]["urlTemplatedMcpServers"]["zops"]
+    fn pack_mcp() -> Value {
+        serde_json::from_str(&read_pack("mcp.json")).expect("连接器包的 mcp.json 不是合法 JSON")
+    }
+
+    /// `mcp.json` 里那唯一一个 Server。规范明说「一个连接器只配置一个 MCP Server」，
+    /// 配多了会怎么处理没人知道 —— 所以这里直接要求它只有一个。
+    fn pack_server<'a>(mcp: &'a Value) -> &'a Value {
+        let servers = mcp["mcpServers"]
+            .as_object()
+            .expect("mcp.json 缺 mcpServers");
+        assert_eq!(
+            servers.len(),
+            1,
+            "一个连接器只能配一个 MCP Server，现在有 {:?}",
+            servers.keys().collect::<Vec<_>>()
+        );
+        servers.values().next().unwrap()
+    }
+
+    fn version_tuple(v: &str) -> (u32, u32, u32) {
+        let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+        (
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+        )
+    }
+
+    /// SKILL.md frontmatter 里的 `version`。平台会把它转成
+    /// `metadata["ai.workbuddy.version"]`，所以它也是"这个包描述哪个版本"的一部分。
+    fn skill_frontmatter_version() -> String {
+        let skill = read_pack("skills/zops/SKILL.md");
+        let after = skill
+            .strip_prefix("---")
+            .expect("SKILL.md 开头不是 frontmatter");
+        let frontmatter = after.split("\n---").next().expect("frontmatter 没有闭合");
+        frontmatter
+            .lines()
+            .find_map(|line| line.strip_prefix("version:"))
+            .map(|v| v.trim().to_string())
+            .expect("SKILL.md frontmatter 缺 version")
+    }
+
+    /// 包里所有 `mcp.json` 引用到的 `${VAR}`，按出现顺序去重。
+    fn mcp_placeholders(mcp: &Value) -> Vec<String> {
+        let text = serde_json::to_string(mcp).unwrap();
+        let mut found = Vec::new();
+        let mut rest = text.as_str();
+        while let Some(start) = rest.find("${") {
+            rest = &rest[start + 2..];
+            let Some(end) = rest.find('}') else { break };
+            let key = &rest[..end];
+            if !found.iter().any(|k| k == key) {
+                found.push(key.to_string());
+            }
+            rest = &rest[end..];
+        }
+        found
     }
 
     /// 包里的技能正文必须和编进二进制的那份逐字节一致。
@@ -162,124 +218,147 @@ mod tests {
         }
     }
 
-    /// 连接器版本跟 `Cargo.toml` 走：它描述的就是这个版本面板提供的工具集。
-    /// 两个版本号各说各话，排查问题时会先怀疑版本对不上，白绕一圈。
+    /// 版本号跟 `Cargo.toml` 走：连接器描述的就是这个版本面板提供的工具集。
+    ///
+    /// 版本号写在两个地方（元信息和技能 frontmatter），漏掉哪一个都会让"这个包
+    /// 对应哪个面板"说不清 —— 排查线上问题时先怀疑版本对不上，白绕一圈。
     #[test]
-    fn connector_pack_version_tracks_the_crate_version() {
+    fn connector_pack_versions_track_the_crate_version() {
         assert_eq!(
-            pack_plugin()["version"].as_str(),
+            pack_meta()["version"].as_str(),
             Some(SERVER_VERSION),
-            "plugin.json 的 version 与 Cargo.toml 不一致，跑 `connectors/package.sh sync`"
+            "connector-meta.json 的 version 与 Cargo.toml 不一致，跑 `connectors/package.sh sync`"
+        );
+        assert_eq!(
+            skill_frontmatter_version(),
+            SERVER_VERSION,
+            "SKILL.md frontmatter 的 version 与 Cargo.toml 不一致，跑 `connectors/package.sh sync`"
         );
     }
 
-    /// 包名得是给机器看的那个 `zops`，不能是给用户看的中文名。
-    ///
-    /// `display.name` 是市场卡片上的标题（「ZOPS - 轻松搞定运维工作」那种带一句话的），
-    /// 顶层 `name` 则是包标识，要跟目录名、市场索引的 `source` 对得上。两者长得很不一样，
-    /// 所以很容易有人"顺手"把顶层那个也改成中文标题 —— 那会让包名和目录名分家。
-    /// 同时钉住 MCP server 的键名：`policy.mcpServers` 和 `urlTemplatedMcpServers`
-    /// 用不同的键，超时配置就会静默地不生效。
+    /// `source` 是平台上的全局唯一标识，得等于包目录名、且是 kebab-case。
+    /// 顺带把 `auth_mode: token` 和它要求的版本声明一起钉住。
     #[test]
-    fn connector_pack_name_and_server_key_stay_machine_readable() {
-        let plugin = pack_plugin();
+    fn connector_pack_identity_matches_the_spec() {
+        let meta = pack_meta();
 
         let root = pack_root();
         let dir = root
             .file_name()
             .and_then(|n| n.to_str())
             .expect("包目录名读不出来");
-        assert_eq!(
-            plugin["name"].as_str(),
-            Some(dir),
-            "plugin.json 的顶层 name 必须等于包目录名"
+
+        let source = meta["source"].as_str().expect("connector-meta.json 缺 source");
+        assert_eq!(source, dir, "source 必须等于包目录名（也是解压后的顶层目录名）");
+        assert!(
+            source
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+            "source 只能用小写字母、数字和连字符：{source}"
         );
 
-        let template_key = plugin["extensions"]["ai.workbuddy"]["urlTemplatedMcpServers"]
-            .as_object()
-            .expect("urlTemplatedMcpServers 不是对象")
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
-        let policy_key = plugin["extensions"]["ai.workbuddy"]["policy"]["mcpServers"]
-            .as_object()
-            .expect("policy.mcpServers 不是对象")
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
+        assert_eq!(meta["type"].as_str(), Some("mcp"));
         assert_eq!(
-            template_key, policy_key,
-            "两处的 MCP server 键名不一致，policy 里的 timeout 会静默失效"
+            meta["auth_mode"].as_str(),
+            Some("token"),
+            "ZOPS 用用户自填令牌，不是 OAuth"
         );
-        assert_eq!(template_key, vec!["zops".to_string()]);
+
+        // 官方规范的「版本兼容性」表：examples_zh/en 需要 4.24.0，
+        // auth_mode: token 与 token-schema.json 需要 4.23.0。取其中最高的。
+        let declared = version_tuple(
+            meta["minWorkbuddyVersion"]
+                .as_str()
+                .expect("用了新字段就必须声明 minWorkbuddyVersion"),
+        );
+        assert!(
+            declared >= (4, 23, 0),
+            "auth_mode: token 需要 minWorkbuddyVersion ≥ 4.23.0，现在是 {declared:?}"
+        );
+        if meta["examples_zh"].is_array() {
+            assert!(
+                declared >= (4, 24, 0),
+                "带中英文示例需要 minWorkbuddyVersion ≥ 4.24.0，现在是 {declared:?}"
+            );
+        }
     }
 
-    /// `urlTemplate` 必须落在真的在听的那条路径上。
+    /// `mcp.json` 的 url 必须落在真的在听的那条路径上。
     ///
     /// 路径写错不会提示"配置有误"，只会一直连不上，而排查方向会跑偏到网络和令牌上。
     /// 事实来源是 `http/mod.rs` 的 `.nest("/api/ops/mcp", …)`。
     #[test]
     fn connector_pack_points_at_the_real_mcp_route() {
-        let plugin = pack_plugin();
-        let server = pack_server(&plugin);
+        let mcp = pack_mcp();
+        let server = pack_server(&mcp);
 
-        let template = server["urlTemplate"]
-            .as_str()
-            .expect("urlTemplate 缺失或不是字符串");
+        let url = server["url"].as_str().expect("mcp.json 的 url 缺失");
         assert!(
-            template.ends_with("/api/ops/mcp"),
-            "urlTemplate 没落在 MCP 路由上：{template}"
+            url.ends_with("/api/ops/mcp"),
+            "url 没落在 MCP 路由上：{url}"
         );
-
         assert_eq!(
             server["type"].as_str(),
-            Some("streamable-http"),
-            "ZOPS 的 MCP 只实现 Streamable HTTP 一种传输"
+            Some("streamableHttp"),
+            "提交格式的传输名是流式 HTTP（文档里的写法是这个大小写）"
         );
 
         // 面板只认 `Authorization: Bearer <token>`（见 handlers::mcp::bearer）。
         // 前缀少个空格是静默 401，最难查。
-        assert_eq!(
-            server["auth"]["headers"]["Authorization"]["prefix"].as_str(),
-            Some("Bearer "),
-            "Authorization 的前缀必须是 `Bearer ` —— 注意尾随那个空格"
+        let auth = server["headers"]["Authorization"]
+            .as_str()
+            .expect("mcp.json 缺 Authorization 头");
+        assert!(
+            auth.starts_with("Bearer "),
+            "Authorization 必须以 `Bearer ` 开头 —— 注意尾随那个空格：{auth}"
         );
     }
 
-    /// `urlTemplate` 和 auth 里引用到的每个字段，都必须在 `token-schema.json` 里
-    /// 真的有定义。否则用户拿到一张填完也连不上的表单，而错误只会在运行期以
-    /// "地址拼错了"的形式出现。
+    /// `mcp.json` 里的每一个 `${VAR}` 都必须在 `token-schema.json` 里有对应字段，
+    /// 反过来也不能有问了不用的字段。
+    ///
+    /// 占位符和表单字段对不上，平台那一侧不会报"配置有误" —— 用户会拿到一张填完
+    /// 也连不上的表单，而错误只在运行期以"地址拼错了"的形式出现。
     #[test]
-    fn connector_pack_token_placeholders_are_all_askable() {
-        let plugin = pack_plugin();
-        let schema: Value = serde_json::from_str(&read_pack("ai.workbuddy/token-schema.json"))
+    fn connector_pack_token_placeholders_match_the_form_fields() {
+        let mcp = pack_mcp();
+        let schema: Value = serde_json::from_str(&read_pack("token-schema.json"))
             .expect("连接器包的 token-schema.json 不是合法 JSON");
 
-        let declared: Vec<&str> = schema["fields"]
+        let declared: Vec<String> = schema["fields"]
             .as_array()
             .expect("token-schema.json 缺 fields")
             .iter()
-            .filter_map(|field| field["key"].as_str())
+            .map(|field| {
+                field["key"]
+                    .as_str()
+                    .expect("token-schema.json 的字段缺 key")
+                    .to_string()
+            })
             .collect();
 
-        let server = pack_server(&plugin);
-        let template = server["urlTemplate"].as_str().unwrap();
-        let mut wanted: Vec<&str> = template
-            .split("${")
-            .skip(1)
-            .filter_map(|chunk| chunk.split('}').next())
-            .collect();
-        wanted.push(
-            server["auth"]["headers"]["Authorization"]["field"]
-                .as_str()
-                .expect("auth.headers.Authorization.field 缺失"),
-        );
-
-        for key in wanted {
+        let wanted = mcp_placeholders(&mcp);
+        assert!(!wanted.is_empty(), "mcp.json 里一个 ${{VAR}} 都没有");
+        for key in &wanted {
             assert!(
-                declared.contains(&key),
-                "plugin.json 引用了 ${{{key}}}，但 token-schema.json 只定义了 {declared:?}"
+                declared.contains(key),
+                "mcp.json 引用了 ${{{key}}}，但 token-schema.json 只定义了 {declared:?}"
             );
         }
+        for key in &declared {
+            assert!(
+                wanted.contains(key),
+                "token-schema.json 问了 {key}，但 mcp.json 没用它 —— 用户填了也没用"
+            );
+        }
+
+        // 敏感字段一律 password，规范里写死的。
+        let token = schema["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["key"] == "ZOPS_API_KEY")
+            .expect("表单里没有令牌字段");
+        assert_eq!(token["type"].as_str(), Some("password"));
     }
 }
