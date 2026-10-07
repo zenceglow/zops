@@ -27,7 +27,8 @@
     "screen": "实时访问",
     "notify": "事件与通知",
     "apps": "应用与服务",
-    "security": "安全中心"
+    "security": "安全中心",
+    "analytics": "访问统计"
   },
   "theme": {
     "light": "浅色",
@@ -846,7 +847,8 @@
     "m_swap": "Swap",
     "m_load": "负载",
     "cores": "核",
-    "swap_off": "未启用"
+    "swap_off": "未启用",
+    "detail": "查看明细"
   },
   "about": {
     "title": "关于",
@@ -1081,5 +1083,40 @@
     "result_failed": "失败",
     "result_invalid": "无效用户",
     "load_failed": "读取失败"
+  },
+  "analytics": {
+    "title": "访问统计",
+    "subtitle": "访问都来自哪里、有多少是攻击和机器人。地图和比例来自 Caddy 访问日志的落点聚合。",
+    "range_1h": "1 小时",
+    "range_24h": "24 小时",
+    "range_7d": "7 天",
+    "total": "请求总数",
+    "visitors": "独立 IP",
+    "cities": "城市数",
+    "per_minute": "每分钟",
+    "map_title": "访问分布",
+    "geo_on": "落点已解析",
+    "geo_off": "未配置落点解析",
+    "city_ratio": "城市比例",
+    "no_data": "这段时间没有访问记录。",
+    "tab_access": "访问日志",
+    "tab_attack": "攻击",
+    "tab_bot": "机器人",
+    "all_hosts": "全部域名",
+    "filter_placeholder": "筛选 IP / 路径 / UA",
+    "col_time": "时间",
+    "col_last_seen": "最近",
+    "col_ip": "IP",
+    "col_location": "归属地",
+    "col_host": "域名",
+    "col_request": "请求",
+    "col_status": "状态",
+    "col_kind": "类型",
+    "col_hits": "次数",
+    "col_ua": "User-Agent",
+    "no_rows": "没有符合筛选条件的记录。",
+    "rows_hint": "当前显示 {{n}} 条（最多各取最近 300 条）",
+    "legend_visitor": "访问落点",
+    "legend_self": "本机"
   }
 }

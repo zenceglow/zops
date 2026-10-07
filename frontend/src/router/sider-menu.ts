@@ -58,6 +58,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     items: [
       { path: '/monitor', labelKey: 'nav.monitor', icon: Icons.NavHomeIcon, perm: Perm.NAV_MONITOR },
       { path: '/screen', labelKey: 'nav.screen', icon: Icons.NavScreenIcon, perm: Perm.NAV_SCREEN },
+      { path: '/analytics', labelKey: 'nav.analytics', icon: Icons.NavScreenIcon, perm: Perm.NAV_SCREEN },
       { path: '/network', labelKey: 'nav.network', icon: Icons.NavNetIcon, perm: Perm.NAV_SYSTEM },
     ],
   },

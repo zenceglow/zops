@@ -11,6 +11,25 @@ import { PressurePanel, type PressureMetric } from './_components/pressure';
 import { reloadOverview, startScreenPolling, useScreenStore } from './_store';
 import type { GeoPoint, HourPoint } from './_api';
 
+/**
+ * 大屏每个 section 的「明细」入口。
+ *
+ * 大屏只回答"现在怎么样"：一屏之内塞不下可筛选的表格。所以每个 section 都给一条
+ * 去对应页面的路，而不是让人自己回想"这个数在哪一页能看全"。
+ */
+function DetailLink({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(to)}
+      className="pointer-events-auto text-[10px] text-zinc-500 transition-colors hover:text-zinc-200"
+    >
+      {label} →
+    </button>
+  );
+}
+
 const RANGES = [24, 168, 720] as const;
 
 /** 空数组提出来当常量：每次渲染传一个新 `[]`，地球会以为数据变了。 */
@@ -216,7 +235,10 @@ const StatsColumn = memo(function StatsColumn() {
 
       {/* 趋势：细柱子，只当形状看，不标刻度 */}
       <div className="mt-auto rounded-xl bg-white/[0.03] p-3">
-        <p className="text-[11px] text-zinc-500">{t('screen.hourly')}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] text-zinc-500">{t('screen.hourly')}</p>
+          <DetailLink to="/analytics" label={t('screen.detail')} />
+        </div>
         <div className="mt-2 flex h-14 items-end gap-[3px]">
           {bars.map((v, i) => (
             <span
@@ -247,6 +269,9 @@ const GlobeBlock = memo(function GlobeBlock() {
   return (
     <div className="relative min-h-0 flex-1">
       <Globe points={points ?? EMPTY_POINTS} self={self ?? null} latest={latest} />
+      <div className="absolute right-1 top-1">
+        <DetailLink to="/analytics" label={t('screen.detail')} />
+      </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-2 px-1 text-[11px] text-zinc-500">
         <span className="flex items-center gap-3">
           <Legend className="bg-emerald-400" label={t('screen.legend_visitor')} />
@@ -309,6 +334,9 @@ const PressureBlock = memo(function PressureBlock() {
   return (
     <div className="shrink-0">
       <PressurePanel metrics={metrics} processes={sys.processes} />
+      <div className="flex justify-end">
+        <DetailLink to="/monitor" label={t('screen.detail')} />
+      </div>
     </div>
   );
 });
@@ -320,6 +348,9 @@ const SecurityColumn = memo(function SecurityColumn() {
 
   return (
     <div className="flex min-h-0 flex-col gap-2.5">
+      <div className="flex justify-end">
+        <DetailLink to="/analytics?tab=attack" label={t('screen.detail')} />
+      </div>
       <SecStat
         icon={ShieldAlert}
         label={t('screen.blocked')}

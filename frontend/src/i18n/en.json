@@ -27,7 +27,8 @@
     "screen": "Live",
     "notify": "Events",
     "apps": "Apps & services",
-    "security": "Security"
+    "security": "Security",
+    "analytics": "Traffic"
   },
   "theme": {
     "light": "Light",
@@ -846,7 +847,8 @@
     "m_swap": "Swap",
     "m_load": "Load",
     "cores": "cores",
-    "swap_off": "off"
+    "swap_off": "off",
+    "detail": "Details"
   },
   "about": {
     "title": "About",
@@ -1114,5 +1116,40 @@
     "ops_deploy_job_put_file": "Write a text artifact into the deploy directory (config, small script, compose). For binaries use HTTP: curl -T file -H \"Authorization: Bearer <token>\" \"https://<panel>/api/ops/deploy/job/upload?id=<name>&path=<relative path>\".",
     "ops_deploy_job_run": "Run the deploy script. Changes production — confirm with the user first. Poll progress with ops_deploy_job_log using the returned run_id.",
     "ops_deploy_job_log": "Incrementally read a deploy run's log. Pass the previous offset to continue; finished=true means it is done."
+  },
+  "analytics": {
+    "title": "Traffic analytics",
+    "subtitle": "Where visits come from, and how much of it is attacks and bots. Map and ratios come from Caddy access-log geo aggregation.",
+    "range_1h": "1h",
+    "range_24h": "24h",
+    "range_7d": "7d",
+    "total": "Requests",
+    "visitors": "Unique IPs",
+    "cities": "Cities",
+    "per_minute": "Per minute",
+    "map_title": "Distribution",
+    "geo_on": "Geo resolved",
+    "geo_off": "Geo lookup off",
+    "city_ratio": "By city",
+    "no_data": "No traffic in this window.",
+    "tab_access": "Access log",
+    "tab_attack": "Attacks",
+    "tab_bot": "Bots",
+    "all_hosts": "All hosts",
+    "filter_placeholder": "Filter IP / path / UA",
+    "col_time": "Time",
+    "col_last_seen": "Last seen",
+    "col_ip": "IP",
+    "col_location": "Location",
+    "col_host": "Host",
+    "col_request": "Request",
+    "col_status": "Status",
+    "col_kind": "Kind",
+    "col_hits": "Hits",
+    "col_ua": "User-Agent",
+    "no_rows": "Nothing matches the filter.",
+    "rows_hint": "Showing {{n}} rows (latest 300 each)",
+    "legend_visitor": "Visitor",
+    "legend_self": "This server"
   }
 }
