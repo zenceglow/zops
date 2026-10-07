@@ -11,3 +11,6 @@
 
 # wrangler 本地状态
 .wrangler/
+
+# 连接器打包产物（`connectors/package.sh zip` 生成）
+/connectors/dist/

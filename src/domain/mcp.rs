@@ -108,3 +108,137 @@ Caddy 网关、日志和计划任务，并在被授权时重启服务或改网�
    （文本产物；二进制用 curl -T 打 /api/ops/deploy/job/upload）→ ops_deploy_job_put_script
    （部署脚本）→ 用户确认后 ops_deploy_job_run → ops_deploy_job_log 拉进度。
    部署记录会自动落到 SQLite 并和容器绑定，面板「部署」页看到的是同一批记录。";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// 上架用的连接器包。它需要一份自己的 `skills/zops/` 拷贝，而 `include_str!`
+    /// 让仓库根的 `skills/zops/` 成了唯一真源 —— 所以这里几道校验，防的是同一件事：
+    /// **包和实现各说各话**。
+    fn pack_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("connectors/zops")
+    }
+
+    fn read_pack(relative: &str) -> String {
+        let path = pack_root().join(relative);
+        std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "读不到连接器包里的 {}：{e}\n跑 `connectors/package.sh sync` 把包补齐。",
+                path.display()
+            )
+        })
+    }
+
+    fn pack_plugin() -> Value {
+        serde_json::from_str(&read_pack(".codebuddy-plugin/plugin.json"))
+            .expect("连接器包的 plugin.json 不是合法 JSON")
+    }
+
+    fn pack_server<'a>(plugin: &'a Value) -> &'a Value {
+        &plugin["extensions"]["ai.workbuddy"]["urlTemplatedMcpServers"]["zops"]
+    }
+
+    /// 包里的技能正文必须和编进二进制的那份逐字节一致。
+    ///
+    /// 分叉了不会报任何错，只会让 agent 从 MCP resources 读到一份剧本、照着另一份
+    /// 过期剧本操作线上服务器。这种错必须在 `cargo test` 里挡住。
+    #[test]
+    fn connector_pack_skills_are_byte_identical_to_the_bundled_ones() {
+        for (relative, bundled) in [
+            ("skills/zops/SKILL.md", SKILL_CONTENT),
+            ("skills/zops/references/deploy.md", SKILL_REF_DEPLOY),
+            (
+                "skills/zops/references/troubleshooting.md",
+                SKILL_REF_TROUBLESHOOTING,
+            ),
+        ] {
+            assert_eq!(
+                read_pack(relative),
+                bundled,
+                "包里的 {relative} 和编进二进制的那份不一致，跑 `connectors/package.sh sync`"
+            );
+        }
+    }
+
+    /// 连接器版本跟 `Cargo.toml` 走：它描述的就是这个版本面板提供的工具集。
+    /// 两个版本号各说各话，排查问题时会先怀疑版本对不上，白绕一圈。
+    #[test]
+    fn connector_pack_version_tracks_the_crate_version() {
+        assert_eq!(
+            pack_plugin()["version"].as_str(),
+            Some(SERVER_VERSION),
+            "plugin.json 的 version 与 Cargo.toml 不一致，跑 `connectors/package.sh sync`"
+        );
+    }
+
+    /// `urlTemplate` 必须落在真的在听的那条路径上。
+    ///
+    /// 路径写错不会提示"配置有误"，只会一直连不上，而排查方向会跑偏到网络和令牌上。
+    /// 事实来源是 `http/mod.rs` 的 `.nest("/api/ops/mcp", …)`。
+    #[test]
+    fn connector_pack_points_at_the_real_mcp_route() {
+        let plugin = pack_plugin();
+        let server = pack_server(&plugin);
+
+        let template = server["urlTemplate"]
+            .as_str()
+            .expect("urlTemplate 缺失或不是字符串");
+        assert!(
+            template.ends_with("/api/ops/mcp"),
+            "urlTemplate 没落在 MCP 路由上：{template}"
+        );
+
+        assert_eq!(
+            server["type"].as_str(),
+            Some("streamable-http"),
+            "ZOPS 的 MCP 只实现 Streamable HTTP 一种传输"
+        );
+
+        // 面板只认 `Authorization: Bearer <token>`（见 handlers::mcp::bearer）。
+        // 前缀少个空格是静默 401，最难查。
+        assert_eq!(
+            server["auth"]["headers"]["Authorization"]["prefix"].as_str(),
+            Some("Bearer "),
+            "Authorization 的前缀必须是 `Bearer ` —— 注意尾随那个空格"
+        );
+    }
+
+    /// `urlTemplate` 和 auth 里引用到的每个字段，都必须在 `token-schema.json` 里
+    /// 真的有定义。否则用户拿到一张填完也连不上的表单，而错误只会在运行期以
+    /// "地址拼错了"的形式出现。
+    #[test]
+    fn connector_pack_token_placeholders_are_all_askable() {
+        let plugin = pack_plugin();
+        let schema: Value = serde_json::from_str(&read_pack("ai.workbuddy/token-schema.json"))
+            .expect("连接器包的 token-schema.json 不是合法 JSON");
+
+        let declared: Vec<&str> = schema["fields"]
+            .as_array()
+            .expect("token-schema.json 缺 fields")
+            .iter()
+            .filter_map(|field| field["key"].as_str())
+            .collect();
+
+        let server = pack_server(&plugin);
+        let template = server["urlTemplate"].as_str().unwrap();
+        let mut wanted: Vec<&str> = template
+            .split("${")
+            .skip(1)
+            .filter_map(|chunk| chunk.split('}').next())
+            .collect();
+        wanted.push(
+            server["auth"]["headers"]["Authorization"]["field"]
+                .as_str()
+                .expect("auth.headers.Authorization.field 缺失"),
+        );
+
+        for key in wanted {
+            assert!(
+                declared.contains(&key),
+                "plugin.json 引用了 ${{{key}}}，但 token-schema.json 只定义了 {declared:?}"
+            );
+        }
+    }
+}

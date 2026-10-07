@@ -1,0 +1,57 @@
+{
+  "title": "ZOPS 连接配置",
+  "title_en": "ZOPS Connection",
+  "description": "填写你的 ZOPS 面板地址与访问令牌。令牌在面板的「MCP」页创建，只在创建时显示一次，服务端只存 SHA-256；这里填的内容仅保存在本机 ~/.workbuddy 下。",
+  "description_en": "Enter the address of your ZOPS panel and an access token. Create the token on the panel's \"MCP\" page — it is shown only once and the server stores just its SHA-256. What you enter here stays on this machine under ~/.workbuddy.",
+  "docUrl": "https://github.com/zenceglow/zops/blob/master/README.zh-CN.md#%E6%8E%A5%E5%85%A5-agent",
+  "docLabel": "怎么拿令牌？打开面板 → 「MCP」页 → 新建令牌",
+  "docLabel_en": "How do I get a token? Open the panel → \"MCP\" page → create one",
+  "fields": [
+    {
+      "key": "ZOPS_SCHEMA",
+      "label": "协议",
+      "label_en": "Schema",
+      "type": "text",
+      "required": true,
+      "defaultValue": "http",
+      "placeholder": "http",
+      "placeholder_en": "http",
+      "description": "面板的访问协议。用 IP:端口 直连填 http；面板前面挂了 Caddy 并配了域名、走 HTTPS 时填 https。",
+      "description_en": "Panel access schema. Use http when connecting directly by IP:port; use https when a Caddy in front terminates TLS for a domain."
+    },
+    {
+      "key": "ZOPS_HOST",
+      "label": "面板地址",
+      "label_en": "Panel host",
+      "type": "text",
+      "required": true,
+      "placeholder": "192.168.1.10",
+      "placeholder_en": "192.168.1.10",
+      "description": "ZOPS 面板所在机器的主机名或 IP。面板装在服务器上、agent 跑在你本地时，这里填服务器的可达地址（内网 IP 或域名）。",
+      "description_en": "Hostname or IP of the machine running the ZOPS panel. When the panel is on a server and the agent runs locally, this must be an address reachable from here (a LAN IP or a domain)."
+    },
+    {
+      "key": "ZOPS_PORT",
+      "label": "端口",
+      "label_en": "Port",
+      "type": "text",
+      "required": true,
+      "defaultValue": "5200",
+      "placeholder": "5200",
+      "placeholder_en": "5200",
+      "description": "面板监听端口。官方安装脚本默认 5200，安装时选「随机」或自定义的请照面板「MCP」页给出的地址填。",
+      "description_en": "Panel listening port. The official installer defaults to 5200; if you picked a random or custom port, copy it from the address shown on the panel's \"MCP\" page."
+    },
+    {
+      "key": "ZOPS_API_KEY",
+      "label": "访问令牌",
+      "label_en": "Access token",
+      "type": "password",
+      "required": true,
+      "placeholder": "ops_xxxxxxxxxxxx",
+      "placeholder_en": "ops_xxxxxxxxxxxx",
+      "description": "以 ops_ 开头的面板令牌。只读令牌只能查状态；要重启容器、重载网关、改 Caddyfile，需要在面板上建一个读写令牌。",
+      "description_en": "A panel token starting with ops_. A read-only token can inspect state; restarting containers, reloading the gateway or editing the Caddyfile requires a read-write token."
+    }
+  ]
+}
