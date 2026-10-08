@@ -1,4 +1,5 @@
 pub mod dns;
+pub mod net;
 pub mod ports;
 pub mod sysinfo;
 pub mod timezone;

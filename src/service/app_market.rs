@@ -8,14 +8,17 @@
 //! 之所以不自己写一套执行器：这台机器上已经有二十来个服务在靠部署任务通道跑，
 //! 记录、日志、并发锁都在那儿。应用市场是"预置好的部署任务"，不是第二条通道。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::domain::app_catalog::{self, AppSpec};
+use crate::domain::container::NetworkDto;
 use crate::domain::deploy_job::{DeployJob, DeployRun};
-use crate::infrastructure::system::listeners;
+use crate::infrastructure::system::net::{self, Cidr};
+use crate::infrastructure::system::ports::{listeners, PortUsage};
+use crate::infrastructure::system::suggest_free;
 use crate::service::container::ContainerService;
 use crate::service::deploy_job::{valid_name, DeployJobService};
 use crate::shared::AppError;
@@ -100,6 +103,62 @@ impl MarketApp {
     }
 }
 
+/// 预检结论的严重程度。
+///
+/// 分两级不是排版讲究，是**要不要让人点下去**的分界：
+/// - `Block`：现在点下去一定失败。前端据此禁用按钮，后端也会在 `install` 里拒绝。
+/// - `Warn`：装得上，但会和别的东西撞、或者过几天才出问题。只提示。
+///
+/// 早先这些都平铺在一个 `warnings: Vec<String>` 里，结果是"端口已经被占用"
+/// 和"这个应用没有探活"看起来一样重 —— 用户点下去才看到 docker 报错。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckLevel {
+    Block,
+    Warn,
+}
+
+impl CheckLevel {
+    pub fn is_block(self) -> bool {
+        matches!(self, CheckLevel::Block)
+    }
+}
+
+/// 一条预检结论。
+///
+/// `detail` 说清"具体是谁跟谁撞"，`fix` 说清"改什么才能过去" —— 只说"端口被占"
+/// 等于把排查丢给用户，他得自己去 `ss -lntp` 才知道是谁占的。
+#[derive(Debug, Clone, Serialize)]
+pub struct Check {
+    pub level: CheckLevel,
+    /// 一句话说清是什么问题。
+    pub title: String,
+    /// 具体情况：谁占的、哪两段网段撞了。
+    pub detail: String,
+    /// 怎么改才能过去。
+    pub fix: String,
+}
+
+impl Check {
+    fn block(title: String, detail: String, fix: String) -> Self {
+        Check {
+            level: CheckLevel::Block,
+            title,
+            detail,
+            fix,
+        }
+    }
+
+    fn warn(title: String, detail: String, fix: String) -> Self {
+        Check {
+            level: CheckLevel::Warn,
+            title,
+            detail,
+            fix,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallPlan {
     pub app: String,
@@ -112,8 +171,10 @@ pub struct InstallPlan {
     pub script: String,
     /// 数据卷会在宿主机上建的目录（相对部署目录）。
     pub volumes: Vec<String>,
-    /// 装之前该知道的事：端口被占、网络不存在、名字重了。
-    pub warnings: Vec<String>,
+    /// 部署前检查：端口、内网、重名。
+    pub checks: Vec<Check>,
+    /// `checks` 里有阻塞项。前端据此禁用「一键部署」，省得自己再过滤一遍。
+    pub blocked: bool,
     pub dir: String,
 }
 
@@ -182,10 +243,14 @@ impl AppMarketService {
     }
 
     /// 生成方案，不动任何东西。用户可以先把 compose 看一遍再决定装不装。
+    ///
+    /// 参数变化会被前端防抖地反复调用，所以这里只做**只读**探测：读监听表、读路由表、
+    /// 问一次 docker。没有副作用，调多少次都一样。
     pub async fn plan(&self, opts: &InstallOptions) -> Result<InstallPlan, AppError> {
         let spec = lookup(&opts.app)?;
         let r = resolve(&spec, opts)?;
-        let warnings = self.warnings(&spec, &r).await?;
+        let checks = self.preflight(&spec, &r).await;
+        let blocked = checks.iter().any(|c| c.level.is_block());
         Ok(InstallPlan {
             app: spec.id.to_string(),
             name: r.name.clone(),
@@ -194,12 +259,13 @@ impl AppMarketService {
             compose: render_compose(&spec, &r, true),
             script: render_script(&spec),
             volumes: spec.volumes.iter().map(|v| v.host.to_string()).collect(),
-            warnings,
+            checks,
+            blocked,
             dir: self.jobs.dir_of(&r.name).display().to_string(),
         })
     }
 
-    /// 一键部署：落 compose 与脚本 → 建部署任务 → 起容器。
+    /// 一键部署：预检 → 落 compose 与脚本 → 建部署任务 → 起容器。
     ///
     /// 起容器是**异步**的（`run()` 立刻返回一条 run 记录，真正跑在 spawn 出去的任务
     /// 里），前端拿 run.id 去 `/deploy/run/log` 拉实时日志。接口不快返回不行 ——
@@ -210,7 +276,27 @@ impl AppMarketService {
         actor: &str,
         actor_kind: &str,
     ) -> Result<InstallResult, AppError> {
-        let (_, _, job) = self.prepare(opts, actor, actor_kind)?;
+        let spec = lookup(&opts.app)?;
+        let r = resolve(&spec, opts)?;
+
+        // 预检里有阻塞项就**停在这儿**。前端会把按钮禁掉，但这个判断不能只放在前端：
+        // MCP 的 `ops_app_install` 是直接调这里的，绕过界面的调用同样不该被放行去
+        // 拉几百 MB 镜像、再在最后一步失败。
+        //
+        // 注意窗口期：预检结论是"此刻"的。从 plan 到 install 之间端口可能被别的
+        // 东西占走，那时 docker 会自己报错 —— 预检是提前预警，不是替代 docker 的检查。
+        let checks = self.preflight(&spec, &r).await;
+        let blockers: Vec<&Check> = checks.iter().filter(|c| c.level.is_block()).collect();
+        if !blockers.is_empty() {
+            let why = blockers
+                .iter()
+                .map(|c| format!("{}（{}）", c.title, c.fix))
+                .collect::<Vec<_>>()
+                .join("；");
+            return Err(AppError::bad_request(format!("部署前检查没通过：{why}")));
+        }
+
+        let (_, _, job) = self.prepare_resolved(spec, r, actor, actor_kind)?;
         let run = self.jobs.run(&job.id, actor, actor_kind).await?;
         Ok(InstallResult {
             // 重读一次：run() 会改任务状态，返回创建前那份会让前端以为还没开始。
@@ -232,7 +318,19 @@ impl AppMarketService {
     ) -> Result<(AppSpec, Resolved, DeployJob), AppError> {
         let spec = lookup(&opts.app)?;
         let r = resolve(&spec, opts)?;
+        self.prepare_resolved(spec, r, actor, actor_kind)
+    }
 
+    /// `prepare` 的后半截：参数已经校验、默认值已经补齐，这里只负责落盘。
+    ///
+    /// 单独留一层是为了让 `install` 不用把 `resolve` 跑两遍（预检要用它、建目录也要用它）。
+    fn prepare_resolved(
+        &self,
+        spec: AppSpec,
+        r: Resolved,
+        actor: &str,
+        actor_kind: &str,
+    ) -> Result<(AppSpec, Resolved, DeployJob), AppError> {
         // 数据目录先建出来：compose 的 bind mount 会自己建，但那是 root 建的、
         // 而且日志里看不出"这一步其实在动文件系统"。先建，失败了就是一句清楚的话。
         let dir = self.jobs.dir_of(&r.name);
@@ -274,56 +372,254 @@ impl AppMarketService {
         Ok((spec, r, job))
     }
 
-    /// 装之前该知道的事。**只报"能装但会出问题"的**，不报硬错误 —— 硬错误在
-    /// `resolve` 里就拦掉了，混在一起会让"预览通过"变得没意义。
-    async fn warnings(&self, spec: &AppSpec, r: &Resolved) -> Result<Vec<String>, AppError> {
-        let mut out = Vec::new();
+    /// 部署前检查。
+    ///
+    /// 分三块：端口、内网、其它（重名 / 没有探活 / 缺 compose 插件）。
+    /// 判定逻辑全在下面的**纯函数**里，这里只负责取数 —— 真机上的监听表和路由表
+    /// 在测试里造不出来，但判定分支必须每个都覆盖到。
+    async fn preflight(&self, spec: &AppSpec, r: &Resolved) -> Vec<Check> {
+        let mut out = port_findings(
+            spec,
+            r,
+            &listeners(),
+            &self.declared_ports(),
+            net::ephemeral_port_range(),
+        );
 
-        let used: HashMap<u16, String> = listeners()
-            .into_iter()
-            .map(|l| {
-                let who = l
-                    .container
-                    .clone()
-                    .unwrap_or_else(|| l.process.clone());
-                (l.port, who)
-            })
-            .collect();
-        for (_, host, _) in &r.ports {
-            if let Some(who) = used.get(host) {
-                out.push(format!("端口 {host} 已被 {who} 占用，起容器时会失败"));
-            }
-        }
-
-        // 网络不存在时 compose 会直接报 "network xxx declared as external, but
-        // could not be found"，报错信息不难懂但没有上下文。这里先说一句。
+        // Docker 连不上时 `networks()` 报错，那是另一回事（概览页会报）。**不能**
+        // 把 Err 和"没有这张网络"合并 —— Docker 一挂，所有部署都会显示"网络不存在"，
+        // 用户会去建一堆网络然后发现问题根本不在那儿。
         match self.containers.networks().await {
             Ok(list) => {
-                if !list.networks.iter().any(|n| n.name == r.network) {
-                    out.push(format!(
-                        "docker 网络 {} 不存在；先去 Docker 页建一个，或改用 local",
-                        r.network
-                    ));
-                }
+                let found = list.networks.into_iter().find(|n| n.name == r.network);
+                out.extend(network_findings(r, found.as_ref(), &net::host_cidrs()));
             }
-            // Docker 连不上是另一回事（概览页会报），不在这里冒充成"网络不存在"。
             Err(_) => {}
         }
 
         if self.jobs.get_by_ref(&r.name).is_ok() {
-            out.push(format!("已经有一个叫 {} 的部署任务了，安装会失败", r.name));
-        }
-
-        if spec.healthcheck.is_none() {
-            out.push(format!(
-                "{} 的官方镜像没有可靠的探活方式，这个应用不会有健康状态",
-                spec.name
+            out.push(Check::block(
+                format!("已经有一个叫 {} 的部署任务了", r.name),
+                "部署任务名同时是目录名，重名时建任务会被直接拒掉".to_string(),
+                format!("换个应用名，或先到「应用与服务」里把 {} 删掉", r.name),
             ));
         }
 
-        Ok(out)
+        if net::compose_plugin_available() == Some(false) {
+            out.push(Check::block(
+                "这台机器上没有 docker compose v2 插件".to_string(),
+                "安装脚本用的是 `docker compose`（v2 子命令）。只有 v1 的 `docker-compose` 时，脚本第一行就失败，而日志里只有一句 command not found，看不出是缺插件".to_string(),
+                "装一下 compose 插件（RHEL / Alinux 系：`yum install docker-compose-plugin`）".to_string(),
+            ));
+        }
+
+        if spec.healthcheck.is_none() {
+            out.push(Check::warn(
+                format!("{} 不会有健康状态", spec.name),
+                "官方镜像没有可靠的探活命令，容器列表里它永远显示「运行中」，看不出服务到底通没通".to_string(),
+                "可以接受；要确认服务真的起来了，用卡片上的连接信息手动连一次".to_string(),
+            ));
+        }
+
+        out
+    }
+
+    /// 这台机器上**其它**应用市场应用声明过的宿主端口。
+    ///
+    /// 不看容器在不在跑，只看安装标记。理由：一个停着的 mysql-1 声明了 3306，
+    /// 现在装 mysql-2 也用 3306 会成功（端口确实是空的），但哪天把 mysql-1 起回来
+    /// 就撞了 —— 这类"过几天才炸"的冲突正是要在装之前说出来的。
+    fn declared_ports(&self) -> HashMap<u16, String> {
+        let mut out = HashMap::new();
+        let Ok(jobs) = self.jobs.list() else {
+            return out;
+        };
+        for job in jobs {
+            let Some(marker) = read_marker(&job.dir) else {
+                continue;
+            };
+            for port in marker.ports.values() {
+                out.entry(*port).or_insert_with(|| job.name.clone());
+            }
+        }
+        out
     }
 }
+
+/// 端口检测。
+///
+/// 三种情况，严重程度不一样：
+/// 1. **已经被监听** → 阻塞。docker 绑不上，`up -d` 一定失败。
+/// 2. **落在内核临时端口范围** → 冲突。现在空着，但内核会拿这个范围做出站端口。
+/// 3. **另一个应用市场应用声明过同一个端口** → 冲突。现在没事，等它起回来才撞。
+fn port_findings(
+    spec: &AppSpec,
+    r: &Resolved,
+    listening: &[PortUsage],
+    declared: &HashMap<u16, String>,
+    ephemeral: Option<(u16, u16)>,
+) -> Vec<Check> {
+    let mut out = Vec::new();
+
+    // 同一个端口可能同时被 IPv4 和 IPv6 监听，`ss` 会给两行；先按端口归并，
+    // 免得同一处冲突报两遍。
+    let mut taken: HashMap<u16, &PortUsage> = HashMap::new();
+    for l in listening {
+        taken.entry(l.port).or_insert(l);
+    }
+    let busy: HashSet<u16> = taken.keys().copied().collect();
+
+    for (key, host, container) in &r.ports {
+        let label = port_label(spec, key);
+
+        if let Some(l) = taken.get(host) {
+            if l.container.as_deref() == Some(r.name.as_str()) {
+                // 占着端口的就是这次要装的这个容器 —— 那多半是用户点了"重装"。
+                // 该做的是先停掉旧容器，而不是换个端口（换端口等于留两份数据）。
+                out.push(Check::block(
+                    format!("{label} {host} 还被上一次装的 {} 占着", r.name),
+                    format!(
+                        "{} 正在 {}:{host} 上监听，它就是你这次要装的这一份",
+                        r.name,
+                        display_addr(l)
+                    ),
+                    format!("先到「应用与服务」里停掉（或删掉）{}，再回来部署", r.name),
+                ));
+            } else {
+                out.push(Check::block(
+                    format!("{label} {host} 已经被占用"),
+                    format!(
+                        "{} 正在 {}:{host} 上监听，docker 绑不上这个端口",
+                        who_is(l),
+                        display_addr(l)
+                    ),
+                    format!("把宿主端口换成别的（容器里照旧是 {container}），或先停掉 {}", who_is(l)),
+                ));
+            }
+            // 已经占了就不用再报"将来会撞"这类次要的。
+            continue;
+        }
+
+        if let Some((lo, hi)) = ephemeral {
+            if (lo..=hi).contains(host) {
+                let hint = match suggest_ordinary_port(&busy, lo) {
+                    Some(p) => format!("换成 {p} 这类固定端口"),
+                    None => format!("换一个 {lo} 以下的固定端口"),
+                };
+                out.push(Check::warn(
+                    format!("{label} {host} 落在内核的临时端口范围里"),
+                    format!(
+                        "内核在 {lo}-{hi} 之间随机分配出站连接用的端口。现在它是空的，但这个范围内随时可能被一个普通请求占走 —— 表现是「装好几天之后突然连不上」"
+                    ),
+                    format!("{hint}（容器里照旧是 {container}）"),
+                ));
+            }
+        }
+
+        if let Some(other) = declared.get(host) {
+            if other != &r.name {
+                out.push(Check::warn(
+                    format!("{label} {host} 和已安装的 {other} 声明的是同一个端口"),
+                    format!("{other} 现在没起容器（否则上面就报「已被占用」了），但它装的时候声明的也是 {host}"),
+                    format!("两个只能同时起一个：给这次换个宿主端口，或先删掉 {other}"),
+                ));
+            }
+        }
+    }
+
+    out
+}
+
+/// 内网检测。
+///
+/// `net` 为 `None` 表示 docker 里没有这张网络。**调用方在 docker 连不上时不要
+/// 调这个函数** —— 那种情况下"不知道"会被渲染成"不存在"，是假警报。
+fn network_findings(r: &Resolved, net: Option<&NetworkDto>, host: &[Cidr]) -> Vec<Check> {
+    let mut out = Vec::new();
+
+    let Some(net) = net else {
+        // compose 里写的是 external: true —— 意思是"去用已经存在的那张网"，
+        // 不是"给我建一张"。不存在时 docker 直接拒绝启动：
+        // network xxx declared as external, but could not be found
+        out.push(Check::block(
+            format!("docker 网络 {} 不存在", r.network),
+            "compose 里这个网络是 external: true —— 意思是「去用它」，不是「建它」。不存在时 docker 会直接拒绝启动".to_string(),
+            "在「Docker → 网络」里新建一个同名网络，或把这里改成已有的那张".to_string(),
+        ));
+        return out;
+    };
+
+    if net.internal {
+        out.push(Check::block(
+            format!("网络 {} 是禁止出网的（internal）", r.network),
+            "internal 网络里的容器没有默认路由，`docker compose pull` 拉不到镜像，装到拉取那一步才失败".to_string(),
+            "换一张非 internal 的网络；或者先把镜像拉到本机再装".to_string(),
+        ));
+    }
+
+    if let Some(subnet) = Cidr::parse(&net.subnet) {
+        for h in host {
+            if subnet.overlaps(h) {
+                out.push(Check::warn(
+                    format!(
+                        "网络 {} 的子网 {} 和宿主已有的 {} 撞上了",
+                        r.network, subnet.raw, h.raw
+                    ),
+                    "两段叠在一起时，容器访问落在重叠段里的内网地址会被路由到这张 docker 网桥上，表现是「容器起来了但连不上那台机器」——没有报错，最难查的一类".to_string(),
+                    format!(
+                        "换一张别的网段的网络（避开 {}），或确认 {} 里没有你要访问的机器",
+                        h.raw, h.raw
+                    ),
+                ));
+            }
+        }
+    }
+
+    out
+}
+
+/// 端口在清单里的中文名，拿不到就用键名。
+fn port_label(spec: &AppSpec, key: &str) -> String {
+    spec.ports
+        .iter()
+        .find(|p| p.key == key)
+        .map(|p| p.label.to_string())
+        .unwrap_or_else(|| key.to_string())
+}
+
+/// 占用者是谁：优先说容器名，其次进程名，都说不上就是"一个宿主进程"。
+fn who_is(l: &PortUsage) -> String {
+    if let Some(name) = &l.container {
+        return name.clone();
+    }
+    if l.process.is_empty() {
+        "一个宿主进程".to_string()
+    } else {
+        l.process.clone()
+    }
+}
+
+fn display_addr(l: &PortUsage) -> String {
+    if l.address.is_empty() {
+        "0.0.0.0".to_string()
+    } else {
+        l.address.clone()
+    }
+}
+
+/// 给一个具体的替换建议：从 10000 往上找一个**真能绑上**的端口。
+///
+/// 上界取临时端口范围的下界，而不是写死 30000 —— 这台机器如果把范围调成了
+/// `10000 65535`，建议里就不该再出现临时端口。
+fn suggest_ordinary_port(busy: &HashSet<u16>, ephemeral_lo: u16) -> Option<u16> {
+    if ephemeral_lo <= 10_000 {
+        return None;
+    }
+    suggest_free(busy, 10_000, ephemeral_lo - 1, 1)
+        .first()
+        .copied()
+}
+
 
 fn lookup(id: &str) -> Result<AppSpec, AppError> {
     app_catalog::find(id.trim())
@@ -970,6 +1266,217 @@ mod tests {
 
         assert!(!svc.jobs.dir_of("minio").exists(), "plan 不该建目录");
         assert!(svc.list().unwrap().iter().all(|a| a.installed.is_none()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ── 部署前检查 ──
+    //
+    // 真机上的监听表和路由表在测试里造不出来，所以判定逻辑全抽成了纯函数，
+    // 这里直接喂假数据把每个分支过一遍。
+
+    fn listener(port: u16, address: &str, process: &str, container: Option<&str>) -> PortUsage {
+        PortUsage {
+            port,
+            address: address.to_string(),
+            process: process.to_string(),
+            pid: None,
+            container: container.map(str::to_string),
+        }
+    }
+
+    fn network(name: &str, internal: bool, subnet: &str) -> NetworkDto {
+        NetworkDto {
+            id: "net-id".to_string(),
+            name: name.to_string(),
+            driver: "bridge".to_string(),
+            scope: "local".to_string(),
+            internal,
+            containers: 0,
+            subnet: subnet.to_string(),
+        }
+    }
+
+    /// 一个宿主端口已经改过的 mysql 参数包。
+    fn mysql_on(host_port: u16) -> (AppSpec, Resolved) {
+        let spec = app_catalog::find("mysql").unwrap();
+        let mut o = with_env(opts("mysql"), "MYSQL_ROOT_PASSWORD", "pw");
+        o.ports.insert("mysql".to_string(), host_port);
+        let r = resolve(&spec, &o).unwrap();
+        (spec, r)
+    }
+
+    fn redis_spec_and_resolved(host_port: u16) -> (AppSpec, Resolved) {
+        let spec = app_catalog::find("redis").unwrap();
+        let mut o = with_env(opts("redis"), "REDIS_PASSWORD", "pw");
+        o.ports.insert("redis".to_string(), host_port);
+        let r = resolve(&spec, &o).unwrap();
+        (spec, r)
+    }
+
+    #[test]
+    fn 端口被别人的容器占了要挡住() {
+        let (spec, r) = mysql_on(3306);
+        let live = vec![listener(3306, "0.0.0.0", "docker-proxy", Some("old-mysql"))];
+        let checks = port_findings(&spec, &r, &live, &HashMap::new(), None);
+
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].level, CheckLevel::Block);
+        assert!(checks[0].title.contains("已经被占用"), "{}", checks[0].title);
+        // 谁占的、怎么改，都得说出来。只说"被占用"等于把排查丢回给用户。
+        assert!(checks[0].detail.contains("old-mysql"), "{}", checks[0].detail);
+        assert!(checks[0].fix.contains("old-mysql"), "{}", checks[0].fix);
+    }
+
+    #[test]
+    fn 端口被自己的旧容器占住时提示先停掉它() {
+        let (spec, mut r) = mysql_on(3306);
+        r.name = "mysql-1".to_string();
+        let live = vec![listener(3306, "0.0.0.0", "docker-proxy", Some("mysql-1"))];
+        let checks = port_findings(&spec, &r, &live, &HashMap::new(), None);
+
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].level, CheckLevel::Block);
+        assert!(checks[0].title.contains("mysql-1"), "{}", checks[0].title);
+        assert!(checks[0].fix.contains("停掉"), "{}", checks[0].fix);
+        // 不该建议换端口：这是重装，换端口等于留两份数据在机器上。
+        assert!(!checks[0].fix.contains("换成别的"), "{}", checks[0].fix);
+    }
+
+    #[test]
+    fn 同一个端口被_v4_和_v6_各监听一次只报一次() {
+        let (spec, r) = mysql_on(3306);
+        let live = vec![
+            listener(3306, "0.0.0.0", "docker-proxy", Some("old")),
+            listener(3306, "::", "docker-proxy", Some("old")),
+        ];
+        assert_eq!(port_findings(&spec, &r, &live, &HashMap::new(), None).len(), 1);
+    }
+
+    #[test]
+    fn 落在内核临时端口范围里只报冲突不挡住() {
+        let (spec, r) = redis_spec_and_resolved(41234);
+        let checks = port_findings(&spec, &r, &[], &HashMap::new(), Some((32768, 60999)));
+
+        assert_eq!(checks.len(), 1);
+        // 现在确实能绑上，只是过几天可能被内核占走 —— 拦住用户是错的。
+        assert_eq!(checks[0].level, CheckLevel::Warn);
+        assert!(checks[0].detail.contains("32768-60999"), "{}", checks[0].detail);
+        assert!(checks[0].fix.contains("固定端口"), "{}", checks[0].fix);
+    }
+
+    #[test]
+    fn 普通端口不会被当成临时端口() {
+        let (spec, r) = redis_spec_and_resolved(16379);
+        assert!(port_findings(&spec, &r, &[], &HashMap::new(), Some((32768, 60999))).is_empty());
+    }
+
+    #[test]
+    fn 建议的替换端口落在临时范围之外() {
+        let busy = HashSet::new();
+        let p = suggest_ordinary_port(&busy, 32768).unwrap();
+        assert!((10_000..32768).contains(&p), "{p}");
+        // 范围下界低到没有安全区时不硬给数字，免得给出一个同样有问题的建议。
+        assert!(suggest_ordinary_port(&busy, 9000).is_none());
+    }
+
+    #[test]
+    fn 另一个应用声明过的端口只报冲突() {
+        let (spec, r) = mysql_on(3306);
+        let mut declared = HashMap::new();
+        declared.insert(3306u16, "mysql-old".to_string());
+
+        let checks = port_findings(&spec, &r, &[], &declared, None);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].level, CheckLevel::Warn);
+        assert!(checks[0].detail.contains("mysql-old"), "{}", checks[0].detail);
+    }
+
+    #[test]
+    fn 自己声明过的端口不算冲突() {
+        let (spec, r) = mysql_on(3306);
+        let mut declared = HashMap::new();
+        declared.insert(3306u16, r.name.clone());
+        assert!(port_findings(&spec, &r, &[], &declared, None).is_empty());
+    }
+
+    #[test]
+    fn 端口已被占用时不再重复报将来的冲突() {
+        let (spec, r) = mysql_on(3306);
+        let live = vec![listener(3306, "0.0.0.0", "docker-proxy", Some("old"))];
+        let mut declared = HashMap::new();
+        declared.insert(3306u16, "even-older".to_string());
+        let checks = port_findings(&spec, &r, &live, &declared, Some((3000, 4000)));
+
+        // 一个端口三条结论会让人以为有三处问题。只留最要紧的那条。
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].level, CheckLevel::Block);
+    }
+
+    #[test]
+    fn 网络不存在要挡住() {
+        let (_, r) = redis_spec_and_resolved(16379);
+        let checks = network_findings(&r, None, &[]);
+
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].level, CheckLevel::Block);
+        // external: true 的语义不是所有人都清楚，detail 里要点出来。
+        assert!(checks[0].detail.contains("external"), "{}", checks[0].detail);
+    }
+
+    #[test]
+    fn 禁止出网的网络要挡住() {
+        let (_, r) = redis_spec_and_resolved(16379);
+        let net = network(DEFAULT_NETWORK, true, "172.18.0.0/16");
+        let checks = network_findings(&r, Some(&net), &[]);
+
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].level, CheckLevel::Block);
+        assert!(checks[0].detail.contains("拉不到镜像"), "{}", checks[0].detail);
+    }
+
+    #[test]
+    fn 子网和宿主网段撞上只报冲突() {
+        let (_, r) = redis_spec_and_resolved(16379);
+        let net = network(DEFAULT_NETWORK, false, "172.17.0.0/16");
+        let host = vec![Cidr::parse("172.16.0.0/12").unwrap()];
+        let checks = network_findings(&r, Some(&net), &host);
+
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].level, CheckLevel::Warn);
+        // 两段名字都要出现，否则用户不知道拿哪两段去比。
+        assert!(checks[0].title.contains("172.17.0.0/16"), "{}", checks[0].title);
+        assert!(checks[0].title.contains("172.16.0.0/12"), "{}", checks[0].title);
+    }
+
+    #[test]
+    fn 不重叠的网段和没有子网的网络都不报() {
+        let (_, r) = redis_spec_and_resolved(16379);
+        let host = vec![Cidr::parse("172.16.0.0/12").unwrap()];
+        let far = network(DEFAULT_NETWORK, false, "10.9.0.0/16");
+        assert!(network_findings(&r, Some(&far), &host).is_empty());
+
+        let blank = network(DEFAULT_NETWORK, false, "");
+        assert!(network_findings(&r, Some(&blank), &host).is_empty());
+    }
+
+    /// 有阻塞项时 `install` 必须停住。界面会把按钮禁掉，但 MCP 的
+    /// `ops_app_install` 是直接调它的 —— 绕过界面的调用同样不该被放行去拉几百 MB
+    /// 镜像、再在最后一步失败。
+    #[tokio::test]
+    async fn 有阻塞项时一键部署会被拒() {
+        let (svc, root) = harness("blocked");
+        let o = with_env(opts("postgres"), "POSTGRES_PASSWORD", "pw");
+        // 先用同一个名字占掉任务名，制造一个必然失败的阻塞项。
+        svc.prepare(&o, "tester", "user").unwrap();
+
+        let err = svc.install(&o, "tester", "user").await.unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("部署前检查没通过"), "{msg}");
+        assert!(msg.contains("已经有一个叫"), "{msg}");
+
+        // 关键：失败发生在建任务之前，没有留下半个任务。
+        let jobs = svc.jobs.list().unwrap();
+        assert_eq!(jobs.len(), 1, "只该有先前那一个任务");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

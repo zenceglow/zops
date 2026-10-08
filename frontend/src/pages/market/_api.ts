@@ -86,6 +86,25 @@ export type InstallOptions = {
   env?: Record<string, string>;
 };
 
+/**
+ * 预检结论的严重程度。
+ *
+ * `block` 是"现在点下去一定失败"，`warn` 是"装得上但会撞、或者过几天才出问题"。
+ * 分了级才敢禁按钮 —— 只有必然会失败的才该拦人。
+ */
+export type CheckLevel = 'block' | 'warn';
+
+/**
+ * 一条预检结论。`detail` 说清"谁跟谁撞"，`fix` 说清"改什么才能过去" —— 两段都由
+ * 后端给：它才知道是哪个容器占了端口、哪两段网段重叠。前端只负责排版和上色。
+ */
+export type Check = {
+  level: CheckLevel;
+  title: string;
+  detail: string;
+  fix: string;
+};
+
 export type InstallPlan = {
   app: string;
   name: string;
@@ -96,8 +115,10 @@ export type InstallPlan = {
   script: string;
   /** 会在部署目录里建的子目录。 */
   volumes: string[];
-  /** 端口被占、网络不存在这类"能装但会出问题"的提醒。 */
-  warnings: string[];
+  /** 部署前检查：端口、内网、重名。 */
+  checks: Check[];
+  /** `checks` 里有阻塞项。后端也会在 install 时同样拦一次，这里只管界面。 */
+  blocked: boolean;
   dir: string;
 };
 

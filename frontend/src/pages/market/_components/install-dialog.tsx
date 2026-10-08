@@ -28,6 +28,7 @@ import {
   installApp,
   localized,
   planApp,
+  type Check,
   type InstallOptions,
   type InstallPlan,
   type MarketApp,
@@ -316,19 +317,7 @@ export function InstallDialog({
                   </div>
                 )}
 
-                {plan && plan.warnings.length > 0 && (
-                  <div className="space-y-1.5 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                    {plan.warnings.map((w) => (
-                      <div
-                        key={w}
-                        className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400"
-                      >
-                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                        <span>{w}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {plan && <Preflight checks={plan.checks} />}
 
                 <div className="space-y-1.5 text-xs text-muted-foreground">
                   {app.notes.map((n, i) => (
@@ -416,10 +405,22 @@ export function InstallDialog({
         <DialogFooter>
           {phase === 'form' ? (
             <>
+              {/* 有阻塞项时把原因直接摆在按钮旁边 —— 只把按钮变灰，用户会以为
+                  是界面卡了，然后反复点。 */}
+              {plan?.blocked && (
+                <div className="mr-auto flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400">
+                  <XCircle className="size-3.5 shrink-0" />
+                  {t('market.dialog.blocked_hint')}
+                </div>
+              )}
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 {t('market.dialog.cancel')}
               </Button>
-              <Button onClick={() => void submit()} disabled={submitting || !!planError}>
+              <Button
+                onClick={() => void submit()}
+                // `!plan`：刚打开的那 350ms 还没有方案，这时候点下去等于闭眼装。
+                disabled={submitting || !!planError || !plan || plan.blocked}
+              >
                 {submitting && <Loader2 className="animate-spin" />}
                 {t('market.dialog.submit')}
               </Button>
@@ -460,6 +461,89 @@ function Field({
       <Label className="text-sm">{label}</Label>
       <div className="mt-1.5">{children}</div>
       <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
+    </div>
+  );
+}
+
+/**
+ * 部署前检查的结论。
+ *
+ * 分两组而非混在一起：`block` 是"现在点下去一定失败"（端口被占、网络不存在、
+ * 任务重名、缺 compose 插件），`warn` 是"装得上但会和别的东西撞"（临时端口范围、
+ * 两张网段重叠、另一个应用声明了同一个端口）。前者要挡住按钮，后者只是提醒 ——
+ * 混成一条黄字的话，用户对两种完全不同的严重程度就没法区分了。
+ */
+function Preflight({ checks }: { checks: Check[] }) {
+  const { t } = useTranslation();
+  const blocking = checks.filter((c) => c.level === 'block');
+  const conflicting = checks.filter((c) => c.level !== 'block');
+
+  return (
+    <div className="space-y-2">
+      {blocking.length > 0 && (
+        <FindingGroup
+          tone="block"
+          heading={t('market.dialog.blocking', { n: blocking.length })}
+          items={blocking}
+        />
+      )}
+      {conflicting.length > 0 && (
+        <FindingGroup
+          tone="warn"
+          heading={t('market.dialog.conflicts', { n: conflicting.length })}
+          items={conflicting}
+        />
+      )}
+    </div>
+  );
+}
+
+function FindingGroup({
+  tone,
+  heading,
+  items,
+}: {
+  tone: 'block' | 'warn';
+  heading: string;
+  items: Check[];
+}) {
+  const { t } = useTranslation();
+  const isBlock = tone === 'block';
+  const Icon = isBlock ? XCircle : AlertTriangle;
+
+  return (
+    <div
+      className={cn(
+        'space-y-2.5 rounded-xl border px-3 py-2',
+        isBlock ? 'border-rose-500/30 bg-rose-500/5' : 'border-amber-500/30 bg-amber-500/5',
+      )}
+    >
+      <div
+        className={cn(
+          'flex items-center gap-1.5 text-xs font-medium',
+          isBlock ? 'text-rose-600 dark:text-rose-400' : 'text-amber-700 dark:text-amber-400',
+        )}
+      >
+        <Icon className="size-3.5 shrink-0" />
+        {heading}
+      </div>
+      {items.map((c) => (
+        <div key={c.title} className="space-y-0.5">
+          <div
+            className={cn(
+              'text-sm',
+              isBlock ? 'text-rose-700 dark:text-rose-400' : 'text-amber-700 dark:text-amber-400',
+            )}
+          >
+            {c.title}
+          </div>
+          <div className="text-xs leading-relaxed text-muted-foreground">{c.detail}</div>
+          <div className="text-xs leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground/75">{t('market.dialog.fix')}</span>
+            {c.fix}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

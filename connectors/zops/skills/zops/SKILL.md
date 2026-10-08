@@ -3,7 +3,7 @@ name: zops
 description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载、Docker 容器、Caddy 网关、日志与定时任务，并在用户确认后重启容器、重载网关或改 Caddyfile。当用户提到 ZOPS、MCP 里出现 ops_* 工具、或说"服务器变慢/磁盘满/容器挂了/网站 502/证书过期/帮我看看服务器"时使用。
 description_zh: 通过 ZOPS 面板运维服务器：查看负载、Docker 容器、Caddy 网关、日志与定时任务，并在用户确认后重启容器、重载网关或改 Caddyfile。
 description_en: Operate a Linux server through your own ZOPS panel — inspect load, Docker containers, the Caddy gateway, logs and cron jobs, and restart containers, reload the gateway or edit the Caddyfile once the user approves.
-version: 0.2.51
+version: 0.2.52
 author: Zenceglow
 ---
 
@@ -45,7 +45,7 @@ author: Zenceglow
 | 容器挂了 / 反复重启 | `ops_container_list` 找状态 → `ops_container_logs` 看退出原因 → 修好再 `ops_container_start`（写操作，先说清楚） |
 | 帮我看看服务器 | `ops_panel_info` + `ops_system_overview` + `ops_container_list`，给一份"能用的现状"而不是原始 JSON |
 | 部署一个服务 | 走下面的**部署任务通道**；先 `ops_deploy_plan` 体检，再 `ops_deploy_job_create` |
-| 装个数据库 / 缓存 / 对象存储 | 先 `ops_app_list` 看内置的那几个 → `ops_app_plan` 把 compose 给用户看 → 确认后 `ops_app_install` |
+| 装个数据库 / 缓存 / 对象存储 | 先 `ops_app_list` 看内置的那几个 → `ops_app_plan` 把 compose 和检查结果给用户看 → **有 block 先解决** → 确认后 `ops_app_install` |
 | 加个域名 / 改反代 | `ops_caddyfile_get` 取备份 → `ops_caddyfile_put`（整体替换）→ `ops_gateway_reload` → 用域名实际访问验证 |
 | 端口被谁占了 | `ops_port_list`（含进程与容器） |
 
@@ -87,8 +87,8 @@ author: Zenceglow
 | `ops_deploy_job_run` | 执行部署脚本 | **write** |
 | `ops_deploy_job_log` | 增量拉部署日志（进度） | read |
 | `ops_app_list` | 应用市场里的内置应用（镜像、默认端口、要填的环境变量、数据卷、是否已装） | read |
-| `ops_app_plan` | 渲染安装方案（compose 预览、脚本、数据目录、端口/网络提醒），不改任何东西 | read |
-| `ops_app_install` | 一键部署一个内置应用（写 compose、起容器） | **write** |
+| `ops_app_plan` | 渲染安装方案 + **部署前检查**（compose 预览、脚本、数据目录、端口/内网/重名的阻塞项与冲突项），不改任何东西 | read |
+| `ops_app_install` | 一键部署一个内置应用（写 compose、起容器）；有阻塞项时会被拒 | **write** |
 
 ## 应用市场
 
@@ -100,13 +100,23 @@ author: Zenceglow
 用的还是同几个工具。安装时会往部署目录写一个 `.zops-app.json`，标记"这是市场装的哪个
 应用、当时的端口和网络"，面板靠它认领安装态。
 
-顺序：`ops_app_list` → `ops_app_plan` → **给用户看 compose 和端口** → 用户确认 →
+顺序：`ops_app_list` → `ops_app_plan` → **给用户看 compose 和检查结果** → 用户确认 →
 `ops_app_install` → `ops_deploy_job_log` 拉进度。
 
 几条要点：
 
-- **端口**：`ops_app_plan` 会告诉你默认端口有没有被占。撞了就换一个 —— 别硬装，
-  `bind: address already in use` 只会体现在容器起不来。
+- **部署前检查（`plan.checks`）**：每条带 `level`、`title`、`detail`、`fix`。
+  - `block` = **现在装一定失败**（端口被占、网络不存在、任务重名、缺 compose 插件）。
+  - `warn` = **装得上但会撞**（端口在内核临时范围里、子网和宿主网段重叠、另一个应用
+    声明过同一个端口）。
+  **有 `block` 就不要往下走** —— 把 `detail` 里是谁占的、`fix` 里怎么改告诉用户。
+  `ops_app_install` 会同样拒绝并返回原因，所以别指望"先试试看"。
+- **端口**：被占的三种情形在处理上不一样 —— 被别人的进程/容器占（换宿主端口）、
+  被**要装的这个容器自己**占（那是重装，先停掉旧的，别换端口，换了等于留两份数据）、
+  落在内核临时端口范围（换个 32768 以下的固定端口，否则过几天会被内核占走）。
+- **内网**：`block` 的两种情况 —— 网络不存在（compose 写的是 `external: true`，
+  不存在时 docker 直接拒绝启动）、网络是 `internal`（容器没有默认路由，拉不到镜像）。
+  另有子网与宿主网段重叠的 `warn`，表现是"容器起来了但连不上内网那台机器"，没有报错。
 - **网络**：默认接 `local`，这台机器上其它容器都在这个内网里，按容器名就能互相连。
   要跨机或隔离才改。
 - **密码**：`env` 里标了 required 的都是密码，必须让用户自己给，**不要替他编一个**
