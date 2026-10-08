@@ -18,6 +18,8 @@ import {
   NavUsersIcon,
   NavAgentIcon,
   NavScreenIcon,
+  NavAnalyticsIcon,
+  NavMarketIcon,
   NavNotifyIcon,
   NavDeployIcon,
 } from '../components/icons/nav-icons';
@@ -48,6 +50,8 @@ const Icons = {
   NavUsersIcon,
   NavAgentIcon,
   NavScreenIcon,
+  NavAnalyticsIcon,
+  NavMarketIcon,
   NavNotifyIcon,
   NavDeployIcon,
 } as const;
@@ -58,7 +62,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     items: [
       { path: '/monitor', labelKey: 'nav.monitor', icon: Icons.NavHomeIcon, perm: Perm.NAV_MONITOR },
       { path: '/screen', labelKey: 'nav.screen', icon: Icons.NavScreenIcon, perm: Perm.NAV_SCREEN },
-      { path: '/analytics', labelKey: 'nav.analytics', icon: Icons.NavScreenIcon, perm: Perm.NAV_SCREEN },
+      { path: '/analytics', labelKey: 'nav.analytics', icon: Icons.NavAnalyticsIcon, perm: Perm.NAV_SCREEN },
       { path: '/network', labelKey: 'nav.network', icon: Icons.NavNetIcon, perm: Perm.NAV_SYSTEM },
     ],
   },
@@ -68,6 +72,8 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { path: '/ssh', labelKey: 'nav.ssh', icon: Icons.NavSshIcon, perm: Perm.NAV_SSH },
       { path: '/files', labelKey: 'nav.files', icon: Icons.NavFilesIcon, perm: Perm.NAV_FILES },
       { path: '/deploy', labelKey: 'nav.apps', icon: Icons.NavDeployIcon, perm: Perm.OPS_DEPLOY },
+      // 应用市场紧挨着「应用与服务」：一个负责把它装起来，一个负责装完之后怎么管。
+      { path: '/market', labelKey: 'nav.market', icon: Icons.NavMarketIcon, perm: Perm.OPS_DEPLOY },
       { path: '/logs', labelKey: 'nav.logs', icon: Icons.NavLogViewerIcon, perm: Perm.NAV_LOG_VIEWER },
       { path: '/agent', labelKey: 'nav.agent', icon: Icons.NavAgentIcon, perm: Perm.NAV_AGENT },
       { path: '/notify', labelKey: 'nav.notify', icon: Icons.NavNotifyIcon, perm: Perm.NAV_NOTIFY },

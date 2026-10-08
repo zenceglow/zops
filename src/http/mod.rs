@@ -15,8 +15,9 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::http::handlers::{
-    analytics, audit, auth, automation, caddyfile, deploy, deploy_job, files, gateway, logs, member,
-    permission, notify, security, service, setup, ssh, system, mcp, token as token_handler,
+    analytics, app_market, audit, auth, automation, caddyfile, deploy, deploy_job, files, gateway,
+    logs, member, permission, notify, security, service, setup, ssh, system, mcp,
+    token as token_handler,
 };
 use crate::http::middleware::{audit::audit_middleware, auth::auth_middleware};
 
@@ -40,6 +41,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/audit", audit::routes())
         .nest("/analytics", analytics::routes())
         .nest("/deploy", deploy::routes())
+        // 应用市场：装的是"预置好的部署任务"，所以和 /deploy 同级、用同一套权限
+        // （看目录是只读，install 要 ops.deploy）。
+        .nest("/app", app_market::routes())
         .nest("/security", security::routes())
         .nest("/notify", notify::routes())
         .nest("/agent", mcp::catalog_routes())

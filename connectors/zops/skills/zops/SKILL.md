@@ -3,7 +3,7 @@ name: zops
 description: 通过 ZOPS 面板的 MCP 服务器运维服务器：查看负载、Docker 容器、Caddy 网关、日志与定时任务，并在用户确认后重启容器、重载网关或改 Caddyfile。当用户提到 ZOPS、MCP 里出现 ops_* 工具、或说"服务器变慢/磁盘满/容器挂了/网站 502/证书过期/帮我看看服务器"时使用。
 description_zh: 通过 ZOPS 面板运维服务器：查看负载、Docker 容器、Caddy 网关、日志与定时任务，并在用户确认后重启容器、重载网关或改 Caddyfile。
 description_en: Operate a Linux server through your own ZOPS panel — inspect load, Docker containers, the Caddy gateway, logs and cron jobs, and restart containers, reload the gateway or edit the Caddyfile once the user approves.
-version: 0.2.50
+version: 0.2.51
 author: Zenceglow
 ---
 
@@ -45,11 +45,12 @@ author: Zenceglow
 | 容器挂了 / 反复重启 | `ops_container_list` 找状态 → `ops_container_logs` 看退出原因 → 修好再 `ops_container_start`（写操作，先说清楚） |
 | 帮我看看服务器 | `ops_panel_info` + `ops_system_overview` + `ops_container_list`，给一份"能用的现状"而不是原始 JSON |
 | 部署一个服务 | 走下面的**部署任务通道**；先 `ops_deploy_plan` 体检，再 `ops_deploy_job_create` |
+| 装个数据库 / 缓存 / 对象存储 | 先 `ops_app_list` 看内置的那几个 → `ops_app_plan` 把 compose 给用户看 → 确认后 `ops_app_install` |
 | 加个域名 / 改反代 | `ops_caddyfile_get` 取备份 → `ops_caddyfile_put`（整体替换）→ `ops_gateway_reload` → 用域名实际访问验证 |
 | 端口被谁占了 | `ops_port_list`（含进程与容器） |
 
 写操作（`container_start/stop/restart`、`gateway_reload`、`caddyfile_put`、
-`automation_task_run`、`deploy_job_run`）**一律先讲清楚「做什么、影响谁、怎么回滚」，
+`automation_task_run`、`deploy_job_run`、`app_install`）**一律先讲清楚「做什么、影响谁、怎么回滚」，
 等用户明确同意再调用**。重启容器 = 线上短时中断；`caddyfile_put` 写错 = 全站 502。
 
 > 改完网关配置如果 Caddy 起不来，面板会自动退回上一版 Caddyfile（`.zops-bak`）——
@@ -85,6 +86,34 @@ author: Zenceglow
 | `ops_deploy_job_put_file` / `_put_script` | 写文本产物 / 写部署脚本 | **write** |
 | `ops_deploy_job_run` | 执行部署脚本 | **write** |
 | `ops_deploy_job_log` | 增量拉部署日志（进度） | read |
+| `ops_app_list` | 应用市场里的内置应用（镜像、默认端口、要填的环境变量、数据卷、是否已装） | read |
+| `ops_app_plan` | 渲染安装方案（compose 预览、脚本、数据目录、端口/网络提醒），不改任何东西 | read |
+| `ops_app_install` | 一键部署一个内置应用（写 compose、起容器） | **write** |
+
+## 应用市场
+
+内置了四个「一键部署」的应用：**MySQL 8.4、PostgreSQL 17、Redis 7、MinIO**。
+它们都是官方镜像，**没有构建步骤**，装 = 渲染 compose + `docker compose up -d`。
+
+和部署任务通道的关系：**应用市场是预置好的部署任务**。装完之后它就是一个普通的部署
+任务（目录、脚本、记录、日志全在 `/deploy/job/*` 那一套里），所以排查、重跑、看日志
+用的还是同几个工具。安装时会往部署目录写一个 `.zops-app.json`，标记"这是市场装的哪个
+应用、当时的端口和网络"，面板靠它认领安装态。
+
+顺序：`ops_app_list` → `ops_app_plan` → **给用户看 compose 和端口** → 用户确认 →
+`ops_app_install` → `ops_deploy_job_log` 拉进度。
+
+几条要点：
+
+- **端口**：`ops_app_plan` 会告诉你默认端口有没有被占。撞了就换一个 —— 别硬装，
+  `bind: address already in use` 只会体现在容器起不来。
+- **网络**：默认接 `local`，这台机器上其它容器都在这个内网里，按容器名就能互相连。
+  要跨机或隔离才改。
+- **密码**：`env` 里标了 required 的都是密码，必须让用户自己给，**不要替他编一个**
+  —— 编完就得转述给他，还会留在对话里。MinIO 的密码最少 8 位，少了容器直接退出。
+- **首次启动慢**：MySQL / PostgreSQL 要初始化数据目录，二十到六十秒，这期间探活是
+  `unhealthy`，别当成装坏了。
+- **`ops_app_plan` 里的密码是遮住的**（`******`），这是给用户看的预览，不是真值。
 
 ## 部署任务通道
 

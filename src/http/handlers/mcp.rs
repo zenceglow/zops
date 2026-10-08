@@ -31,6 +31,7 @@ use crate::domain::permission::{
 use crate::domain::token::TOKEN_PREFIX;
 use crate::http::handlers::automation::execute_command;
 use crate::http::AppState;
+use crate::service::app_market::InstallOptions;
 use crate::shared::{ApiResponse, AppError};
 
 // ─────────────────────────── principal ───────────────────────────
@@ -150,6 +151,9 @@ enum ToolId {
     DeployJobPutFile,
     DeployJobRun,
     DeployJobLog,
+    AppList,
+    AppPlan,
+    AppInstall,
 }
 
 struct ToolDef {
@@ -171,9 +175,13 @@ fn tool_level(t: &ToolDef) -> &'static str {
     if t.permission.is_empty() {
         return "read";
     }
-    let readish = ["_list", "_get", "_status", "_info", "_logs", "_tail", "_overview"]
-        .iter()
-        .any(|s| t.name.ends_with(s));
+    // `_plan` 也在只读这一档：体检和方案生成都是"只算不写"，落文件、起容器是后面
+    // 那一步的事。漏了它会让 tools/list 把这两个工具报成 write，Agent 就不敢用了。
+    let readish = [
+        "_list", "_get", "_status", "_info", "_logs", "_tail", "_overview", "_plan",
+    ]
+    .iter()
+    .any(|s| t.name.ends_with(s));
     if readish {
         "read"
     } else {
@@ -583,10 +591,80 @@ fn tool_catalog() -> Vec<ToolDef> {
             },
             id: ToolId::DeployJobLog,
         },
+        // ── 应用市场 ──
+        //
+        // 内置应用（MySQL / PostgreSQL / Redis / MinIO）的一键部署。装出来的东西和
+        // 手工部署是同一批记录，所以顺序也一样：list 看有哪些 → plan 看会写成什么
+        // → 让用户确认 → install → 用 `ops_deploy_job_log` 拉进度。
+        ToolDef {
+            name: "ops_app_list",
+            description: "应用市场里能一键部署的应用（MySQL / PostgreSQL / Redis / MinIO），每个带：镜像、默认端口、要填的环境变量（含哪些是必填、密码的最短长度）、数据卷，以及是否已经装过、装在哪。装之前先看这个，别自己编参数。",
+            permission: OPS_SYSTEM_READ,
+            schema: empty_schema,
+            id: ToolId::AppList,
+        },
+        ToolDef {
+            name: "ops_app_plan",
+            description: "生成安装方案但**什么都不改**：渲染好的 docker-compose.yml（密码已遮）、部署脚本、数据目录、以及端口被占/网络不存在这类提醒。只读。install 之前先把这份 compose 给用户看。",
+            permission: OPS_SYSTEM_READ,
+            schema: app_install_schema,
+            id: ToolId::AppPlan,
+        },
+        ToolDef {
+            name: "ops_app_install",
+            description: "一键部署一个内置应用到这台机器：写 compose 与数据目录、建部署任务、docker compose up -d。会占端口、落文件、起容器 —— 执行前必须让用户确认，并且先跑 ops_app_plan 给他看。返回 run_id，用 ops_deploy_job_log 拉进度。",
+            permission: OPS_DEPLOY,
+            schema: app_install_schema,
+            id: ToolId::AppInstall,
+        },
     ]
 }
 
+/// `ops_app_plan` 与 `ops_app_install` 收同一组参数 —— 一个渲染、一个执行，
+/// 参数形状必须一模一样，否则"先 plan 再 install"就会拿到两份不同的东西。
+fn app_install_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "app": {
+                "type": "string",
+                "description": "应用 id：mysql / postgres / redis / minio。取值来自 ops_app_list 的 id。"
+            },
+            "name": {
+                "type": "string",
+                "description": "应用名，同时是部署目录名和容器名（a-z 0-9 - _）。留空用应用的默认名。"
+            },
+            "network": {
+                "type": "string",
+                "description": "docker 网络。留空用 local —— 这台机器上的内网，其它容器按容器名就能连到它。"
+            },
+            "ports": {
+                "type": "object",
+                "description": "端口 key → 宿主端口。key 见 ops_app_list 的 ports[].key（如 mysql 的 \"mysql\"、minio 的 \"api\"/\"console\"）。没给的用默认值，撞端口会起不来。",
+                "additionalProperties": { "type": "integer" }
+            },
+            "env": {
+                "type": "object",
+                "description": "环境变量。key 见 ops_app_list 的 env[].key。标了 required 的必须给（都是密码类），没给的用默认值。",
+                "additionalProperties": { "type": "string" }
+            }
+        },
+        "required": ["app"],
+        "additionalProperties": false
+    })
+}
+
 // ─────────────────────────── argument helpers ───────────────────────────
+
+/// 把 MCP 参数整份交给 `InstallOptions` 反序列化。
+///
+/// 不逐字段手写 `args.get(..)`：那样工具 schema 和解析会各写一份，加一个字段就得
+/// 改两处，漏了的表现是"说明里能填、填了不生效"。serde 的报错带字段名，直接转给
+/// 调用方比自造的更准。
+fn install_options(args: &Value) -> Result<InstallOptions, AppError> {
+    serde_json::from_value(args.clone())
+        .map_err(|e| AppError::bad_request(format!("参数不对：{e}")))
+}
 
 fn require_str(args: &Value, key: &str) -> Result<String, String> {
     args.get(key)
@@ -801,6 +879,21 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
             let offset = args.get("offset").and_then(Value::as_u64).unwrap_or(0);
             Ok(serde_json::to_value(state.deploy_jobs.run_log(&run_id, offset).await?)
                 .unwrap_or(Value::Null))
+        }
+        ToolId::AppList => Ok(json!({ "apps": state.app_market.list()? })),
+        ToolId::AppPlan => {
+            let opts = install_options(args)?;
+            Ok(json!({ "plan": state.app_market.plan(&opts).await? }))
+        }
+        ToolId::AppInstall => {
+            let opts = install_options(args)?;
+            let (actor, actor_kind) = principal_actor(state, principal);
+            let out = state.app_market.install(&opts, &actor, actor_kind).await?;
+            Ok(json!({
+                "job": out.job,
+                "run": out.run,
+                "note": "容器在后台起来，用 ops_deploy_job_log 带上 run_id 拉进度；首次启动初始化数据目录要几十秒。"
+            }))
         }
         }
     }

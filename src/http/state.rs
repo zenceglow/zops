@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::service::{
     analytics::AnalyticsService,
+    app_market::AppMarketService,
     audit::AuditService,
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     container::ContainerService,
@@ -26,6 +27,8 @@ pub struct AppState {
     pub deploy: Arc<DeployService>,
     /// 部署任务通道：目录 + 产物 + 脚本 + 记录。
     pub deploy_jobs: Arc<DeployJobService>,
+    /// 应用市场：内置应用的清单、参数校验与一键部署。装完落到部署任务通道上。
+    pub app_market: Arc<AppMarketService>,
     pub files: Arc<FilesService>,
     pub gateway: Arc<GatewayService>,
     pub caddyfile: Arc<CaddyfileService>,

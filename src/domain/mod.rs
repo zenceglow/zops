@@ -1,6 +1,7 @@
 //! Domain: pure models and rules. No I/O, no Axum.
 
 pub mod auth;
+pub mod app_catalog;
 pub mod automation;
 pub mod caddy;
 pub mod container;

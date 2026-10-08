@@ -21,6 +21,7 @@ export const APP_ROUTES: RouteDef[] = [
   { path: '/ssh', lazy: page(() => import('../pages/ssh')) },
   { path: '/files', lazy: page(() => import('../pages/files')) },
   { path: '/deploy', lazy: page(() => import('../pages/deploy')) },
+  { path: '/market', lazy: page(() => import('../pages/market')) },
   { path: '/logs', lazy: page(() => import('../pages/logs')) },
   { path: '/security', lazy: page(() => import('../pages/security')) },
   { path: '/automation/tasks', lazy: page(() => import('../pages/automation/tasks')) },

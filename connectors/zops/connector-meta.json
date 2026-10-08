@@ -7,7 +7,7 @@
   "description_en": "Operate a Linux server through your own ZOPS panel: inspect load, disks, Docker containers, the Caddy gateway, logs and cron jobs. State-changing actions (restarting a container, reloading the gateway, editing the Caddyfile) are explained with their impact and rollback first, and only run after you approve. Panel address and token stay on your machine.",
   "source": "zops",
   "type": "mcp",
-  "version": "0.2.50",
+  "version": "0.2.51",
   "auth_mode": "token",
   "minWorkbuddyVersion": "4.24.0",
   "examples_zh": [

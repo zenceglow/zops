@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod app_market;
 pub mod audit;
 pub mod auth;
 pub mod automation;

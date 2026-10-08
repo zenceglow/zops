@@ -16,6 +16,7 @@ use infrastructure::{
 };
 use service::{
     analytics::AnalyticsService,
+    app_market::AppMarketService,
     audit::AuditService,
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     files::FilesService,
@@ -174,15 +175,25 @@ async fn async_main() {
     let security = Arc::new(SecurityService::new(db.clone()));
     let security_worker = security.clone();
 
+    // 容器与部署通道先提出来：应用市场要同时拿到这两个（列 docker 网络、把安装
+    // 落到部署目录并起容器）。放进 AppState 字面量里就借不出来了。
+    let containers = Arc::new(ContainerService::new(docker));
+    let deploy_jobs = Arc::new(DeployJobService::new(db.clone(), cfg.deploy_dir.clone()));
+    let app_market = Arc::new(AppMarketService::new(
+        deploy_jobs.clone(),
+        containers.clone(),
+    ));
+
     let state = Arc::new(AppState {
         analytics,
         audit: Arc::new(AuditService::new(db.clone())),
         auth: Arc::new(AuthService::new(db.clone(), jwt_secret)),
         setup: setup.clone(),
         system,
-        containers: Arc::new(ContainerService::new(docker)),
+        containers,
         deploy: Arc::new(DeployService::new(db.clone(), cfg.deploy_dir.clone())),
-        deploy_jobs: Arc::new(DeployJobService::new(db.clone(), cfg.deploy_dir.clone())),
+        deploy_jobs,
+        app_market,
         files: Arc::new(FilesService::new(db.clone(), cfg.data_dir.clone())),
         gateway: Arc::new(GatewayService::new(caddy.clone())),
         caddyfile: Arc::new(CaddyfileService::new(caddy, db.clone())),

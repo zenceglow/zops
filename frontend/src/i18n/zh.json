@@ -28,7 +28,8 @@
     "notify": "事件与通知",
     "apps": "应用与服务",
     "security": "安全中心",
-    "analytics": "访问统计"
+    "analytics": "访问统计",
+    "market": "应用市场"
   },
   "theme": {
     "light": "浅色",
@@ -1123,5 +1124,49 @@
     "other_sites": "其他",
     "cities_hint": "共 {{n}} 个城市（按访问量排序）",
     "cities_rest": "其余 {{n}} 个为长尾，合计占比不足 1%"
+  },
+  "market": {
+    "title": "应用市场",
+    "subtitle": "挑一个装上去。端口和密码你定，其余按这台机器的既有习惯配好。",
+    "empty": "目录里暂时没有应用。",
+    "installed": "已安装",
+    "installed_as": "应用名",
+    "installed_count": "已装 {{n}} / {{total}}",
+    "deploy": "一键部署",
+    "redeploy": "再装一份",
+    "view_in_apps": "到应用与服务里看",
+    "official_docs": "官方文档",
+    "err": {
+      "load": "读应用目录失败",
+      "plan": "生成安装方案失败",
+      "install": "部署失败"
+    },
+    "dialog": {
+      "tab_params": "参数",
+      "tab_preview": "compose 预览",
+      "name": "应用名",
+      "name_hint": "同时是部署目录名与容器名，只能用 a-z 0-9 - _。",
+      "network": "Docker 网络",
+      "network_hint": "接哪个 docker 内网。同网络下的其它容器可以直接按容器名连它。",
+      "network_default": "本机默认",
+      "ports_title": "端口",
+      "container_port": "容器",
+      "env_title": "环境变量",
+      "required": "必填",
+      "required_ph": "必填，请填入",
+      "min_len": "至少 {{n}} 位",
+      "preview_hint": "这是服务端渲染出来的 compose —— 真正会写进部署目录的就是它（密码已遮）。",
+      "preview_loading": "正在生成…",
+      "script": "部署脚本",
+      "dir": "部署目录",
+      "cancel": "取消",
+      "submit": "一键部署",
+      "installing": "正在拉起容器…",
+      "waiting": "等待输出…",
+      "done": "装好了。需要初始化数据目录的应用，容器还要几十秒才会变成 healthy。",
+      "failed": "部署失败（退出码 {{code}}），看下面的输出定位原因。",
+      "back": "改参数重试",
+      "close": "关闭"
+    }
   }
 }

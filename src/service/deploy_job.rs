@@ -158,6 +158,48 @@ impl DeployJobService {
         kind: &str,
         port: Option<u16>,
     ) -> Result<DeployJob, AppError> {
+        let name = self.check_name(name)?;
+        // 骨架。前端只在网关后面（不发布宿主端口），后端发布一个宿主端口。
+        let frontend = kind == "frontend";
+        let port = if frontend {
+            0
+        } else {
+            port.unwrap_or_else(pick_free_port)
+        };
+        let script = deploy_script(name, frontend, port);
+        let files: Vec<(&str, String)> = vec![
+            ("docker-compose.yml", compose_file(name, frontend, port)),
+            ("Dockerfile", dockerfile(name, frontend, port)),
+            ("deploy.sh", script.clone()),
+        ];
+        self.persist(name, note, source, actor, actor_kind, &files, &script)
+    }
+
+    /// 按**给定的** compose 与脚本建任务，跳过骨架。
+    ///
+    /// 应用市场走这条路。基础设施应用（MySQL / Redis / MinIO…）用的是官方镜像，
+    /// **没有构建步骤** —— 走 `create()` 的骨架会多写一个 Dockerfile、脚本里多一句
+    /// `docker build`，而那个 Dockerfile 是 `COPY <name> .`（等着用户传二进制），
+    /// 必然失败。所以这里只落应用自己的 compose 与脚本。
+    ///
+    /// 其余行为与 `create()` 完全一致（目录已存在就不覆盖、脚本落库、产物登记），
+    /// 因为它们共用 `persist()` —— 两套创建路径不该在"覆盖还是补缺"这种细节上分叉。
+    pub fn create_rendered(
+        &self,
+        name: &str,
+        note: &str,
+        source: &str,
+        actor: &str,
+        actor_kind: &str,
+        files: &[(&str, String)],
+        script: &str,
+    ) -> Result<DeployJob, AppError> {
+        let name = self.check_name(name)?;
+        self.persist(name, note, source, actor, actor_kind, files, script)
+    }
+
+    /// 名字既是目录名又是容器名，所以字符集就是一道安全边界。
+    fn check_name<'a>(&self, name: &'a str) -> Result<&'a str, AppError> {
         let name = name.trim();
         if !valid_name(name) {
             return Err(AppError::bad_request(
@@ -172,27 +214,29 @@ impl DeployJobService {
         {
             return Err(AppError::bad_request(format!("已经有一个叫 {name} 的部署任务了")));
         }
+        Ok(name)
+    }
+
+    /// 落盘 + 落库。`create()` 与 `create_rendered()` 的共同尾巴。
+    fn persist(
+        &self,
+        name: &str,
+        note: &str,
+        source: &str,
+        actor: &str,
+        actor_kind: &str,
+        files: &[(&str, String)],
+        script: &str,
+    ) -> Result<DeployJob, AppError> {
         let source = if source == "agent" { "agent" } else { "manual" };
         let dir = self.dir_of(name);
         std::fs::create_dir_all(&dir)
             .map_err(|e| AppError::internal(format!("创建 {} 失败：{e}", dir.display())))?;
 
-        // 骨架。前端只在网关后面（不发布宿主端口），后端发布一个宿主端口。
-        let frontend = kind == "frontend";
-        let port = if frontend {
-            0
-        } else {
-            port.unwrap_or_else(pick_free_port)
-        };
-        let script = deploy_script(name, frontend, port);
-        let files: [(&str, String); 3] = [
-            ("docker-compose.yml", compose_file(name, frontend, port)),
-            ("Dockerfile", dockerfile(name, frontend, port)),
-            ("deploy.sh", script.clone()),
-        ];
         // **只补缺的，不覆盖已有的**：纳管一个本来就存在、手写过配置的服务时，
-        // 把它目录里的 compose/Dockerfile 冲掉是最不能犯的错。
-        for (file, body) in &files {
+        // 把它目录里的 compose/Dockerfile 冲掉是最不能犯的错。应用市场重装同一个
+        // 应用时这条同样管用 —— 已经改过的 compose 不会被悄悄盖回去。
+        for (file, body) in files {
             let path = dir.join(file);
             if path.exists() {
                 continue;
@@ -200,17 +244,17 @@ impl DeployJobService {
             std::fs::write(&path, body)
                 .map_err(|e| AppError::internal(format!("写入 {file} 失败：{e}")))?;
         }
-        // 脚本以目录里那份为准（老目录里可能已经有一份），没有才用骨架。
-        let script = std::fs::read_to_string(dir.join("deploy.sh")).unwrap_or(script);
+        // 脚本以目录里那份为准（老目录里可能已经有一份），没有才用传进来的。
+        let script = std::fs::read_to_string(dir.join("deploy.sh"))
+            .unwrap_or_else(|_| script.to_string());
 
         let id = uuid::Uuid::new_v4().to_string();
-        let row = self
-            .db
+        self.db
             .create_deploy_job(&id, name, note.trim(), source, actor, actor_kind)
             .map_err(AppError::from)?;
         // 脚本直接落库：面板第 2 步、agent 的 put_script 都从这儿起步。
         self.db.save_deploy_script(&id, &script).map_err(AppError::from)?;
-        for (file, body) in &files {
+        for (file, body) in files {
             self.db
                 .upsert_deploy_file(
                     &uuid::Uuid::new_v4().to_string(),
@@ -222,7 +266,6 @@ impl DeployJobService {
                 .map_err(AppError::from)?;
         }
         // 从库里重读一次：脚本和产物是刚写进去的，别把创建前的快照返回给调用方。
-        let _ = row;
         self.get(&id)
     }
 

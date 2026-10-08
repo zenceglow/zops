@@ -24,9 +24,11 @@ import {
   HiPlayCircle,
   HiClock,
   HiCpuChip,
-  HiChartBarSquare,
+  HiChartBar,
+  HiPresentationChartLine,
   HiBellAlert,
   HiRocketLaunch,
+  HiSquares2X2,
 } from 'react-icons/hi2';
 import { SiDocker } from 'react-icons/si';
 import { cn } from '../../lib/utils';
@@ -51,8 +53,18 @@ export function NavHomeIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-// 大屏用柱状图——这一格本来描述的就是"统计"，和首页的"回桌面"不冲突。
-export const NavScreenIcon = navIcon(HiChartBarSquare);
+/**
+ * 大屏用"演示屏"，统计用"柱状图"。
+ *
+ * 这两格原来共用 HiChartBarSquare，Dock 只显图标时全靠位置和悬停名字分辨，谁看
+ * 都是同一个方块。按各自的含义拆开：大屏是"投在墙上的那一块"（演示屏），访问统计
+ * 才是"统计本身"（柱状图）—— 柱状图归统计，名实相符。
+ */
+export const NavScreenIcon = navIcon(HiPresentationChartLine);
+/** 访问统计：柱状图。见上面 NavScreenIcon 的说明。 */
+export const NavAnalyticsIcon = navIcon(HiChartBar);
+/** 应用市场：九宫格里挑一个装。 */
+export const NavMarketIcon = navIcon(HiSquares2X2);
 export const NavNotifyIcon = navIcon(HiBellAlert);
 export const NavSitesIcon = navIcon(HiGlobeAlt);
 export const NavSshIcon = navIcon(HiCommandLine);

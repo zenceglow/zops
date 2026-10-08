@@ -28,7 +28,8 @@
     "notify": "Events",
     "apps": "Apps & services",
     "security": "Security",
-    "analytics": "Traffic"
+    "analytics": "Traffic",
+    "market": "Market"
   },
   "theme": {
     "light": "Light",
@@ -1116,7 +1117,10 @@
     "ops_deploy_job_put_script": "Write the deploy script (runs with sh -c inside /opt/docker-apps/<name>/; it behaves like set -e).",
     "ops_deploy_job_put_file": "Write a text artifact into the deploy directory (config, small script, compose). For binaries use HTTP: curl -T file -H \"Authorization: Bearer <token>\" \"https://<panel>/api/ops/deploy/job/upload?id=<name>&path=<relative path>\".",
     "ops_deploy_job_run": "Run the deploy script. Changes production — confirm with the user first. Poll progress with ops_deploy_job_log using the returned run_id.",
-    "ops_deploy_job_log": "Incrementally read a deploy run's log. Pass the previous offset to continue; finished=true means it is done."
+    "ops_deploy_job_log": "Incrementally read a deploy run's log. Pass the previous offset to continue; finished=true means it is done.",
+    "ops_app_list": "Built-in apps you can deploy in one click (MySQL / PostgreSQL / Redis / MinIO): image, default ports, the environment variables to fill in (which are required, minimum password length), volumes, and whether it is already installed. Read this before inventing parameters.",
+    "ops_app_plan": "Build an install plan without changing anything: the rendered docker-compose.yml (passwords masked), the deploy script, the data directories, and warnings about taken ports or a missing network. Read-only — show this compose to the user before installing.",
+    "ops_app_install": "Deploy a built-in app in one click: write the compose and its data directories, create the deploy job, run docker compose up -d. Takes ports, writes files, starts containers — confirm with the user first and run ops_app_plan first. Returns a run_id for ops_deploy_job_log."
   },
   "analytics": {
     "title": "Traffic analytics",
@@ -1156,5 +1160,49 @@
     "other_sites": "Other",
     "cities_hint": "{{n}} cities, by volume",
     "cities_rest": "{{n}} more cities in the long tail (under 1% combined)"
+  },
+  "market": {
+    "title": "App marketplace",
+    "subtitle": "Pick one and install it. You choose the ports and passwords; everything else follows this machine's conventions.",
+    "empty": "No apps in the catalog yet.",
+    "installed": "Installed",
+    "installed_as": "App name",
+    "installed_count": "{{n}} of {{total}} installed",
+    "deploy": "Deploy",
+    "redeploy": "Deploy another",
+    "view_in_apps": "Open in Apps & services",
+    "official_docs": "Official docs",
+    "err": {
+      "load": "Could not load the app catalog",
+      "plan": "Could not build the install plan",
+      "install": "Deployment failed"
+    },
+    "dialog": {
+      "tab_params": "Parameters",
+      "tab_preview": "Compose preview",
+      "name": "App name",
+      "name_hint": "Also the deploy directory and container name — a-z 0-9 - _ only.",
+      "network": "Docker network",
+      "network_hint": "Which docker network to join. Other containers on it reach this one by container name.",
+      "network_default": "machine default",
+      "ports_title": "Ports",
+      "container_port": "container",
+      "env_title": "Environment",
+      "required": "required",
+      "required_ph": "Required — enter a value",
+      "min_len": "at least {{n}} characters",
+      "preview_hint": "Rendered on the server — this is exactly what gets written to the deploy directory (passwords masked).",
+      "preview_loading": "Rendering…",
+      "script": "Deploy script",
+      "dir": "Deploy directory",
+      "cancel": "Cancel",
+      "submit": "Deploy",
+      "installing": "Starting the container…",
+      "waiting": "Waiting for output…",
+      "done": "Installed. Apps that initialise their data directory on first boot need a little longer before they report healthy.",
+      "failed": "Deployment failed (exit code {{code}}) — see the output below.",
+      "back": "Change parameters",
+      "close": "Close"
+    }
   }
 }
