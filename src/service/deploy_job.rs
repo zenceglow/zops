@@ -21,6 +21,7 @@ use tokio::sync::Mutex;
 
 use crate::domain::deploy_job::{DeployFile, DeployJob, DeployRun, RunLog};
 use crate::infrastructure::db::sqlite::{Database, DeployJobRow, DeployRunRow};
+use crate::service::notify::{hostname, NotifyService};
 use crate::shared::AppError;
 
 /// 部署脚本本身的大小上限。脚本是文本，64KB 已经离谱地长了。
@@ -49,6 +50,12 @@ pub struct DeployJobService {
     /// 克隆体 `remove` 清的是另一份，原实例里的名字永远留着 —— 表现就是"部署任务
     /// 跑过一次之后，再点就永远提示正在部署"，只有重启面板才能恢复。
     busy: Arc<Mutex<HashSet<String>>>,
+    /// 部署结束后往订阅了 `deploy` 事件的渠道推一条通知。
+    ///
+    /// 是 `Option` 只为了让单元测试不被迫造一个通知服务：生产里 `main.rs` 一定传
+    /// `Some`。这个字段是后加的 —— 在此之前部署跑完什么都不发，用户只能自己刷面板
+    /// 看结果，正是这次要修的 bug。
+    notify: Option<Arc<NotifyService>>,
 }
 
 impl Clone for DeployJobService {
@@ -57,16 +64,18 @@ impl Clone for DeployJobService {
             db: self.db.clone(),
             root: self.root.clone(),
             busy: Arc::clone(&self.busy),
+            notify: self.notify.clone(),
         }
     }
 }
 
 impl DeployJobService {
-    pub fn new(db: Arc<Database>, root: PathBuf) -> Self {
+    pub fn new(db: Arc<Database>, root: PathBuf, notify: Option<Arc<NotifyService>>) -> Self {
         Self {
             db,
             root,
             busy: Arc::new(Mutex::new(HashSet::new())),
+            notify,
         }
     }
 
@@ -395,6 +404,11 @@ impl DeployJobService {
         let dir = self.dir_of(&job.name);
         let log_for_task = log_path.clone();
         let run_id_task = run_id.clone();
+        // 通知要用的东西先搬进任务：spawn 之后 job / actor 都在外层作用域。
+        let job_for_notify = job.clone();
+        let actor_owned = actor.to_string();
+        let actor_kind_owned = actor_kind.to_string();
+        let notify = self.notify.clone();
 
         tokio::spawn(async move {
             let started = Instant::now();
@@ -432,6 +446,24 @@ impl DeployJobService {
                 eprintln!("[deploy] 回写任务状态失败：{e}");
             }
             this.busy.lock().await.remove(&job_name);
+
+            // 部署结果必须主动推出去。之前这里什么都没有，用户只能自己回面板刷 ——
+            // Agent 部署完不说话，人对线上到底成没成功是两眼一抹黑的。
+            if let Some(notify) = notify {
+                let (title, text) = build_deploy_notice(
+                    &job_for_notify,
+                    status,
+                    code,
+                    duration,
+                    &actor_owned,
+                    &actor_kind_owned,
+                    &dir,
+                );
+                let (sent, ok) = notify.broadcast("deploy", &title, &text).await;
+                if sent > 0 {
+                    eprintln!("[deploy] 已推送部署通知：{sent} 个渠道，成功 {ok}");
+                }
+            }
         });
 
         Ok(to_run(row))
@@ -584,6 +616,141 @@ fn deploy_script(name: &str, frontend: bool, port: u16) -> String {
 }
 
 /// 服务名/目录名。字符集卡死是安全边界：允许 `/` 或 `..` 就等于允许写到别处去。
+/// 拼一条部署通知。四条信息是硬要求：**服务 / 环境 / 语言 / 操作者** ——
+/// 收到消息的人不开面板也要知道"谁、在哪、把什么、弄成了没"。
+fn build_deploy_notice(
+    job: &DeployJob,
+    status: &str,
+    code: i64,
+    duration_ms: i64,
+    actor: &str,
+    actor_kind: &str,
+    dir: &Path,
+) -> (String, String) {
+    let ok = status == STATUS_SUCCESS;
+    let who = match actor_kind {
+        "agent" => format!("Agent（{actor}）"),
+        "user" => format!("人（{actor}）"),
+        other => format!("{other}（{actor}）"),
+    };
+    let title = format!(
+        "{} 部署{} · {}",
+        if ok { "✅" } else { "❌" },
+        if ok { "成功" } else { "失败" },
+        job.name
+    );
+    let text = format!(
+        "服务：{}\n环境：{}\n语言：{}\n操作者：{}\n耗时：{:.1}s\n退出码：{}\n目录：{}",
+        job.name,
+        env_label(),
+        detect_stack(dir),
+        who,
+        duration_ms as f64 / 1000.0,
+        code,
+        job.dir
+    );
+    (title, text)
+}
+
+/// 面板没有"多环境"的概念，一台机器就是一套线上。所以环境写成
+/// `OPS_ENV（主机名）`：设了变量就按变量叫，没设就是生产。
+/// 带上主机名是为了「两台机器别混」—— 这个项目吃过认错主机的亏。
+fn env_label() -> String {
+    let named = std::env::var("OPS_ENV")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    match named {
+        Some(e) => format!("{e}（{}）", hostname()),
+        None => format!("生产（{}）", hostname()),
+    }
+}
+
+/// 判断这次部署的是什么语言。
+///
+/// 部署目录里通常只有 compose / Dockerfile / 脚本和**产物**，没有源码，所以按
+/// 「源码工程 → 产物后缀 → 二进制特征 → Dockerfile 基础镜像」的顺序找证据，
+/// 都不像就老实写「未识别」，别猜一个看起来合理的答案去骗人。
+fn detect_stack(dir: &Path) -> String {
+    if dir.join("Cargo.toml").exists() {
+        return "Rust".into();
+    }
+    if dir.join("go.mod").exists() {
+        return "Go".into();
+    }
+    if dir.join("package.json").exists() {
+        return "Node.js / TypeScript".into();
+    }
+    if dir.join("requirements.txt").exists() || dir.join("pyproject.toml").exists() {
+        return "Python".into();
+    }
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            match p.extension().and_then(|s| s.to_str()).unwrap_or("") {
+                "jar" | "war" => return "Java".into(),
+                "dmg" | "app" => return "macOS 桌面端".into(),
+                _ => {}
+            }
+            if name == "dist" && p.is_dir() {
+                return "前端（静态构建产物）".into();
+            }
+            if p.is_file() {
+                if let Some(lang) = sniff_binary(&p) {
+                    return lang.into();
+                }
+            }
+        }
+    }
+
+    if let Ok(df) = std::fs::read_to_string(dir.join("Dockerfile")) {
+        let low = df.to_lowercase();
+        if low.contains("from caddy") {
+            return "前端（静态，Caddy 托管）".into();
+        }
+        if low.contains("from node") {
+            return "Node.js".into();
+        }
+        if low.contains("from python") {
+            return "Python".into();
+        }
+        if low.contains("from openjdk") || low.contains("from eclipse-temurin") {
+            return "Java".into();
+        }
+        if low.contains("from golang") {
+            return "Go".into();
+        }
+        if low.contains("from rust") {
+            return "Rust".into();
+        }
+    }
+
+    "未识别".into()
+}
+
+/// 从可执行文件里认编译器留下的指纹。只读前 256KB —— 够覆盖段头，
+/// 也不会为了看一眼部署目录而把几百 MB 的二进制整个读进来。
+fn sniff_binary(path: &Path) -> Option<&'static str> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; 256 * 1024];
+    let n = f.read(&mut buf).ok()?;
+    let s = &buf[..n];
+    let has = |needle: &[u8]| s.windows(needle.len()).any(|w| w == needle);
+    if has(b"Go build ID") || has(b"Go buildinf:") || has(b"go1.") {
+        return Some("Go");
+    }
+    if has(b"rustc") || has(b"/cargo/") || has(b"core/src/fmt") {
+        return Some("Rust");
+    }
+    None
+}
+
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 41
@@ -744,7 +911,7 @@ mod tests {
     fn 创建时写出规范骨架() {
         let db = Arc::new(Database::open(Path::new(":memory:")).unwrap());
         let root = std::env::temp_dir().join(format!("zops-spec-{}", std::process::id()));
-        let svc = DeployJobService::new(db, root.clone());
+        let svc = DeployJobService::new(db, root.clone(), None);
 
         let job = svc
             .create("zops-spec-app", "", "manual", "tester", "user", "backend", Some(8123))
@@ -779,7 +946,7 @@ mod tests {
     async fn 建任务传产物写脚本跑一次都留痕() {
         let db = Arc::new(Database::open(Path::new(":memory:")).unwrap());
         let root = std::env::temp_dir().join(format!("zops-deploy-{}", std::process::id()));
-        let svc = DeployJobService::new(db, root.clone());
+        let svc = DeployJobService::new(db, root.clone(), None);
 
         let job = svc
             .create(
@@ -827,6 +994,104 @@ mod tests {
 
         svc.delete(&job.id).unwrap();
         assert!(svc.list().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 部署跑完必须主动推通知，且四条信息齐全：服务 / 环境 / 语言 / 操作者。
+    ///
+    /// 这条测试对应的是这次修的 bug：部署结束时代码里什么都不发，用户只能自己
+    /// 回面板刷。用真的 SQLite + 真的 HTTP 接收器跑一遍，而不是只断言拼字符串 ——
+    /// 通知这条链路断在任何一环，用户都收不到。
+    #[tokio::test]
+    async fn 部署结束后推送含四要素的通知() {
+        use std::io::{Read as _, Write as _};
+        use std::net::TcpListener;
+
+        // 极简 HTTP 接收器：收一次请求，把 body 送回测试线程。
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 4096];
+                loop {
+                    let n = stream.read(&mut buf).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    raw.extend_from_slice(&buf[..n]);
+                    let text = String::from_utf8_lossy(&raw).to_string();
+                    if let Some(idx) = text.find("\r\n\r\n") {
+                        let len = text[..idx]
+                            .lines()
+                            .find_map(|l| {
+                                l.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                            })
+                            .unwrap_or(0);
+                        if raw.len() >= idx + 4 + len {
+                            break;
+                        }
+                    }
+                }
+                let text = String::from_utf8_lossy(&raw).to_string();
+                let body = text.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+                let _ = tx.send(body);
+            }
+        });
+
+        let db = Arc::new(Database::open(Path::new(":memory:")).unwrap());
+        let notify = Arc::new(NotifyService::new(db.clone()));
+        notify
+            .save(crate::service::notify::ChannelInput {
+                id: None,
+                name: "测试 webhook".into(),
+                kind: "generic".into(),
+                url: format!("http://127.0.0.1:{port}/hook"),
+                secret: String::new(),
+                events: vec!["deploy".into()],
+                enabled: true,
+            })
+            .unwrap();
+
+        let root = std::env::temp_dir().join(format!("zops-notify-{}", std::process::id()));
+        let svc = DeployJobService::new(db.clone(), root.clone(), Some(notify));
+
+        let job = svc
+            .create(
+                "zops-notify-app",
+                "通知测试",
+                "agent",
+                "claude-code",
+                "agent",
+                "backend",
+                None,
+            )
+            .unwrap();
+        // 放一个 go.mod，让语言探测有确定的答案（骨架 Dockerfile 是 FROM alpine，
+        // 光看基础镜像看不出语言）。
+        std::fs::write(svc.dir_of("zops-notify-app").join("go.mod"), "module demo\n").unwrap();
+        svc.save_script(&job.id, "echo deployed").unwrap();
+        svc.run(&job.id, "claude-code", "agent").await.unwrap();
+
+        // recv 是阻塞的，别在 async 测试的 runtime 线程上等。
+        let body = tokio::task::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(15)))
+            .await
+            .unwrap()
+            .expect("部署结束后应该收到通知");
+
+        assert!(body.contains("zops-notify-app"), "缺服务名：{body}");
+        assert!(body.contains("环境："), "缺环境：{body}");
+        assert!(body.contains("语言：Go"), "语言探测不对：{body}");
+        assert!(
+            body.contains("操作者：Agent（claude-code）"),
+            "缺操作者：{body}"
+        );
+        assert!(body.contains("✅"), "缺成功标记：{body}");
+
         let _ = std::fs::remove_dir_all(&root);
     }
 }

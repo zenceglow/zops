@@ -178,7 +178,14 @@ async fn async_main() {
     // 容器与部署通道先提出来：应用市场要同时拿到这两个（列 docker 网络、把安装
     // 落到部署目录并起容器）。放进 AppState 字面量里就借不出来了。
     let containers = Arc::new(ContainerService::new(docker));
-    let deploy_jobs = Arc::new(DeployJobService::new(db.clone(), cfg.deploy_dir.clone()));
+    // 通知服务要提前建：部署通道要用它把结果推出去（deploy_jobs 在 state 之前就构造，
+    // 以前 notify 是塞在 state 字面量里一起建的，拿不到）。
+    let notify = Arc::new(NotifyService::new(db.clone()));
+    let deploy_jobs = Arc::new(DeployJobService::new(
+        db.clone(),
+        cfg.deploy_dir.clone(),
+        Some(notify.clone()),
+    ));
     let app_market = Arc::new(AppMarketService::new(
         deploy_jobs.clone(),
         containers.clone(),
@@ -199,7 +206,7 @@ async fn async_main() {
         caddyfile: Arc::new(CaddyfileService::new(caddy, db.clone())),
         logs: Arc::new(LogService::new(db.clone())),
         members: Arc::new(MemberService::new(db.clone())),
-        notify: Arc::new(NotifyService::new(db.clone())),
+        notify,
         security,
         selfupdate: Arc::new(SelfUpdateService::new(
             db.clone(),

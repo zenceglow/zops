@@ -1135,7 +1135,7 @@ mod tests {
         let db = Arc::new(Database::open(Path::new(":memory:")).unwrap());
         let root = std::env::temp_dir().join(format!("zops-market-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let jobs = Arc::new(DeployJobService::new(db, root.clone()));
+        let jobs = Arc::new(DeployJobService::new(db, root.clone(), None));
         // 这台机器上大概没有 docker socket，`networks()` 会失败 —— 那正好，
         // 网络提醒那条分支本来就是"查不到就不吓唬人"。
         let containers = Arc::new(ContainerService::new(Arc::new(DockerClient::connect())));
