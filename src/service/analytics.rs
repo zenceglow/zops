@@ -22,8 +22,6 @@ const READ_CHUNK: u64 = 2 << 20;
 const BOOTSTRAP_TAIL: u64 = 1 << 20;
 /// 一轮最多查多少个 IP 的归属地（ip-api 批量接口一次 100 个）。
 const GEO_PER_ROUND: i64 = 300;
-/// 访问流水保留天数。
-const RETENTION_DAYS: i64 = 30;
 /// 这台服务器自己位置的缓存键。
 const SELF_LOCATION_KEY: &str = "geo.self";
 
@@ -238,9 +236,13 @@ impl AnalyticsService {
 
         self.resolve_locations().await;
         self.ensure_self_location().await;
-        // 清理一天做一次就够了，但多做几次也无害（DELETE 走索引）。
-        let cutoff = now_secs() - (RETENTION_DAYS * 86_400) as f64;
-        let _ = self.db.prune_access_events(cutoff);
+        // 清理一天做一次就够了，但多做几次也无害（DELETE 走 ts 索引）。保留期由配置
+        // 决定；0 表示关掉自动清理，那就一行都不删 —— 用户选了"留着"就该真留着。
+        let days = self.db.retention_days();
+        if days > 0 {
+            let cutoff = now_secs() - (days * 86_400) as f64;
+            let _ = self.db.prune_access_events(cutoff);
+        }
 
         Ok(inserted)
     }

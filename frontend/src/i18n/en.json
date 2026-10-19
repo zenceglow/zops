@@ -702,7 +702,31 @@
     "uninstall_confirm": "The page will disconnect. This cannot be undone from the panel.",
     "uninstall_wait": "Confirm in {{n}}s",
     "uninstall_go": "Uninstall panel",
-    "uninstall_started": "Uninstalling. This page will disconnect."
+    "uninstall_started": "Uninstalling. This page will disconnect.",
+    "section_database": "Storage",
+    "db_desc": "The panel's own database (ops.db). Access logs, audit records and task output all live here.",
+    "db_total": "Total",
+    "db_body": "Database file",
+    "db_wal": "WAL",
+    "db_reclaimable": "Reclaimable",
+    "db_reclaimable_hint": "Deleting rows only frees pages inside the file. Run “Compact” to give the space back to the disk.",
+    "db_path": "Location",
+    "db_vacuum": "Compact",
+    "db_vacuum_hint": "Rewrites the whole database; panel writes queue up meanwhile. Takes seconds on a large file — don't hammer it.",
+    "db_vacuum_done": "Compacted, freed {size}",
+    "db_prune": "Purge expired",
+    "db_prune_done": "Deleted {n} rows, {size} reclaimable",
+    "db_prune_none": "Nothing has expired yet",
+    "db_retention": "Retention",
+    "db_retention_unit": "days",
+    "db_retention_hint": "Access logs, security findings, task and deploy records are purged after this many days. 0 disables automatic purge. Audit logs are capped at {n} rows instead.",
+    "db_retention_saved": "Retention updated",
+    "db_tables": "Tables (by row count)",
+    "db_table_rows": "Rows",
+    "db_bounded_retention": "purged by retention",
+    "db_bounded_capped": "capped by row count",
+    "db_bounded_fixed": "stable",
+    "db_busy": "Working…"
   },
   "network": {
     "desc": "DNS, the Docker image registries, and WireGuard.",
@@ -954,7 +978,8 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "delete": "Delete",
-    "processing": "Processing"
+    "processing": "Processing",
+    "refresh": "Refresh"
   },
   "deploy": {
     "title": "Apps & services",

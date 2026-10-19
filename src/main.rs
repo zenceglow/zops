@@ -19,6 +19,7 @@ use service::{
     app_market::AppMarketService,
     audit::AuditService,
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
+    database::DatabaseService,
     files::FilesService,
     container::ContainerService,
     deploy::DeployService,
@@ -175,6 +176,11 @@ async fn async_main() {
     let security = Arc::new(SecurityService::new(db.clone()));
     let security_worker = security.clone();
 
+    // 存储体检与按保留期清理。worker 里也要一份：`task_executions` / `deploy_runs`
+    // 只有这条路径会清，没人打开设置页它们就会一直堆着。
+    let database = Arc::new(DatabaseService::new(db.clone(), cfg.db_path()));
+    let retention_worker = database.clone();
+
     // 容器与部署通道先提出来：应用市场要同时拿到这两个（列 docker 网络、把安装
     // 落到部署目录并起容器）。放进 AppState 字面量里就借不出来了。
     let containers = Arc::new(ContainerService::new(docker));
@@ -204,6 +210,7 @@ async fn async_main() {
         files: Arc::new(FilesService::new(db.clone(), cfg.data_dir.clone())),
         gateway: Arc::new(GatewayService::new(caddy.clone())),
         caddyfile: Arc::new(CaddyfileService::new(caddy, db.clone())),
+        database,
         logs: Arc::new(LogService::new(db.clone())),
         members: Arc::new(MemberService::new(db.clone())),
         notify,
@@ -260,6 +267,8 @@ async fn async_main() {
             round = round.wrapping_add(1);
             if round % 5760 == 0 {
                 let _ = security_worker.prune();
+                // 审计/通知日志按条数封顶，剩下的按保留期清。一天一次，和上面同一拍。
+                let _ = retention_worker.prune(retention_worker.retention_days());
             }
             tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }

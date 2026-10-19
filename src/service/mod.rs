@@ -6,6 +6,7 @@ pub mod auth;
 pub mod automation;
 pub mod audit;
 pub mod caddyfile;
+pub mod database;
 pub mod deploy;
 pub mod deploy_job;
 pub mod files;

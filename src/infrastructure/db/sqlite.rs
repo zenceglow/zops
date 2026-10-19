@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Context, Result};
@@ -15,7 +15,7 @@ const META_JWT_SECRET: &str = "jwt_secret";
 /// 保留多少份 Caddyfile 历史。按一周改动几次估算，五十份够翻很久了。
 const CADDYFILE_HISTORY_KEEP: i64 = 50;
 /// 审计日志保留条数。按每天几十次操作算，五千条够回溯几个月。
-const AUDIT_KEEP: i64 = 5000;
+pub const AUDIT_KEEP: i64 = 5000;
 
 #[derive(Debug, Clone)]
 pub struct UserRow {
@@ -2534,4 +2534,176 @@ pub struct NewSshEvent {
     pub method: String,
     pub port: i64,
     pub raw: String,
+}
+
+// ── 存储体检 ────────────────────────────────────────────────────────────────
+//
+// 面板把访问流水、审计、任务输出全塞进一个 `ops.db`。SQLite 的 DELETE 只是把页
+// 挂回空闲链表，**文件不会自己缩** —— 所以「表里剩几千行」和「文件还有 400 MB」
+// 可以同时成立。两个数分开给，用户才知道该不该点压缩。
+
+/// `ops.db` 本体与旁路文件（WAL / SHM）的实际占用。
+#[derive(Debug, Clone, Serialize)]
+pub struct DbFileStats {
+    pub path: String,
+    pub db_bytes: u64,
+    pub wal_bytes: u64,
+    pub shm_bytes: u64,
+    pub page_size: i64,
+    pub page_count: i64,
+    /// 空闲页数。删掉的页不会自动还给文件系统，就记在这里。
+    pub freelist_count: i64,
+    /// `freelist_count * page_size`：VACUUM 之后大致能释放多少字节。
+    pub reclaimable_bytes: i64,
+}
+
+/// 一张表的行数。按行数降序返回，一眼看出谁在长。
+#[derive(Debug, Clone, Serialize)]
+pub struct TableStat {
+    pub name: String,
+    pub rows: i64,
+}
+
+/// 保留期配置键。放 `config` 表而不是环境变量：改完立刻生效，不用重启服务。
+const RETENTION_KEY: &str = "db.retention_days";
+/// 没配置过时的默认值。30 天够大屏看同比/环比，也不至于把盘吃满。
+pub const DEFAULT_RETENTION_DAYS: i64 = 30;
+
+/// 会随时间无限增长、需要按保留期清理的表。
+///
+/// 审计日志和通知日志不在这里：它们按**条数**封顶（5000 / 200），写入时就删旧行，
+/// 天然有界。按条数封顶的表不需要再叠一层时间清理，否则两套规则会打架。
+const PRUNABLE: &[(&str, PruneBy)] = &[
+    ("access_events", PruneBy::UnixTs("ts")),
+    ("security_events", PruneBy::UnixTs("last_seen")),
+    ("ssh_events", PruneBy::UnixTs("ts")),
+    ("task_executions", PruneBy::Datetime("started_at")),
+    ("deploy_runs", PruneBy::Datetime("started_at")),
+];
+
+enum PruneBy {
+    /// REAL 类型的 unix 秒。
+    UnixTs(&'static str),
+    /// `datetime('now')` 写进去的本地时间字符串。
+    Datetime(&'static str),
+}
+
+impl Database {
+    /// 数据库文件的体检结果。
+    ///
+    /// 只读文件元数据 + 两个 PRAGMA，**不扫表**，几毫秒就有结果 —— 页面可以每次进
+    /// 都刷一遍。
+    pub fn file_stats(&self, path: &Path) -> Result<DbFileStats> {
+        let size_of = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        let wal = PathBuf::from(format!("{}-wal", path.display()));
+        let shm = PathBuf::from(format!("{}-shm", path.display()));
+
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let page_size: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0))?;
+        let page_count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+        let freelist_count: i64 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+
+        Ok(DbFileStats {
+            path: path.display().to_string(),
+            db_bytes: size_of(path),
+            wal_bytes: size_of(&wal),
+            shm_bytes: size_of(&shm),
+            page_size,
+            page_count,
+            freelist_count,
+            reclaimable_bytes: freelist_count * page_size,
+        })
+    }
+
+    /// 每张表的行数，按行数降序。
+    ///
+    /// 表名从 `sqlite_master` 现取，不写死清单 —— 以后加了表不用回来改这里。
+    /// 大表上的 `COUNT(*)` 会走索引扫描，几百万行约几十毫秒，页面能接受。
+    pub fn table_stats(&self) -> Result<Vec<TableStat>> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let names: Vec<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT name FROM sqlite_master
+                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            )?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+
+        let mut out = Vec::with_capacity(names.len());
+        for name in names {
+            // 表名来自 sqlite_master，不是用户输入；仍然加引号，防止将来出现怪名字。
+            let sql = format!("SELECT COUNT(*) FROM \"{}\"", name.replace('"', "\"\""));
+            let rows: i64 = conn.query_row(&sql, [], |r| r.get(0))?;
+            out.push(TableStat { name, rows });
+        }
+        out.sort_by(|a, b| b.rows.cmp(&a.rows).then(a.name.cmp(&b.name)));
+        Ok(out)
+    }
+
+    /// 当前生效的保留天数。`0` 表示不自动清理。
+    pub fn retention_days(&self) -> i64 {
+        self.get_config(RETENTION_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .map(|d| d.clamp(0, 3650))
+            .unwrap_or(DEFAULT_RETENTION_DAYS)
+    }
+
+    pub fn set_retention_days(&self, days: i64) -> Result<()> {
+        if !(0..=3650).contains(&days) {
+            return Err(anyhow!("保留天数要在 0 到 3650 之间"));
+        }
+        self.set_config(RETENTION_KEY, &days.to_string())
+    }
+
+    /// 压缩数据库，把空闲页还给文件系统。
+    ///
+    /// VACUUM 会**重写整个库**，期间独占写锁：库大的时候页面会短暂卡一下。所以只做
+    /// 手动触发，不挂定时任务 —— 自动压缩遇到大库会变成不可预期的卡顿。
+    ///
+    /// 前后各做一次 `wal_checkpoint(TRUNCATE)`：光 VACUUM 不动 WAL，`-wal` 文件照样
+    /// 占着盘，用户会以为按钮没生效。
+    pub fn vacuum(&self) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        conn.execute_batch("VACUUM;")?;
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    }
+
+    /// 按保留期清掉过期行，返回每张表删了多少。
+    ///
+    /// `days = 0` 时什么都不做（保留期关闭）。
+    pub fn prune_all(&self, days: i64) -> Result<Vec<(String, usize)>> {
+        if days <= 0 {
+            return Ok(Vec::new());
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        let cutoff = now - (days * 86_400) as f64;
+        let modifier = format!("-{days} days");
+
+        let conn = self.conn.lock().map_err(|_| anyhow!("db lock"))?;
+        let mut out = Vec::new();
+        for (table, by) in PRUNABLE {
+            let sql = match by {
+                PruneBy::UnixTs(col) => {
+                    format!("DELETE FROM \"{table}\" WHERE \"{col}\" < ?1")
+                }
+                PruneBy::Datetime(col) => {
+                    format!("DELETE FROM \"{table}\" WHERE \"{col}\" < datetime('now', ?1)")
+                }
+            };
+            let affected = match by {
+                PruneBy::UnixTs(_) => conn.execute(&sql, params![cutoff])?,
+                PruneBy::Datetime(_) => conn.execute(&sql, params![modifier])?,
+            };
+            out.push(((*table).to_string(), affected));
+        }
+        Ok(out)
+    }
 }

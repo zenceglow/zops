@@ -6,6 +6,7 @@ use crate::service::{
     audit::AuditService,
     auth::AuthService, automation::AutomationService, caddyfile::CaddyfileService,
     container::ContainerService,
+    database::DatabaseService,
     deploy::DeployService,
     deploy_job::DeployJobService,
     files::FilesService,
@@ -32,6 +33,8 @@ pub struct AppState {
     pub files: Arc<FilesService>,
     pub gateway: Arc<GatewayService>,
     pub caddyfile: Arc<CaddyfileService>,
+    /// 存储体检：`ops.db` 的体积、表行数、保留期与压缩。
+    pub database: Arc<DatabaseService>,
     pub logs: Arc<LogService>,
     pub members: Arc<MemberService>,
     pub notify: Arc<NotifyService>,

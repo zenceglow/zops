@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { MembersPanel } from '../../members/_components/members-panel';
+import { StorageSettings } from './_storage';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
@@ -26,7 +27,7 @@ import { usePanelPrefs } from '../../../stores/panel-prefs';
 import useUserStore from '../../../stores/user.store';
 import type { UpdateStatus } from '../../../hooks/use-release';
 
-type Section = 'basic' | 'members' | 'info';
+type Section = 'basic' | 'members' | 'database' | 'info';
 
 type AccessState = { public: boolean; bind: string; manageable: boolean };
 
@@ -42,7 +43,7 @@ type PanelInfo = {
   };
 };
 
-const SECTIONS: Section[] = ['basic', 'members', 'info'];
+const SECTIONS: Section[] = ['basic', 'members', 'database', 'info'];
 
 export default function PanelSettingsPage() {
   const { t } = useTranslation();
@@ -72,6 +73,7 @@ export default function PanelSettingsPage() {
       <div className="min-w-0 flex-1">
         {section === 'basic' && <BasicSettings />}
         {section === 'members' && <MembersPanel embedded />}
+        {section === 'database' && <StorageSettings />}
         {section === 'info' && <PanelInfo />}
       </div>
     </div>

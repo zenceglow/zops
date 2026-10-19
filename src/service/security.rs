@@ -18,8 +18,6 @@ use crate::domain::security::{
 use crate::infrastructure::db::sqlite::{Database, NewSshEvent, SecurityEventRow, SshEventRow};
 use crate::shared::AppError;
 
-/// 预警留多久。和访问流水一个尺度，够回溯一次扫描潮。
-const SECURITY_RETENTION_DAYS: i64 = 30;
 /// 安全事件列表最多回多少条。
 const MAX_EVENTS: i64 = 500;
 /// 首次见到 auth 日志时，只回读末尾这么多字节 —— 直接从几百兆的历史里灌库没意义。
@@ -109,8 +107,15 @@ impl SecurityService {
     }
 
     /// 清理过期的预警。和访问流水一起在采集循环里做。
+    ///
+    /// 保留期跟访问流水共用同一个配置项（`db.retention_days`）：都是"最近发生过
+    /// 什么"，分开设只会让人两边对不上。
     pub fn prune(&self) -> Result<(), AppError> {
-        let cutoff = now_secs() - (SECURITY_RETENTION_DAYS * 86_400) as f64;
+        let days = self.db.retention_days();
+        if days <= 0 {
+            return Ok(());
+        }
+        let cutoff = now_secs() - (days * 86_400) as f64;
         self.db.prune_security_events(cutoff).map_err(AppError::from)?;
         self.db.prune_ssh_events(cutoff).map_err(AppError::from)?;
         Ok(())

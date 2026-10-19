@@ -97,6 +97,13 @@ saved until `caddy validate` passes. Config history lives in SQLite.
 channels (Feishu / DingTalk / WeCom / Slack / Discord / Telegram / webhook),
 members with RBAC, an operation audit log, and in-panel self-update.
 
+**Storage** — everything the panel knows lives in one SQLite file, so that file is
+also the thing that can quietly eat the disk. **Settings → Storage** shows its real
+size (main file + WAL), how many rows each table holds, which ones shrink on their
+own and which don't, with a retention window you can change and a **Compact** button
+that actually gives the space back. Deleting rows never shrinks a SQLite file on
+its own — that distinction is the whole point of the page.
+
 ## Connect an agent
 
 Open **MCP** in the panel, create a token (`read` or `write`) and copy the config:

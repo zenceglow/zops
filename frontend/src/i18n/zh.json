@@ -702,7 +702,31 @@
     "uninstall_confirm": "确认之后页面会断开。这一步不能从面板里撤销。",
     "uninstall_wait": "{{n}} 秒后可确认",
     "uninstall_go": "卸载面板",
-    "uninstall_started": "正在卸载，页面马上会断开"
+    "uninstall_started": "正在卸载，页面马上会断开",
+    "section_database": "存储",
+    "db_desc": "面板自己的数据库（ops.db）。访问流水、审计、任务输出都写在这里。",
+    "db_total": "总占用",
+    "db_body": "数据库文件",
+    "db_wal": "WAL",
+    "db_reclaimable": "可回收",
+    "db_reclaimable_hint": "删除只是标记空闲页，文件不会自己变小 —— 点「压缩数据库」才真正还给磁盘。",
+    "db_path": "文件位置",
+    "db_vacuum": "压缩数据库",
+    "db_vacuum_hint": "重写整个库，期间面板的写操作排队。库大的话要几秒，别频繁点。",
+    "db_vacuum_done": "已压缩，释放 {size}",
+    "db_prune": "立即清理",
+    "db_prune_done": "删掉 {n} 行，可回收 {size}",
+    "db_prune_none": "没有到期的数据",
+    "db_retention": "保留期",
+    "db_retention_unit": "天",
+    "db_retention_hint": "访问流水、安全预警、任务与部署记录按这个天数清理。填 0 = 不自动清理。审计日志另按 {n} 条封顶。",
+    "db_retention_saved": "保留期已更新",
+    "db_tables": "表（按行数）",
+    "db_table_rows": "行数",
+    "db_bounded_retention": "按保留期清理",
+    "db_bounded_capped": "按条数封顶",
+    "db_bounded_fixed": "基本不变",
+    "db_busy": "处理中…"
   },
   "network": {
     "desc": "本机 DNS、Docker 拉镜像的仓库，以及 WireGuard。",
@@ -954,7 +978,8 @@
     "cancel": "取消",
     "confirm": "确认",
     "delete": "删除",
-    "processing": "处理中"
+    "processing": "处理中",
+    "refresh": "刷新"
   },
   "deploy": {
     "title": "应用与服务",

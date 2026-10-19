@@ -15,7 +15,7 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::http::handlers::{
-    analytics, app_market, audit, auth, automation, caddyfile, deploy, deploy_job, files, gateway,
+    analytics, app_market, audit, auth, automation, caddyfile, database, deploy, deploy_job, files, gateway,
     logs, member, permission, notify, security, service, setup, ssh, system, mcp,
     token as token_handler,
 };
@@ -29,7 +29,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     let protected = Router::new()
         .nest("/auth", auth::protected_routes())
-        .nest("/system", system::routes())
+        .nest("/system", system::routes().merge(database::routes()))
         .nest("/service", service::routes())
         .nest("/files", files::routes())
         .nest("/log", logs::protected_routes())
