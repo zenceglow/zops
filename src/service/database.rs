@@ -64,6 +64,12 @@ impl DatabaseService {
         Self { db, path }
     }
 
+    /// 只要体积，不算表行数。给 `ops_panel_info` 这种"顺手报一句"的地方用 ——
+    /// 那个接口连目录都不扫，不能让它为了一个数字去 `COUNT(*)` 全库。
+    pub fn file(&self) -> Result<DbFileStats, AppError> {
+        self.db.file_stats(&self.path).map_err(Into::into)
+    }
+
     pub fn stats(&self) -> Result<StorageStats, AppError> {
         let file = self.db.file_stats(&self.path)?;
         let retention_days = self.db.retention_days();

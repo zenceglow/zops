@@ -692,6 +692,23 @@ fn deploy_input(args: &Value) -> Result<crate::service::deploy::DeployInput, App
 
 // ─────────────────────────── tool dispatch ───────────────────────────
 
+/// 面板自己占了多少盘。
+///
+/// agent 判断"磁盘要满了"时，`ops_system_overview` 只给得了整块盘的占用，
+/// 分不出是谁吃的。把 `ops.db` 的体积一起报出来，才答得上"要不要清面板的库"。
+fn storage_summary(state: &AppState) -> Value {
+    match state.database.file() {
+        Ok(f) => json!({
+            "path": f.path,
+            "db_bytes": f.db_bytes,
+            "wal_bytes": f.wal_bytes,
+            "total_bytes": f.db_bytes + f.wal_bytes + f.shm_bytes,
+            "reclaimable_bytes": f.reclaimable_bytes,
+        }),
+        Err(_) => Value::Null,
+    }
+}
+
 async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &Value) -> Value {
     let def = match tool_catalog().into_iter().find(|t| t.name == name) {
         Some(d) => d,
@@ -721,6 +738,9 @@ async fn call_tool(state: &AppState, principal: &Principal, name: &str, args: &V
             // 身份指纹：agent 汇报任何"这台机器"的事实前，先把这几项说出来。
             // 版本不对 = 连的是另一个（旧的）面板；started_at 不对 = 不是同一个进程。
             "host": crate::shared::panel::identity(),
+            // 面板自己占多少盘。查失败就不给这一项：身份探测是连通性检查，
+            // 不该因为读磁盘失败而整条报错。
+            "storage": storage_summary(&state),
         })),
         ToolId::SystemOverview => Ok(serde_json::to_value(state.system.overview()).unwrap_or(Value::Null)),
         ToolId::ContainerList => Ok(
