@@ -65,7 +65,7 @@ ZOPS 从另一头设计：面板是**唯一**的入口 —— 你的入口，也
 |---|---|---|
 | 主要使用者 | 点表单的人 | 人 **和** agent |
 | Agent 怎么进来 | SSH key / 零散接口 | 标准 MCP 端点 + 可安装的技能包 |
-| Agent 自己能看什么 | 什么都不知道 | 24 个有类型的工具（负载、容器、端口、日志、Caddy…） |
+| Agent 自己能看什么 | 什么都不知道 | 34 个有类型的工具（负载、容器、端口、日志、Caddy…） |
 | 破坏性操作 | 有 shell 权限就能干 | 工具自带「会改服务器」标记，技能要求先向你确认 |
 | 改错配置的爆炸半径 | 说不清 | 站点分块标记；保存前先校验 |
 | 审计 | 日志文件 | 谁、从哪来、做了什么、成没成，全进 SQLite |
@@ -103,19 +103,28 @@ url = "https://ops.example.com/api/ops/mcp"
 http_headers = { Authorization = "Bearer ops_xxxxxxxx" }
 ```
 
-同一个页面还会给出把**技能包**装进 agent 技能目录的命令 —— 那是"agent 拿到 24 个
-工具"和"agent 知道该怎么用这 24 个工具"之间的差别。
+同一个页面还会给出把**技能包**装进 agent 技能目录的命令 —— 那是"agent 拿到 34 个
+工具"和"agent 知道该怎么用这 34 个工具"之间的差别。
 
 ```text
-ops_panel_info            ops_system_overview        ops_container_list
-ops_container_status      ops_container_logs         ops_container_start
-ops_container_stop        ops_container_restart      ops_gateway_status
-ops_gateway_logs          ops_gateway_reload         ops_caddyfile_get
-ops_caddyfile_put         ops_log_source_list        ops_log_tail
-ops_port_list             ops_deploy_list            ops_deploy_plan
-ops_deploy_apply          ops_automation_task_list   ops_automation_task_run
-ops_member_list           ops_notify_channel_list    ops_notify_send
+panel       ops_panel_info            ops_system_overview
+container   ops_container_list        ops_container_status     ops_container_logs
+            ops_container_start       ops_container_stop       ops_container_restart
+gateway     ops_gateway_status        ops_gateway_logs         ops_gateway_reload
+            ops_caddyfile_get         ops_caddyfile_put
+logs        ops_log_source_list       ops_log_tail
+server      ops_port_list             ops_member_list          ops_automation_task_list
+            ops_automation_task_run
+notify      ops_notify_channel_list   ops_notify_send
+deploy      ops_deploy_list           ops_deploy_plan          ops_deploy_apply
+job         ops_deploy_job_list       ops_deploy_job_get       ops_deploy_job_create
+            ops_deploy_job_put_script ops_deploy_job_put_file  ops_deploy_job_run
+            ops_deploy_job_log
+app         ops_app_list              ops_app_plan             ops_app_install
 ```
+
+`ops_deploy_job_*` 就是"编译好的二进制不开 SSH 也能上机"的通道：建任务 → 文本产物
+走 MCP → 二进制用 `curl -T` 传 → 跑脚本 → 拉日志。
 
 令牌只在创建时显示一次，服务端只存 SHA-256。会改状态的工具都带「会改服务器」
 标记，技能里写明调用前要先取得你的同意。
@@ -157,6 +166,37 @@ cd frontend && npx tsc --noEmit
 技术栈：Rust（axum + SQLite）、React + Vite + Tailwind，前端用 `rust-embed` 编进
 二进制，所以生产环境就**一个文件**。接口的返回结构与路由约定见
 [API-CONVENTIONS.md](./API-CONVENTIONS.md)。
+
+## 发布
+
+```bash
+# 1. 升 Cargo.toml 的 version —— 它是唯一的真相
+# 2. 先提交（提交标题会写进升级提示）
+git commit -am "feat: ..."
+./deploy.sh
+```
+
+`deploy.sh` 依次做：构建前端 → `cargo zigbuild` 交叉编译 → **本机冒烟**（能起来、
+`/api/ops/version` 有响应、未匹配的 `/api` 返回 JSON 404 而不是被前端页面兜成 200）
+→ 传 R2 四个对象：
+
+| R2 对象 | 用途 |
+|---|---|
+| `app/ops/zenceglow-ops-amd64-<版本>` | 带版本号的二进制，面板自动升级下载的是它 |
+| `app/ops/zenceglow-ops-amd64` | 稳定路径，手工下载用 |
+| `app/ops/install.sh` | 一行安装脚本 |
+| `app/ops/latest.json` | 面板轮询的版本清单 |
+
+统一走 `https://cdn.zenceglow.com/app/ops/…`，`max-age=300`。
+
+**版本号必须严格大于 CDN 上 `latest.json` 里的 version。** 忘了升号不会报错：
+所有东西都传上去了，只是已装的面板永远收不到升级。
+
+凭据用 `wrangler login`，CI 里设 `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`。
+`wrangler r2 object put` **必须带 `--remote`**，不加会写到本地模拟器却照样打印"上传完成"。
+
+发布后已装的面板自己升级：下载 → 校验（体积 → ELF 魔数 → 真跑 `--version`）→ 原子替换 →
+留 `.bak` → 重启。
 
 ## 关键词
 

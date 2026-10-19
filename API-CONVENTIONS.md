@@ -1,6 +1,6 @@
 # Zenceglow Ops — API Conventions
 
-Based on [Senapixel Server API Conventions](https://github.com/). Routing and method rules follow Senapixel; response envelope aligns with zenceglow-server.
+路由与请求方法规则沿用公司内部约定；响应信封与 `zenceglow-server` 对齐（`success` / `code` / `message` / `data`）。
 
 ---
 

@@ -68,7 +68,7 @@ near production:
 |---|---|---|
 | Primary user | a human clicking forms | a human **and** an agent |
 | Agent access | SSH key / ad-hoc API | standard MCP endpoint + installable skill pack |
-| What the agent can see | nothing | 24 typed tools (load, containers, ports, logs, Caddy…) |
+| What the agent can see | nothing | 34 typed tools (load, containers, ports, logs, Caddy…) |
 | Destructive ops | whatever the shell allows | flagged tools, agent is told to confirm first |
 | Blast radius of a bad edit | unclear | sites are marked blocks; config is validated before save |
 | Audit | a log file | who / from where / what / result, in SQLite |
@@ -109,19 +109,29 @@ http_headers = { Authorization = "Bearer ops_xxxxxxxx" }
 ```
 
 The same page gives you a one-liner that installs the **skill pack** into the
-agent's skill directory — that is the difference between "the agent has 24 tools"
+agent's skill directory — that is the difference between "the agent has 34 tools"
 and "the agent knows what to do with them".
 
 ```text
-ops_panel_info            ops_system_overview        ops_container_list
-ops_container_status      ops_container_logs         ops_container_start
-ops_container_stop        ops_container_restart      ops_gateway_status
-ops_gateway_logs          ops_gateway_reload         ops_caddyfile_get
-ops_caddyfile_put         ops_log_source_list        ops_log_tail
-ops_port_list             ops_deploy_list            ops_deploy_plan
-ops_deploy_apply          ops_automation_task_list   ops_automation_task_run
-ops_member_list           ops_notify_channel_list    ops_notify_send
+panel       ops_panel_info            ops_system_overview
+container   ops_container_list        ops_container_status     ops_container_logs
+            ops_container_start       ops_container_stop       ops_container_restart
+gateway     ops_gateway_status        ops_gateway_logs         ops_gateway_reload
+            ops_caddyfile_get         ops_caddyfile_put
+logs        ops_log_source_list       ops_log_tail
+server      ops_port_list             ops_member_list          ops_automation_task_list
+            ops_automation_task_run
+notify      ops_notify_channel_list   ops_notify_send
+deploy      ops_deploy_list           ops_deploy_plan          ops_deploy_apply
+job         ops_deploy_job_list       ops_deploy_job_get       ops_deploy_job_create
+            ops_deploy_job_put_script ops_deploy_job_put_file  ops_deploy_job_run
+            ops_deploy_job_log
+app         ops_app_list              ops_app_plan             ops_app_install
 ```
+
+`ops_deploy_job_*` is how a compiled binary reaches the box without SSH: create the
+job, push text artifacts over MCP, upload binaries with `curl -T`, run the script,
+poll the log.
 
 Tokens are hashed server-side and shown once. State-changing tools carry an
 explicit "changes the server" flag, and the skill instructs the agent to get your
@@ -168,6 +178,40 @@ Rust (axum + SQLite) and React + Vite + Tailwind, embedded into the binary with
 `rust-embed` so production is a **single file**. See
 [API-CONVENTIONS.md](./API-CONVENTIONS.md) for the response envelope and route
 conventions.
+
+## Release
+
+```bash
+# 1. bump Cargo.toml version — it is the only source of truth
+# 2. commit (the commit subject becomes the release note)
+git commit -am "feat: ..."
+./deploy.sh
+```
+
+`deploy.sh` builds the frontend, cross-compiles with `cargo zigbuild`, **smoke-tests
+the binary locally** (must start, `/api/ops/version` must answer, unknown `/api`
+paths must return JSON 404 rather than falling through to the SPA), then uploads to
+R2 under four keys:
+
+| R2 key | Purpose |
+|---|---|
+| `app/ops/zenceglow-ops-amd64-<version>` | versioned binary, what the updater downloads |
+| `app/ops/zenceglow-ops-amd64` | stable path for manual downloads |
+| `app/ops/install.sh` | the one-line installer |
+| `app/ops/latest.json` | version manifest the panel polls |
+
+All served from `https://cdn.zenceglow.com/app/ops/…` with `max-age=300`.
+
+**The version must be strictly greater than `latest.json` on the CDN.** Forgetting to
+bump it fails silently: everything uploads fine and installed panels never see the
+update.
+
+Credentials: `wrangler login`, or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
+for CI. `--remote` is mandatory on the `wrangler r2` calls — without it wrangler
+writes to a local simulator and still prints "upload complete".
+
+Once published, the panel updates itself: it downloads, verifies (size → ELF magic →
+runs `--version`), swaps atomically, keeps a `.bak`, restarts.
 
 ## Keywords
 
